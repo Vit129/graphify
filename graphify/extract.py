@@ -9255,6 +9255,185 @@ def _resolve_swift_member_calls(
         })
 
 
+# ── Cross-language API-contract edges (client HTTP call ↔ server route) ───────
+# A `fetch('/api/users/:id')` in a TS frontend and `@app.route('/api/users/<id>')`
+# in a Python backend are the same endpoint but share no import and no language —
+# an edge no import- or scope-based resolver can produce. These passes detect both
+# sides, normalize the path templates, and link them.
+
+# Server route declarations: group 1 = HTTP verb (or a "match-any" keyword),
+# group 2 = the path template.
+_API_ROUTE_RES = (
+    # Flask / FastAPI / Starlette: @app.get("/x"), @router.post("/x"), @app.route("/x")
+    re.compile(r"""@\s*[\w.]+\.(get|post|put|delete|patch|route)\s*\(\s*["']([^"']+)["']""", re.I),
+    # Express / Koa / Fastify: app.get("/x"), router.post(`/x`)
+    re.compile(r"""\b(?:app|router|api|server)\.(get|post|put|delete|patch|all)\s*\(\s*["'`]([^"'`]+)["'`]""", re.I),
+    # Spring: @GetMapping("/x"), @RequestMapping("/x")
+    re.compile(r"""@(Get|Post|Put|Delete|Patch|Request)Mapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']""", re.I),
+)
+
+# Client HTTP calls. `fetch` has no verb group (verb lives in an options object,
+# default GET); axios/requests-style have an optional/required verb group.
+_API_FETCH_RE = re.compile(r"""\bfetch\s*\(\s*["'`]([^"'`]+)["'`]""", re.I)
+_API_AXIOS_RE = re.compile(r"""\baxios(?:\.(get|post|put|delete|patch))?\s*\(\s*["'`]([^"'`]+)["'`]""", re.I)
+_API_REQUESTS_RE = re.compile(r"""\b(?:requests|httpx|session|http_client)\.(get|post|put|delete|patch)\s*\(\s*["']([^"']+)["']""", re.I)
+
+_API_ANY_VERB = "ANY"
+_API_SCAN_SUFFIXES = frozenset({".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".java", ".go", ".rb"})
+
+
+def _api_verb(raw: str) -> str:
+    v = raw.upper()
+    return _API_ANY_VERB if v in ("ROUTE", "ALL", "REQUEST") else v
+
+
+def _api_verbs_compatible(a: str, b: str) -> bool:
+    return a == _API_ANY_VERB or b == _API_ANY_VERB or a == b
+
+
+def _api_normalize_path(raw: str) -> str:
+    """Canonicalize an HTTP path template so a client call and its route match.
+
+    Strips scheme/host/query/fragment and trailing slash, then replaces every
+    parameter segment — Flask ``<id>``/``<int:id>``, FastAPI/Spring ``{id}``,
+    Express/React ``:id``, JS template ``${...}``, and bare numeric ids — with
+    ``{}``.
+    """
+    s = raw.strip()
+    m = re.match(r"^[a-zA-Z][\w+.-]*://[^/]+(/.*)$", s)
+    if m:
+        s = m.group(1)
+    if not s.startswith("/"):
+        idx = s.find("/")
+        s = s[idx:] if idx != -1 else "/" + s
+    s = s.split("?", 1)[0].split("#", 1)[0]
+    out = []
+    for seg in s.split("/"):
+        if seg == "":
+            out.append("")
+        elif (seg[0] in ":<" or (seg.startswith("{") and seg.endswith("}"))
+              or "${" in seg or seg.isdigit()):
+            out.append("{}")
+        else:
+            out.append(seg.lower())
+    norm = "/".join(out)
+    return norm[:-1] if len(norm) > 1 and norm.endswith("/") else norm
+
+
+def _api_path_is_specific(norm: str) -> bool:
+    """Require at least one literal (non-parameter) segment so we don't match on
+    `/` or `/{}` and over-connect."""
+    return any(seg and seg != "{}" for seg in norm.split("/"))
+
+
+def _scan_api_routes(line: str):
+    for rx in _API_ROUTE_RES:
+        for m in rx.finditer(line):
+            yield _api_verb(m.group(1)), m.group(2)
+
+
+def _scan_api_clients(line: str):
+    for m in _API_FETCH_RE.finditer(line):
+        yield _API_ANY_VERB, m.group(1)
+    for m in _API_AXIOS_RE.finditer(line):
+        yield (_api_verb(m.group(1)) if m.group(1) else _API_ANY_VERB), m.group(2)
+    for m in _API_REQUESTS_RE.finditer(line):
+        yield _api_verb(m.group(1)), m.group(2)
+
+
+def _resolve_api_contract_edges(paths, all_nodes, all_edges) -> int:
+    """Link client HTTP calls to server route handlers across files and languages.
+
+    Conservative: only unique, cross-file, specific-path matches are linked, and
+    the edge is INFERRED with ``resolution="api_contract"`` so it is clearly a
+    runtime-contract inference, not a static reference. Returns the edge count.
+    """
+    funcs_by_file: dict[str, list[tuple[int, str]]] = {}
+    file_node_by_file: dict[str, str] = {}
+    for n in all_nodes:
+        sf = n.get("source_file")
+        if not sf:
+            continue
+        loc = str(n.get("source_location") or "").lstrip("L")
+        try:
+            line = int(loc) if loc else 0
+        except ValueError:
+            line = 0
+        label = n.get("label", "")
+        if label.endswith("()"):
+            funcs_by_file.setdefault(sf, []).append((line, n["id"]))
+        elif label == Path(sf).name:
+            file_node_by_file[sf] = n["id"]
+    for sf in funcs_by_file:
+        funcs_by_file[sf].sort()
+
+    def _enclosing(sf: str, line: int) -> str | None:
+        best = None
+        for fl, nid in funcs_by_file.get(sf, []):
+            if fl <= line:
+                best = nid
+            else:
+                break
+        return best or file_node_by_file.get(sf)
+
+    def _handler_below(sf: str, line: int) -> str | None:
+        below = [(fl, nid) for fl, nid in funcs_by_file.get(sf, []) if fl >= line]
+        if below:
+            return below[0][1]
+        return _enclosing(sf, line)
+
+    routes: dict[str, list[tuple[str, str, str]]] = {}   # norm -> [(verb, file, anchor)]
+    clients: list[tuple[str, str, str, str]] = []        # (norm, verb, file, anchor)
+    for p in paths:
+        if p.suffix.lower() not in _API_SCAN_SUFFIXES:
+            continue
+        sf = str(p)
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for i, lt in enumerate(text.splitlines(), start=1):
+            for verb, raw in _scan_api_routes(lt):
+                norm = _api_normalize_path(raw)
+                if _api_path_is_specific(norm):
+                    anchor = _handler_below(sf, i)
+                    if anchor:
+                        routes.setdefault(norm, []).append((verb, sf, anchor))
+            for verb, raw in _scan_api_clients(lt):
+                norm = _api_normalize_path(raw)
+                if _api_path_is_specific(norm):
+                    anchor = _enclosing(sf, i)
+                    if anchor:
+                        clients.append((norm, verb, sf, anchor))
+
+    existing = {(e["source"], e["target"]) for e in all_edges}
+    n_added = 0
+    for norm, cverb, cfile, csrc in clients:
+        targets = {
+            rnid for (rverb, rfile, rnid) in routes.get(norm, [])
+            if rfile != cfile and _api_verbs_compatible(cverb, rverb)
+        }
+        if len(targets) != 1:   # unambiguous, cross-file match only
+            continue
+        tgt = next(iter(targets))
+        if tgt == csrc or (csrc, tgt) in existing:
+            continue
+        existing.add((csrc, tgt))
+        n_added += 1
+        all_edges.append({
+            "source": csrc,
+            "target": tgt,
+            "relation": "calls",
+            "context": "api_call",
+            "confidence": "INFERRED",
+            "confidence_score": 0.7,
+            "resolution": "api_contract",
+            "source_file": cfile,
+            "weight": 1.0,
+        })
+    return n_added
+
+
 def extract_objc(path: Path) -> dict:
     """Extract interfaces, implementations, protocols, methods, and imports from .m/.mm/.h files."""
     try:
@@ -12805,6 +12984,53 @@ def extract(
             sf_rel = sf_path
         nid_to_file_nid[n["id"]] = _file_node_id(sf_rel)
 
+    # PROTOTYPE (improvement #1): repo-scoped import-first resolution. A "repo" is
+    # the nearest ancestor dir containing a package manifest; files with no
+    # manifest ancestor all share the scan root, so single-repo behaviour is
+    # unchanged (same_repo == every candidate). Opt-in via the env flag so the
+    # default path is untouched while we evaluate it.
+    _repo_scoped = os.environ.get("GRAPHIFY_REPO_SCOPED_RESOLUTION", "").strip() == "1"
+    nid_to_repo: dict[str, str] = {}
+    if _repo_scoped:
+        _MANIFESTS = ("setup.py", "pyproject.toml", "setup.cfg", "requirements.txt",
+                      "package.json", "go.mod", "Cargo.toml", "pom.xml", "build.gradle")
+        _repo_roots: set[Path] = set()
+        _checked: set[Path] = set()
+        for p in paths:
+            d = p.parent.resolve()
+            while True:
+                if d not in _checked:
+                    _checked.add(d)
+                    try:
+                        if any((d / m).exists() for m in _MANIFESTS):
+                            _repo_roots.add(d)
+                    except OSError:
+                        pass
+                if d == root or d.parent == d:
+                    break
+                d = d.parent
+
+        def _repo_of(sf: str) -> str:
+            if not sf:
+                return str(root)
+            fp = Path(sf)
+            fp = (root / fp) if not fp.is_absolute() else fp
+            try:
+                fp = fp.resolve()
+            except OSError:
+                pass
+            best: Path | None = None
+            for r in _repo_roots:
+                if r == fp or r in fp.parents:
+                    if best is None or len(str(r)) > len(str(best)):
+                        best = r
+            return str(best) if best is not None else str(root)
+
+        for n in all_nodes:
+            sf = n.get("source_file")
+            if sf:
+                nid_to_repo[n["id"]] = _repo_of(sf)
+
     existing_pairs = {(e["source"], e["target"]) for e in all_edges}
     for rc in all_raw_calls:
         callee = rc.get("callee", "")
@@ -12834,6 +13060,21 @@ def extract(
                 candidate_id in imported_symbols
                 or (candidate_file_nid is not None and candidate_file_nid in imported_modules)
             )
+
+        # PROTOTYPE (improvement #1): resolve within the caller's repo first.
+        # Prefer same-repo definitions (a colliding name resolves to the local
+        # one, not another repo's); a cross-repo definition links only with
+        # explicit import/dependency evidence (kills phantom cross-repo edges to
+        # an accidentally-unique name). No-op for single-repo corpora.
+        if _repo_scoped and nid_to_repo:
+            caller_repo = nid_to_repo.get(caller)
+            same_repo = [c for c in candidates if nid_to_repo.get(c) == caller_repo]
+            if same_repo:
+                candidates = same_repo
+            else:
+                candidates = [c for c in candidates if _has_import_evidence(c)]
+                if not candidates:
+                    continue
 
         if len(candidates) == 1:
             tgt = candidates[0]
@@ -12892,6 +13133,16 @@ def extract(
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning("Swift member-call resolution failed, skipping: %s", exc)
+
+    # Cross-language API-contract edges: link client HTTP calls to server route
+    # handlers across files/languages (frontend ↔ backend). Opt-in while we
+    # evaluate; conservative (unique, cross-file, specific-path matches only).
+    if os.environ.get("GRAPHIFY_API_CONTRACT_EDGES", "").strip() == "1":
+        try:
+            _resolve_api_contract_edges(paths, all_nodes, all_edges)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("API-contract edge resolution failed, skipping: %s", exc)
 
     # Relativize source_file fields so paths are portable across machines (#555)
     for item in all_nodes + all_edges:
