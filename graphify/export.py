@@ -986,7 +986,8 @@ def to_obsidian(
     # Map node_id → safe filename so wikilinks stay consistent.
     # Deduplicate: if two nodes produce the same filename, append a numeric suffix.
     def safe_name(label: str) -> str:
-        cleaned = re.sub(r'[\\/*?:"<>|#^[\]]', "", label.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")).strip()
+        cleaned = re.sub(r'[\\/*?:"<>|#^[\]]', " ", label.replace("\r\n", " ").replace("\r", " ").replace("\n", " "))
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
         # Strip trailing .md/.mdx/.markdown so "CLAUDE.md" doesn't become "CLAUDE.md.md"
         cleaned = re.sub(r"\.(md|mdx|qmd|markdown)$", "", cleaned, flags=re.IGNORECASE)
         # A stem of only punctuation (e.g. "@", "*", "#") survives the unsafe-char
@@ -1265,7 +1266,8 @@ def to_canvas(
     CANVAS_COLORS = ["1", "2", "3", "4", "5", "6"]  # red, orange, yellow, green, cyan, purple
 
     def safe_name(label: str) -> str:
-        cleaned = re.sub(r'[\\/*?:"<>|#^[\]]', "", label.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")).strip()
+        cleaned = re.sub(r'[\\/*?:"<>|#^[\]]', " ", label.replace("\r\n", " ").replace("\r", " ").replace("\n", " "))
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
         cleaned = re.sub(r"\.(md|mdx|qmd|markdown)$", "", cleaned, flags=re.IGNORECASE)
         # A stem of only punctuation (e.g. "@", "*", "#") survives the unsafe-char
         # strip above but is empty once a downstream tool re-slugs on word chars
