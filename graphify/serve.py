@@ -333,6 +333,7 @@ def _pick_seeds(
     G: nx.Graph | None = None,
     multi_term: bool = False,
     max_communities: int = 5,
+    terms: list[str] | None = None,
 ) -> list[str]:
     """Select BFS seed nodes, stopping when score drops too far below the top.
 
@@ -349,6 +350,14 @@ def _pick_seeds(
     splitting the query into single terms already finds these nodes; when
     `G`/`multi_term` are supplied, automate that by keeping the best-scoring
     node from each additional distinct community, up to `max_communities`.
+
+    With enough noise terms (verbose natural-language queries), several
+    distinct single-term exact matches can each dominate their own community
+    and fill every `max_communities` slot before a node that substring-matches
+    MANY terms (but never wins the 1000x exact-match tier) is ever reached.
+    When `terms` is supplied, candidates for the fill loop are ranked by how
+    many distinct query terms they match at all (coverage), not raw score —
+    a broad multi-term match outranks a narrow single-term exact match here.
     """
     if not scored:
         return []
@@ -360,7 +369,14 @@ def _pick_seeds(
         seeds.append(nid)
     if G is not None and multi_term:
         seen_communities = {G.nodes[n].get("community") for n in seeds}
-        for score, nid in scored:
+        candidates = scored
+        if terms:
+            def _coverage(nid: str) -> int:
+                data = G.nodes[nid]
+                text = f"{data.get('norm_label') or (data.get('label') or '').lower()} {(data.get('source_file') or '').lower()}"
+                return sum(1 for t in terms if t in text)
+            candidates = sorted(scored, key=lambda s: (-_coverage(s[1]), -s[0]))
+        for score, nid in candidates:
             if len(seeds) >= max_communities:
                 break
             comm = G.nodes[nid].get("community")
@@ -653,7 +669,7 @@ def _query_graph_text(
 ) -> str:
     terms = _query_terms(question)
     scored = _score_nodes(G, terms)
-    start_nodes = _pick_seeds(scored, G=G, multi_term=len(set(terms)) > 1)
+    start_nodes = _pick_seeds(scored, G=G, multi_term=len(set(terms)) > 1, terms=terms)
     if not start_nodes:
         return "No matching nodes found."
     resolved_filters, filter_source = _resolve_context_filters(question, context_filters)
