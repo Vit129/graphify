@@ -37,6 +37,27 @@ def test_god_nodes_have_required_keys():
     assert "degree" in result[0]
 
 
+def test_god_nodes_pagerank_sorted_by_pagerank():
+    G = make_graph()
+    result = god_nodes(G, top_n=10, by="pagerank")
+    scores = [r["pagerank"] for r in result]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_god_nodes_pagerank_still_has_degree_key():
+    """by='pagerank' adds a pagerank key without dropping the existing degree key."""
+    G = make_graph()
+    result = god_nodes(G, top_n=1, by="pagerank")
+    assert "degree" in result[0]
+    assert "pagerank" in result[0]
+
+
+def test_god_nodes_unknown_by_raises():
+    G = make_graph()
+    with pytest.raises(ValueError):
+        god_nodes(G, top_n=1, by="betweenness")
+
+
 def test_surprising_connections_cross_source_multi_file():
     """Multi-file graph: should find cross-file edges between real entities."""
     G = make_graph()
