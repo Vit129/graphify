@@ -3,7 +3,7 @@ from pathlib import Path
 from graphify.build import build_from_json
 from graphify.cluster import cluster, score_all
 from graphify.analyze import god_nodes, surprising_connections
-from graphify.report import generate, _safe_community_name
+from graphify.report import generate
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -105,23 +105,3 @@ def test_report_work_memory_section_absent_without_overlay():
                      tokens, "./project", learning={"overlay": {}, "dead_ends": []})
     assert "## Work-memory lessons" not in empty
     assert before == empty
-
-
-def test_safe_community_name_collapses_stripped_separators():
-    """Labels with ': ' or ' / ' separators (LLM-generated) must not leave
-    double spaces once the filename-unsafe punctuation is removed — a
-    double-spaced wikilink target renders as literal `[[...]]` clutter when
-    GRAPH_SUMMARY.md is read as plain text instead of opened in Obsidian."""
-    assert _safe_community_name("Terminal Engine: Model / TerminalGridModel") == \
-        "Terminal Engine Model TerminalGridModel"
-    assert "  " not in _safe_community_name("A: B / C | D")
-
-
-def test_report_community_hub_wikilink_target_has_no_double_space():
-    G, communities, cohesion, _, gods, surprises, detection, tokens = make_inputs()
-    labels = {cid: "Terminal Engine: Model / TerminalGridModel" for cid in communities}
-    report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, "./project")
-    for line in report.splitlines():
-        if line.startswith("- [[_COMMUNITY_"):
-            target = line.split("|", 1)[0]
-            assert "  " not in target, f"double space in wikilink target: {target!r}"

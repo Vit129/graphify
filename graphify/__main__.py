@@ -3910,12 +3910,11 @@ def main() -> None:
 
     elif cmd == "export":
         subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd not in ("html", "callflow-html", "obsidian", "wiki", "svg", "graphml", "neo4j", "falkordb"):
+        if subcmd not in ("html", "callflow-html", "wiki", "svg", "graphml", "neo4j", "falkordb"):
             print("Usage: graphify export <format>", file=sys.stderr)
             print("  html      [--graph PATH] [--labels PATH] [--node-limit N] [--no-viz]", file=sys.stderr)
             print("  callflow-html [GRAPH|DIR] [--graph PATH] [--labels PATH] [--report PATH] [--sections PATH] [--output HTML]", file=sys.stderr)
             print("            [--lang auto|zh-CN|en] [--max-sections N] [--diagram-scale N]", file=sys.stderr)
-            print("  obsidian  [--graph PATH] [--labels PATH] [--dir PATH]", file=sys.stderr)
             print("  wiki      [--graph PATH] [--labels PATH]", file=sys.stderr)
             print("  svg       [--graph PATH] [--labels PATH]", file=sys.stderr)
             print("  graphml   [--graph PATH]", file=sys.stderr)
@@ -3943,7 +3942,6 @@ def main() -> None:
         analysis_path = Path(_GRAPHIFY_OUT) / ".graphify_analysis.json"
         node_limit = 5000
         no_viz = False
-        obsidian_dir = Path(_GRAPHIFY_OUT) / "obsidian"
         # Shared push-connection settings for the graph-database sinks (neo4j,
         # falkordb), parsed from the generic --push/--user/--password flags below.
         push_uri: str | None = None
@@ -4003,8 +4001,6 @@ def main() -> None:
                 node_limit = int(args[i + 1]); i += 2
             elif a == "--no-viz":
                 no_viz = True; i += 1
-            elif a == "--dir" and i + 1 < len(args):
-                obsidian_dir = Path(args[i + 1]); i += 2
             elif a == "--push" and i + 1 < len(args):
                 push_uri = args[i + 1]; i += 2
             elif a == "--user" and i + 1 < len(args):
@@ -4147,16 +4143,6 @@ def main() -> None:
                     print(f"graph.html written - open in any browser, no server needed")
                 if _over_cap:
                     sys.exit(0)
-
-        elif subcmd == "obsidian":
-            from graphify.export import to_obsidian as _to_obsidian, to_canvas as _to_canvas
-            n = _to_obsidian(G, communities, str(obsidian_dir),
-                             community_labels=labels or None, cohesion=cohesion or None)
-            print(f"Obsidian vault: {n} notes in {obsidian_dir}/")
-            _to_canvas(G, communities, str(obsidian_dir / "graph.canvas"),
-                       community_labels=labels or None)
-            print(f"Canvas: {obsidian_dir}/graph.canvas")
-            print(f"Open {obsidian_dir}/ as a vault in Obsidian.")
 
         elif subcmd == "wiki":
             from graphify.wiki import to_wiki as _to_wiki

@@ -113,7 +113,7 @@ def test_lean_core_runs_default_pipeline_with_zero_references():
         "#### Part C - Merge AST + semantic into final extraction",
         "### Step 4 - Build graph, cluster, analyze, generate outputs",
         "### Step 5 - Label communities",
-        "### Step 6 - Generate Obsidian vault (opt-in) + HTML",
+        "### Step 6 - Generate HTML",
         "### Step 9 - Save manifest, update cost tracker, clean up, and report",
         "## Honesty Rules",
         "graphify export html",

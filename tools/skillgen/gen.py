@@ -226,6 +226,7 @@ _HOOKS_TARGET = {
 # heading was consolidated on purpose and its content is covered elsewhere."
 SHARED_INTRO_ALLOWLIST: frozenset[str] = frozenset({
     "## What graphify is for",  # lean intro; v8 hosts had verbose intro prose, no heading.
+    "### Step 6 - Generate Obsidian vault (opt-in) + HTML",  # feature removed in this fork, not consolidated.
 })
 
 _CONSOLIDATION_ALLOWLIST: dict[str, frozenset[str]] = {
@@ -864,6 +865,54 @@ def _is_no_api_key_fix_line(line: str) -> bool:
     return "graphify needs no API key" in line
 
 
+# Exact lines removed (or their replacements added) when this fork deleted the
+# Obsidian vault/canvas export feature entirely (to_obsidian/to_canvas no longer
+# exist in graphify/export.py). Most removed lines mention "obsidian" and are
+# caught by the keyword check below; the rest are generic code lines (imports,
+# json.loads boilerplate) that were duplicated between the deleted Step 6 block
+# and the surviving HTML step, so deleting one copy nets out as "removed" in the
+# multiset diff even though the same line still exists elsewhere in the file.
+_OBSIDIAN_REMOVAL_EXACT_LINES = frozenset({
+    "/graphify                                             # full pipeline on current directory",
+    "### Step 6 - Generate HTML",
+    "Tell the user:",
+    "Tell the user (omit the wiki line unless --wiki was given):",
+    "```",
+    "```bash",
+    '$(cat graphify-out/.graphify_python) -c "',
+    "from pathlib import Path",
+    "import sys, json",
+    '"',
+    "from graphify.build import build_from_json",
+    "extraction = json.loads(Path('.graphify_extract.json').read_text())",
+    "extraction = json.loads(Path('graphify-out/.graphify_extract.json').read_text())",
+    "analysis   = json.loads(Path('.graphify_analysis.json').read_text())",
+    "analysis   = json.loads(Path('graphify-out/.graphify_analysis.json').read_text())",
+    "communities = {int(k): v for k, v in analysis['communities'].items()}",
+    "cohesion = {int(k): v for k, v in analysis['cohesion'].items()}",
+    "labels_raw = json.loads(Path('.graphify_labels.json').read_text()) if Path('.graphify_labels.json').exists() else {}",
+    "labels_raw = json.loads(Path('graphify-out/.graphify_labels.json').read_text()) if Path('graphify-out/.graphify_labels.json').exists() else {}",
+    "labels = {int(k): v for k, v in labels_raw.items()}",
+    "print()",
+    "print('Tip: run --wiki for an agent-crawlable wiki with full node-level detail.')",
+    "        print('Tip: run --wiki for an agent-crawlable wiki with full node-level detail.')",
+    "    print(f'Graph has {G.number_of_nodes()} nodes - too large for HTML viz. Run graphify export wiki instead.')",
+    "print('  Graph view   - nodes colored by community (set automatically)')",
+    "print('  graph.canvas - structured layout with communities as groups')",
+    "print('  _COMMUNITY_* - overview notes with cohesion scores and dataview queries')",
+})
+
+
+def _is_obsidian_removal_line(line: str) -> bool:
+    """Whether a line is part of this fork's Obsidian export removal.
+
+    Covers every line mentioning "obsidian" (the deleted Step 6 block, its
+    prose, and the output-listing entries) plus the small set of generic lines
+    documented in ``_OBSIDIAN_REMOVAL_EXACT_LINES`` above.
+    """
+    return "obsidian" in line.lower() or line in _OBSIDIAN_REMOVAL_EXACT_LINES
+
+
 # Every line that may differ between a rendered monolith and its pristine v8
 # baseline. Each predicate documents one sanctioned change-class; a blank line is
 # allowed because the multi-line fix blocks insert spacing. Anything else failing
@@ -878,6 +927,7 @@ _SANCTIONED_MONOLITH_DIFFS = (
     _is_zero_node_guard_fix_line,
     _is_manifest_root_fix_line,
     _is_no_api_key_fix_line,
+    _is_obsidian_removal_line,
 )
 
 
