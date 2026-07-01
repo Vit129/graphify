@@ -504,6 +504,53 @@ def _dfs(G: nx.Graph, start_nodes: list[str], depth: int) -> tuple[set[str], lis
     return visited, edges_seen
 
 
+def _blast_radius_hops(
+    G: nx.Graph, nid: str, max_hops: int, direction: str, node_cap: int = 200
+) -> tuple[list[list[str]], bool, int]:
+    """Walk outward from `nid` hop by hop, direction-aware (callers/callees/both),
+    returning nodes grouped by hop distance. Used by the blast_radius MCP tool.
+
+    Returns (hops, truncated, node_cap). ponytail: node_cap stops this running
+    away on a highly-connected god-node; truncation trims the tail of the last
+    hop reached (deterministic), not a random subset. Upgrade path: page results
+    instead of truncating if this cap turns out to bite in practice.
+    """
+    visited = {nid}
+    hops: list[list[str]] = []
+    frontier = [nid]
+    for _ in range(max_hops):
+        next_frontier: list[str] = []
+        for n in frontier:
+            neighbors: list[str] = []
+            if direction in ("callees", "both"):
+                neighbors += list(G.successors(n))
+            if direction in ("callers", "both"):
+                neighbors += list(G.predecessors(n))
+            for nb in neighbors:
+                if nb not in visited:
+                    visited.add(nb)
+                    next_frontier.append(nb)
+        if not next_frontier:
+            break
+        hops.append(next_frontier)
+        frontier = next_frontier
+        if len(visited) - 1 >= node_cap:
+            break
+
+    total = sum(len(h) for h in hops)
+    truncated = total > node_cap
+    if truncated:
+        keep = node_cap
+        trimmed: list[list[str]] = []
+        for h in hops:
+            if keep <= 0:
+                break
+            trimmed.append(h[:keep])
+            keep -= len(h)
+        hops = trimmed
+    return hops, truncated, node_cap
+
+
 def _subgraph_to_text(G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *, seeds: list[str] | None = None) -> str:
     """Render subgraph as text, cutting at token_budget (approx 3 chars/token).
 
@@ -826,6 +873,29 @@ def _build_server(graph_path: str):
                 inputSchema={"type": "object", "properties": {}},
             ),
             types.Tool(
+                name="blast_radius",
+                description=(
+                    "Return everything within N hops of a node, grouped by hop distance and "
+                    "direction. Use this to see the full impact surface of changing a function "
+                    "or file - broader than get_neighbors (1-hop only), more structured than a "
+                    "raw query_graph traversal."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string", "description": "Node label or ID to center the search on"},
+                        "max_hops": {"type": "integer", "default": 3, "description": "Maximum hops to walk (capped at 6)"},
+                        "direction": {
+                            "type": "string",
+                            "enum": ["callers", "callees", "both"],
+                            "default": "both",
+                            "description": "callers = who depends on this node, callees = what this node depends on",
+                        },
+                    },
+                    "required": ["node"],
+                },
+            ),
+            types.Tool(
                 name="shortest_path",
                 description="Find the shortest path between two concepts in the knowledge graph.",
                 inputSchema={
@@ -958,6 +1028,30 @@ def _build_server(graph_path: str):
                 f"  <-- {sanitize_label(G.nodes[nb].get('label', nb))} "
                 f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
             )
+        return "\n".join(lines)
+
+    def _tool_blast_radius(arguments: dict) -> str:
+        label = arguments["node"]
+        max_hops = min(int(arguments.get("max_hops", 3)), 6)
+        direction = arguments.get("direction", "both")
+        if direction not in ("callers", "callees", "both"):
+            return f"Invalid direction '{direction}'. Use 'callers', 'callees', or 'both'."
+        matches = _find_node(G, label)
+        if not matches:
+            return f"No node matching '{label}' found."
+        nid = matches[0]
+
+        hops, truncated, node_cap = _blast_radius_hops(G, nid, max_hops, direction)
+        total = sum(len(h) for h in hops)
+        label_str = sanitize_label(G.nodes[nid].get("label", nid))
+        lines = [f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
+        for i, hop_nodes in enumerate(hops, 1):
+            lines.append(f"\nHop {i} ({len(hop_nodes)} node(s)):")
+            for n in hop_nodes:
+                d = G.nodes[n]
+                lines.append(f"  {sanitize_label(d.get('label', n))} [{sanitize_label(str(d.get('source_file', '')))}]")
+        if truncated:
+            lines.append(f"\n... capped at {node_cap} nodes total, output may be incomplete. Narrow max_hops or direction for full coverage.")
         return "\n".join(lines)
 
     def _tool_get_community(arguments: dict) -> str:
@@ -1139,6 +1233,7 @@ def _build_server(graph_path: str):
         "query_graph": _tool_query_graph,
         "get_node": _tool_get_node,
         "get_neighbors": _tool_get_neighbors,
+        "blast_radius": _tool_blast_radius,
         "get_community": _tool_get_community,
         "god_nodes": _tool_god_nodes,
         "graph_stats": _tool_graph_stats,

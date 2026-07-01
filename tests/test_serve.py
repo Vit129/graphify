@@ -24,7 +24,20 @@ from graphify.serve import (
     _subgraph_to_text,
     _load_graph,
     _community_header,
+    _blast_radius_hops,
 )
+
+
+def _make_call_chain() -> nx.DiGraph:
+    G = nx.DiGraph()
+    G.add_node("main", label="main()", source_file="app.py")
+    G.add_node("a", label="helperA()", source_file="a.py")
+    G.add_node("b", label="helperB()", source_file="b.py")
+    G.add_node("c", label="deepC()", source_file="c.py")
+    G.add_edge("main", "a")
+    G.add_edge("a", "b")
+    G.add_edge("b", "c")
+    return G
 
 
 def _make_graph() -> nx.Graph:
@@ -780,3 +793,43 @@ def test_community_header_sanitizes_name():
     out = _community_header(3, "Pay\x00ments\x1b[31m")
     assert out.startswith("Community 3 — ")
     assert "\x00" not in out and "\x1b" not in out
+
+
+# --- _blast_radius_hops ---
+
+def test_blast_radius_hops_callees_direction():
+    G = _make_call_chain()
+    hops, truncated, cap = _blast_radius_hops(G, "main", 2, "callees")
+    assert hops == [["a"], ["b"]]
+    assert truncated is False
+
+
+def test_blast_radius_hops_callers_direction():
+    G = _make_call_chain()
+    hops, truncated, cap = _blast_radius_hops(G, "c", 3, "callers")
+    assert hops == [["b"], ["a"], ["main"]]
+    assert truncated is False
+
+
+def test_blast_radius_hops_both_directions():
+    G = _make_call_chain()
+    hops, truncated, cap = _blast_radius_hops(G, "a", 1, "both")
+    assert set(hops[0]) == {"b", "main"}
+
+
+def test_blast_radius_hops_stops_when_no_more_neighbors():
+    G = _make_call_chain()
+    hops, truncated, cap = _blast_radius_hops(G, "c", 5, "callees")
+    assert hops == []
+    assert truncated is False
+
+
+def test_blast_radius_hops_respects_node_cap():
+    G = nx.DiGraph()
+    G.add_node("root", label="root")
+    for i in range(300):
+        G.add_node(f"n{i}", label=f"n{i}")
+        G.add_edge("root", f"n{i}")
+    hops, truncated, cap = _blast_radius_hops(G, "root", 3, "callees", node_cap=200)
+    assert sum(len(h) for h in hops) == 200
+    assert truncated is True
