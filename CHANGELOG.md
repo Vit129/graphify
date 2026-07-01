@@ -4,6 +4,19 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 ## Unreleased
 
+## 0.10.0 (2026-07-01)
+
+- Fix: multi-term BFS seed coverage is now weighted by inverse document frequency instead of a raw term-hit count. Generic words ("status", "running", "board") that match most candidate nodes used to fill every diversity slot before a node matching one rare, specific term was ever reached; IDF weighting (`1/log2(2+doc_freq)`) fixes the general mechanism instead of a stopword list.
+- Feat: `blast_radius` MCP tool for single-repo impact analysis.
+- Feat: opt-in PageRank ranking for `god_nodes()`, wired into `graphify update` so god-node reports reflect structural importance, not just raw degree.
+- Feat: flag possibly-unreachable functions in the Knowledge Gaps report (name-based entry-point heuristic; misses dynamic dispatch and framework-invoked callbacks by design).
+- Feat: `GRAPH_SUMMARY.md` is now generated natively instead of shelling out to an external bash script.
+- Feat: LLM pre-flight transparency notice before any extraction pass that calls out to an LLM backend, plus a `GRAPHIFY_NO_LLM` opt-out.
+- Feat: prune backup snapshots older than `GRAPHIFY_BACKUP_KEEP_DAYS` automatically.
+- Fix: diversify BFS seeds across communities for multi-term queries, so a coincidental exact-match on one term no longer crowds out a node matching several other terms in a different community.
+- Fix: community-hub wikilink targets no longer collapse to double spaces.
+- Breaking: removed Obsidian vault/canvas export.
+
 - Fix: Julia qualified / relative / scoped-selected imports now emit edges (#1580, thanks @Synvoya). Only bare `using Foo` was handled; `using Base.Threads` (scoped), `using ..Parent` (relative import_path), and the scoped package of `import Base.Threads: nthreads` were dropped.
 - Fix: Rust tuple-struct field types now emit `references` edges (#1582, thanks @Synvoya). `struct Wrapper(Logger, Vec<Config>);` referenced nothing — positional fields nest under `ordered_field_declaration_list` with no `field_declaration` wrapper, the same shape as tuple enum variants (#1579); that path wasn't traversed for structs.
 - Fix: SystemVerilog class properties with leading qualifiers now emit field `references` (#1583, thanks @Synvoya). The field regex only matched unqualified `<type> <name>;`, so `rand Config x;` / `protected Base b;` (qualifier + type + name) failed to match and their type references were dropped.
