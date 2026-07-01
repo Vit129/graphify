@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 from graphify.build import build_from_json
 from graphify.cluster import cluster
-from graphify.analyze import god_nodes, surprising_connections, _is_concept_node, graph_diff, _surprise_score, _file_category, _is_json_key_node, find_import_cycles
+from graphify.analyze import god_nodes, surprising_connections, _is_concept_node, graph_diff, _surprise_score, _file_category, _is_json_key_node, find_import_cycles, unreachable_functions
 from graphify.extract import _make_id
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -35,6 +35,27 @@ def test_god_nodes_have_required_keys():
     assert "id" in result[0]
     assert "label" in result[0]
     assert "degree" in result[0]
+
+
+def test_god_nodes_pagerank_sorted_by_pagerank():
+    G = make_graph()
+    result = god_nodes(G, top_n=10, by="pagerank")
+    scores = [r["pagerank"] for r in result]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_god_nodes_pagerank_still_has_degree_key():
+    """by='pagerank' adds a pagerank key without dropping the existing degree key."""
+    G = make_graph()
+    result = god_nodes(G, top_n=1, by="pagerank")
+    assert "degree" in result[0]
+    assert "pagerank" in result[0]
+
+
+def test_god_nodes_unknown_by_raises():
+    G = make_graph()
+    with pytest.raises(ValueError):
+        god_nodes(G, top_n=1, by="betweenness")
 
 
 def test_surprising_connections_cross_source_multi_file():
@@ -721,3 +742,46 @@ def test_find_import_cycles_no_cycles():
     G.add_node(y_id, **y)
     G.add_edge(x_id, y_id, relation="imports_from", source_file="x.ts", confidence="EXTRACTED")
     assert find_import_cycles(G) == []
+
+
+# ── unreachable_functions tests ────────────────────────────────────────────────
+
+
+def _make_fn_node(label: str, source_file: str = "src/app.py") -> tuple[str, dict]:
+    nid = _make_id(f"{source_file}::{label}")
+    return nid, {"label": label, "source_file": source_file, "file_type": "code"}
+
+
+def test_unreachable_functions_flags_isolated_private_function():
+    G = nx.Graph()
+    main_id, main = _make_fn_node("main")
+    a_id, a = _make_fn_node("A")
+    b_id, b = _make_fn_node("B")
+    dead_id, dead = _make_fn_node("_C")
+    G.add_node(main_id, **main)
+    G.add_node(a_id, **a)
+    G.add_node(b_id, **b)
+    G.add_node(dead_id, **dead)
+    G.add_edge(main_id, a_id, relation="calls", _src=main_id, _tgt=a_id, confidence="EXTRACTED")
+    G.add_edge(a_id, b_id, relation="calls", _src=a_id, _tgt=b_id, confidence="EXTRACTED")
+
+    result = unreachable_functions(G)
+    dead_ids = {d["id"] for d in result}
+
+    assert dead_id in dead_ids
+    assert main_id not in dead_ids
+    assert a_id not in dead_ids
+    assert b_id not in dead_ids
+
+
+def test_unreachable_functions_empty_graph():
+    assert unreachable_functions(nx.Graph()) == []
+
+
+def test_unreachable_functions_respects_top_n():
+    G = nx.Graph()
+    for i in range(5):
+        nid, attrs = _make_fn_node(f"_dead{i}")
+        G.add_node(nid, **attrs)
+    result = unreachable_functions(G, top_n=2)
+    assert len(result) == 2

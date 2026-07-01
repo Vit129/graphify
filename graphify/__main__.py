@@ -3652,6 +3652,8 @@ def main() -> None:
                           min_community_size=min_community_size, built_at_commit=_commit,
                           learning=_llfr(out / "graph.json"))
         (out / "GRAPH_REPORT.md").write_text(report, encoding="utf-8")
+        from graphify.report import summarize as _summarize
+        (out / "GRAPH_SUMMARY.md").write_text(_summarize(report, out.parent.resolve().name), encoding="utf-8")
         stages.mark("report")
         from graphify.export import backup_if_protected as _backup
         _backup(out)
@@ -3692,14 +3694,27 @@ def main() -> None:
     elif cmd == "update":
         force = os.environ.get("GRAPHIFY_FORCE", "").lower() in ("1", "true", "yes")
         no_cluster = False
+        rank_by = os.environ.get("GRAPHIFY_RANK_BY", "degree")
         args = sys.argv[2:]
         watch_arg: str | None = None
-        for a in args:
+        i_arg = 0
+        while i_arg < len(args):
+            a = args[i_arg]
             if a == "--force":
                 force = True
+                i_arg += 1
                 continue
             if a == "--no-cluster":
                 no_cluster = True
+                i_arg += 1
+                continue
+            if a == "--rank-by" and i_arg + 1 < len(args):
+                rank_by = args[i_arg + 1]
+                i_arg += 2
+                continue
+            if a.startswith("--rank-by="):
+                rank_by = a.split("=", 1)[1]
+                i_arg += 1
                 continue
             if a.startswith("-"):
                 print(f"error: unknown update option: {a}", file=sys.stderr)
@@ -3708,6 +3723,11 @@ def main() -> None:
                 print("error: update accepts at most one path argument", file=sys.stderr)
                 sys.exit(2)
             watch_arg = a
+            i_arg += 1
+
+        if rank_by not in ("degree", "pagerank"):
+            print(f"error: --rank-by must be 'degree' or 'pagerank', got {rank_by!r}", file=sys.stderr)
+            sys.exit(2)
 
         if watch_arg is not None:
             watch_path = Path(watch_arg)
@@ -3727,7 +3747,7 @@ def main() -> None:
         # Interactive CLI: block on the per-repo lock rather than skip, so the
         # user sees their explicit `graphify update` complete instead of
         # exiting silently when a hook-driven rebuild happens to be running.
-        ok = _rebuild_code(watch_path, force=force, no_cluster=no_cluster, block_on_lock=True)
+        ok = _rebuild_code(watch_path, force=force, no_cluster=no_cluster, block_on_lock=True, rank_by=rank_by)
         if ok:
             print("Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.")
             if not (
@@ -3955,12 +3975,11 @@ def main() -> None:
 
     elif cmd == "export":
         subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd not in ("html", "callflow-html", "obsidian", "wiki", "svg", "graphml", "neo4j", "falkordb"):
+        if subcmd not in ("html", "callflow-html", "wiki", "svg", "graphml", "neo4j", "falkordb"):
             print("Usage: graphify export <format>", file=sys.stderr)
             print("  html      [--graph PATH] [--labels PATH] [--node-limit N] [--no-viz]", file=sys.stderr)
             print("  callflow-html [GRAPH|DIR] [--graph PATH] [--labels PATH] [--report PATH] [--sections PATH] [--output HTML]", file=sys.stderr)
             print("            [--lang auto|zh-CN|en] [--max-sections N] [--diagram-scale N]", file=sys.stderr)
-            print("  obsidian  [--graph PATH] [--labels PATH] [--dir PATH]", file=sys.stderr)
             print("  wiki      [--graph PATH] [--labels PATH]", file=sys.stderr)
             print("  svg       [--graph PATH] [--labels PATH]", file=sys.stderr)
             print("  graphml   [--graph PATH]", file=sys.stderr)
@@ -3988,7 +4007,6 @@ def main() -> None:
         analysis_path = Path(_GRAPHIFY_OUT) / ".graphify_analysis.json"
         node_limit = 5000
         no_viz = False
-        obsidian_dir = Path(_GRAPHIFY_OUT) / "obsidian"
         # Shared push-connection settings for the graph-database sinks (neo4j,
         # falkordb), parsed from the generic --push/--user/--password flags below.
         push_uri: str | None = None
@@ -4048,8 +4066,6 @@ def main() -> None:
                 node_limit = int(args[i + 1]); i += 2
             elif a == "--no-viz":
                 no_viz = True; i += 1
-            elif a == "--dir" and i + 1 < len(args):
-                obsidian_dir = Path(args[i + 1]); i += 2
             elif a == "--push" and i + 1 < len(args):
                 push_uri = args[i + 1]; i += 2
             elif a == "--user" and i + 1 < len(args):
@@ -4192,16 +4208,6 @@ def main() -> None:
                     print(f"graph.html written - open in any browser, no server needed")
                 if _over_cap:
                     sys.exit(0)
-
-        elif subcmd == "obsidian":
-            from graphify.export import to_obsidian as _to_obsidian, to_canvas as _to_canvas
-            n = _to_obsidian(G, communities, str(obsidian_dir),
-                             community_labels=labels or None, cohesion=cohesion or None)
-            print(f"Obsidian vault: {n} notes in {obsidian_dir}/")
-            _to_canvas(G, communities, str(obsidian_dir / "graph.canvas"),
-                       community_labels=labels or None)
-            print(f"Canvas: {obsidian_dir}/graph.canvas")
-            print(f"Open {obsidian_dir}/ as a vault in Obsidian.")
 
         elif subcmd == "wiki":
             from graphify.wiki import to_wiki as _to_wiki

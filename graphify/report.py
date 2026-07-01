@@ -1,15 +1,53 @@
 # generate GRAPH_REPORT.md - the human-readable audit trail
 from __future__ import annotations
-import re
 from datetime import date
 import networkx as nx
 
 
-def _safe_community_name(label: str) -> str:
-    """Mirrors export.safe_name so community hub filenames and report wikilinks always agree."""
-    cleaned = re.sub(r'[\\/*?:"<>|#^[\]]', "", label.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")).strip()
-    cleaned = re.sub(r"\.(md|mdx|markdown)$", "", cleaned, flags=re.IGNORECASE)
-    return cleaned or "unnamed"
+def summarize(report: str, project_name: str) -> str:
+    """Condense a full GRAPH_REPORT.md into a ~50-line digest for auto-loading
+    into an AI assistant's context (e.g. via CLAUDE.md/AGENTS.md @-import).
+
+    Keeps only the sections useful for orientation before an edit: Summary,
+    Graph Freshness, God Nodes, Surprising Connections. Each section is capped
+    so one giant community/god-node list can't blow up the digest size.
+    """
+    SECTIONS = [
+        ("## Summary", 8),
+        ("## Graph Freshness", 6),
+        ("## God Nodes", 13),
+        ("## Surprising Connections", 12),
+    ]
+    lines = report.splitlines()
+
+    def _section(header_prefix: str, max_lines: int) -> list[str]:
+        out: list[str] = []
+        on = False
+        for line in lines:
+            if line.startswith(header_prefix):
+                on = True
+                out.append(line)
+                continue
+            if on and line.startswith("## ") and not line.startswith(header_prefix):
+                break
+            if on:
+                out.append(line)
+                if len(out) - 1 >= max_lines:
+                    break
+        return out
+
+    out = [
+        f"# Graph Summary — {project_name}",
+        "_Auto-generated from GRAPH_REPORT.md · do not edit manually_",
+        "_Regen: `graphify update .`_",
+        "",
+    ]
+    for header, cap in SECTIONS:
+        section_lines = _section(header, cap)
+        if section_lines:
+            out += section_lines + [""]
+    out.append("_Full map → GRAPH_REPORT.md · query: `graphify query \"...\"`_")
+    return "\n".join(out) + "\n"
 
 
 def load_learning_for_report(graph_path) -> dict | None:
@@ -140,15 +178,6 @@ def generate(
             "- Run `graphify update .` after code changes (no API cost).",
         ]
 
-    # Community hub navigation - links to _COMMUNITY_*.md files in the Obsidian vault.
-    # Without these, GRAPH_REPORT.md is a dead-end and the vault splits into disconnected components.
-    if non_empty:
-        lines += ["", "## Community Hubs (Navigation)"]
-        for cid in non_empty:
-            label = community_labels.get(cid, f"Community {cid}")
-            safe = _safe_community_name(label)
-            lines.append(f"- [[_COMMUNITY_{safe}|{label}]]")
-
     lines += [
         "",
         "## God Nodes (most connected - your core abstractions)",
@@ -232,7 +261,7 @@ def generate(
             ]
 
     # --- Gaps section ---
-    from .analyze import _is_file_node, _is_concept_node
+    from .analyze import _is_file_node, _is_concept_node, unreachable_functions
 
     isolated = [
         n for n in G.nodes()
@@ -245,7 +274,8 @@ def generate(
         cid: nodes for cid, nodes in communities.items()
         if 0 < sum(1 for n in nodes if not _is_file_node(G, n)) < 3
     }
-    gap_count = len(isolated) + len(thin_communities)
+    dead_functions = unreachable_functions(G)
+    gap_count = len(isolated) + len(thin_communities) + len(dead_functions)
 
     if gap_count > 0 or amb_pct > 20:
         lines += ["", "## Knowledge Gaps"]
@@ -256,6 +286,11 @@ def generate(
             lines.append("  These have ≤1 connection - possible missing edges or undocumented components.")
         if thin_communities:
             lines.append(f"- **{len(thin_communities)} thin communities (<{min_community_size} nodes) omitted from report** — run `graphify query` to explore isolated nodes.")
+        if dead_functions:
+            dead_labels = [d["label"] for d in dead_functions[:5]]
+            suffix = f" (+{len(dead_functions)-5} more)" if len(dead_functions) > 5 else ""
+            lines.append(f"- **{len(dead_functions)} possibly unreachable function(s):** {', '.join(f'`{l}`' for l in dead_labels)}{suffix}")
+            lines.append("  Not reached from any recognized entry point - could be dead code, or dynamically dispatched/decorator-registered.")
         if amb_pct > 20:
             lines.append(f"- **High ambiguity: {amb_pct}% of edges are AMBIGUOUS.** Review the Ambiguous Edges section above.")
 

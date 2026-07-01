@@ -423,6 +423,7 @@ def _rebuild_code(
     no_cluster: bool = False,
     acquire_lock: bool = True,
     block_on_lock: bool = False,
+    rank_by: str = "degree",
 ) -> bool:
     """Re-run AST extraction + build + optional cluster + report for code files. No LLM needed.
 
@@ -435,6 +436,9 @@ def _rebuild_code(
     in ``changed_paths`` (paths that no longer exist on disk) are dropped from
     the preserved set. When ``changed_paths`` is None the full code corpus is
     re-extracted (used by the watcher and post-checkout hook).
+
+    ``rank_by`` selects the god-node ranking mode passed to ``god_nodes()``:
+    ``"degree"`` (default) or ``"pagerank"``.
 
     ``acquire_lock`` (default True) takes a non-blocking per-repo flock around
     the rebuild so concurrent post-commit hooks across multiple repos do not
@@ -479,6 +483,7 @@ def _rebuild_code(
                 force=force,
                 no_cluster=no_cluster,
                 acquire_lock=False,
+                rank_by=rank_by,
             )
             # Late-arrival drain: another hook may have queued work while we
             # were rebuilding. Loop up to _PENDING_DRAIN_MAX_PASSES times so a
@@ -496,6 +501,7 @@ def _rebuild_code(
                         force=force,
                         no_cluster=no_cluster,
                         acquire_lock=False,
+                        rank_by=rank_by,
                     ) and ok
             return ok
 
@@ -794,7 +800,7 @@ def _rebuild_code(
         if previous_node_community:
             communities = remap_communities_to_previous(communities, previous_node_community)
         cohesion = score_all(G, communities)
-        gods = god_nodes(G)
+        gods = god_nodes(G, by=rank_by)
         surprises = surprising_connections(G, communities)
         labels_file = out / ".graphify_labels.json"
         try:
@@ -852,6 +858,8 @@ def _rebuild_code(
             _backup(out)
             graph_tmp.replace(existing_graph)
             report_path.write_text(report, encoding="utf-8")
+            from graphify.report import summarize as _summarize
+            (out / "GRAPH_SUMMARY.md").write_text(_summarize(report, out.parent.resolve().name), encoding="utf-8")
             labels_file.write_text(labels_json, encoding="utf-8")
 
         try:

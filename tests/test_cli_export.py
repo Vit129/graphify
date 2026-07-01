@@ -83,27 +83,6 @@ def test_export_html_error_without_graph(tmp_path):
     assert r.returncode != 0
 
 
-# ── graphify export obsidian ─────────────────────────────────────────────────
-
-def test_export_obsidian_creates_vault(tmp_path):
-    _make_graph(tmp_path)
-    r = _run(["export", "obsidian"], tmp_path)
-    assert r.returncode == 0, r.stderr
-    vault = tmp_path / "graphify-out" / "obsidian"
-    assert vault.exists()
-    md_files = list(vault.glob("*.md"))
-    assert len(md_files) > 0
-
-
-def test_export_obsidian_custom_dir(tmp_path):
-    _make_graph(tmp_path)
-    custom = tmp_path / "my-vault"
-    r = _run(["export", "obsidian", "--dir", str(custom)], tmp_path)
-    assert r.returncode == 0, r.stderr
-    assert custom.exists()
-    assert len(list(custom.glob("*.md"))) > 0
-
-
 # ── graphify export wiki ─────────────────────────────────────────────────────
 
 def test_export_wiki_creates_articles(tmp_path):
@@ -379,7 +358,7 @@ def test_cluster_only_remaps_labels_to_previous_cids(tmp_path):
 # pipeline also removes its temp files at the end of the run on some skill
 # workflows. In both cases the per-node `community` attribute is intact on
 # every node in graph.json — that's the source of truth `to_json` writes.
-# Without these tests, `graphify export html|obsidian|wiki|svg|graphml|neo4j`
+# Without these tests, `graphify export html|wiki|svg|graphml|neo4j`
 # silently bails or generates a degraded artifact whenever the sidecar is
 # missing, even though the data is right there.
 

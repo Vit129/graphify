@@ -326,13 +326,38 @@ def _score_nodes(G: nx.Graph, terms: list[str]) -> list[tuple[float, str]]:
     return scored
 
 
-def _pick_seeds(scored: list[tuple[float, str]], max_k: int = 3, gap_ratio: float = 0.2) -> list[str]:
+def _pick_seeds(
+    scored: list[tuple[float, str]],
+    max_k: int = 3,
+    gap_ratio: float = 0.2,
+    G: nx.Graph | None = None,
+    multi_term: bool = False,
+    max_communities: int = 5,
+    terms: list[str] | None = None,
+) -> list[str]:
     """Select BFS seed nodes, stopping when score drops too far below the top.
 
     Prevents high-frequency noise terms (error, exception) from stealing seed
     slots from a dominant identifier match. When FooBarService scores 1000 and
     error nodes score 1.0, only FooBarService is seeded — the score gap is 99.9%
     which is well above the 20% threshold that would allow additional seeds.
+
+    Multi-term queries can hit the opposite failure: one term's exact-match
+    bonus (1000x a substring hit) can crown a coincidental exact match (e.g. a
+    test-fixture variable literally named "holdings") over a node that
+    substring-matches several OTHER query terms but lives in a different
+    community — the gap_ratio cutoff above then discards it. Manually
+    splitting the query into single terms already finds these nodes; when
+    `G`/`multi_term` are supplied, automate that by keeping the best-scoring
+    node from each additional distinct community, up to `max_communities`.
+
+    With enough noise terms (verbose natural-language queries), several
+    distinct single-term exact matches can each dominate their own community
+    and fill every `max_communities` slot before a node that substring-matches
+    MANY terms (but never wins the 1000x exact-match tier) is ever reached.
+    When `terms` is supplied, candidates for the fill loop are ranked by how
+    many distinct query terms they match at all (coverage), not raw score —
+    a broad multi-term match outranks a narrow single-term exact match here.
     """
     if not scored:
         return []
@@ -342,6 +367,23 @@ def _pick_seeds(scored: list[tuple[float, str]], max_k: int = 3, gap_ratio: floa
         if seeds and score < top_score * gap_ratio:
             break
         seeds.append(nid)
+    if G is not None and multi_term:
+        seen_communities = {G.nodes[n].get("community") for n in seeds}
+        candidates = scored
+        if terms:
+            def _coverage(nid: str) -> int:
+                data = G.nodes[nid]
+                text = f"{data.get('norm_label') or (data.get('label') or '').lower()} {(data.get('source_file') or '').lower()}"
+                return sum(1 for t in terms if t in text)
+            candidates = sorted(scored, key=lambda s: (-_coverage(s[1]), -s[0]))
+        for score, nid in candidates:
+            if len(seeds) >= max_communities:
+                break
+            comm = G.nodes[nid].get("community")
+            if comm in seen_communities:
+                continue
+            seen_communities.add(comm)
+            seeds.append(nid)
     return seeds
 
 
@@ -504,6 +546,53 @@ def _dfs(G: nx.Graph, start_nodes: list[str], depth: int) -> tuple[set[str], lis
     return visited, edges_seen
 
 
+def _blast_radius_hops(
+    G: nx.Graph, nid: str, max_hops: int, direction: str, node_cap: int = 200
+) -> tuple[list[list[str]], bool, int]:
+    """Walk outward from `nid` hop by hop, direction-aware (callers/callees/both),
+    returning nodes grouped by hop distance. Used by the blast_radius MCP tool.
+
+    Returns (hops, truncated, node_cap). ponytail: node_cap stops this running
+    away on a highly-connected god-node; truncation trims the tail of the last
+    hop reached (deterministic), not a random subset. Upgrade path: page results
+    instead of truncating if this cap turns out to bite in practice.
+    """
+    visited = {nid}
+    hops: list[list[str]] = []
+    frontier = [nid]
+    for _ in range(max_hops):
+        next_frontier: list[str] = []
+        for n in frontier:
+            neighbors: list[str] = []
+            if direction in ("callees", "both"):
+                neighbors += list(G.successors(n))
+            if direction in ("callers", "both"):
+                neighbors += list(G.predecessors(n))
+            for nb in neighbors:
+                if nb not in visited:
+                    visited.add(nb)
+                    next_frontier.append(nb)
+        if not next_frontier:
+            break
+        hops.append(next_frontier)
+        frontier = next_frontier
+        if len(visited) - 1 >= node_cap:
+            break
+
+    total = sum(len(h) for h in hops)
+    truncated = total > node_cap
+    if truncated:
+        keep = node_cap
+        trimmed: list[list[str]] = []
+        for h in hops:
+            if keep <= 0:
+                break
+            trimmed.append(h[:keep])
+            keep -= len(h)
+        hops = trimmed
+    return hops, truncated, node_cap
+
+
 def _subgraph_to_text(G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *, seeds: list[str] | None = None) -> str:
     """Render subgraph as text, cutting at token_budget (approx 3 chars/token).
 
@@ -580,7 +669,7 @@ def _query_graph_text(
 ) -> str:
     terms = _query_terms(question)
     scored = _score_nodes(G, terms)
-    start_nodes = _pick_seeds(scored)
+    start_nodes = _pick_seeds(scored, G=G, multi_term=len(set(terms)) > 1, terms=terms)
     if not start_nodes:
         return "No matching nodes found."
     resolved_filters, filter_source = _resolve_context_filters(question, context_filters)
@@ -826,6 +915,29 @@ def _build_server(graph_path: str):
                 inputSchema={"type": "object", "properties": {}},
             ),
             types.Tool(
+                name="blast_radius",
+                description=(
+                    "Return everything within N hops of a node, grouped by hop distance and "
+                    "direction. Use this to see the full impact surface of changing a function "
+                    "or file - broader than get_neighbors (1-hop only), more structured than a "
+                    "raw query_graph traversal."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string", "description": "Node label or ID to center the search on"},
+                        "max_hops": {"type": "integer", "default": 3, "description": "Maximum hops to walk (capped at 6)"},
+                        "direction": {
+                            "type": "string",
+                            "enum": ["callers", "callees", "both"],
+                            "default": "both",
+                            "description": "callers = who depends on this node, callees = what this node depends on",
+                        },
+                    },
+                    "required": ["node"],
+                },
+            ),
+            types.Tool(
                 name="shortest_path",
                 description="Find the shortest path between two concepts in the knowledge graph.",
                 inputSchema={
@@ -958,6 +1070,30 @@ def _build_server(graph_path: str):
                 f"  <-- {sanitize_label(G.nodes[nb].get('label', nb))} "
                 f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
             )
+        return "\n".join(lines)
+
+    def _tool_blast_radius(arguments: dict) -> str:
+        label = arguments["node"]
+        max_hops = min(int(arguments.get("max_hops", 3)), 6)
+        direction = arguments.get("direction", "both")
+        if direction not in ("callers", "callees", "both"):
+            return f"Invalid direction '{direction}'. Use 'callers', 'callees', or 'both'."
+        matches = _find_node(G, label)
+        if not matches:
+            return f"No node matching '{label}' found."
+        nid = matches[0]
+
+        hops, truncated, node_cap = _blast_radius_hops(G, nid, max_hops, direction)
+        total = sum(len(h) for h in hops)
+        label_str = sanitize_label(G.nodes[nid].get("label", nid))
+        lines = [f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
+        for i, hop_nodes in enumerate(hops, 1):
+            lines.append(f"\nHop {i} ({len(hop_nodes)} node(s)):")
+            for n in hop_nodes:
+                d = G.nodes[n]
+                lines.append(f"  {sanitize_label(d.get('label', n))} [{sanitize_label(str(d.get('source_file', '')))}]")
+        if truncated:
+            lines.append(f"\n... capped at {node_cap} nodes total, output may be incomplete. Narrow max_hops or direction for full coverage.")
         return "\n".join(lines)
 
     def _tool_get_community(arguments: dict) -> str:
@@ -1139,6 +1275,7 @@ def _build_server(graph_path: str):
         "query_graph": _tool_query_graph,
         "get_node": _tool_get_node,
         "get_neighbors": _tool_get_neighbors,
+        "blast_radius": _tool_blast_radius,
         "get_community": _tool_get_community,
         "god_nodes": _tool_god_nodes,
         "graph_stats": _tool_graph_stats,

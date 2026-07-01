@@ -10,7 +10,7 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 ## Usage
 
 ```
-/graphify                                             # full pipeline on current directory → Obsidian vault
+/graphify                                             # full pipeline on current directory
 /graphify <path>                                      # full pipeline on specific path
 /graphify <path> --mode deep                          # thorough extraction, richer INFERRED edges
 /graphify <path> --update                             # incremental - re-extract only new/changed files
@@ -484,40 +484,7 @@ print('Report updated with community labels')
 Replace `LABELS_DICT` with the actual dict you constructed (e.g. `{0: "Attention Mechanism", 1: "Training Pipeline"}`).
 Replace INPUT_PATH with the actual path.
 
-### Step 6 - Generate Obsidian vault (opt-in) + HTML
-
-**Generate HTML always** (unless `--no-viz`). **Obsidian vault only if `--obsidian` was explicitly given** — skip it otherwise, it generates one file per node.
-
-If `--obsidian` was given:
-
-```bash
-$(cat graphify-out/.graphify_python) -c "
-import sys, json
-from graphify.build import build_from_json
-from graphify.export import to_obsidian, to_canvas
-from pathlib import Path
-
-extraction = json.loads(Path('.graphify_extract.json').read_text())
-analysis   = json.loads(Path('.graphify_analysis.json').read_text())
-labels_raw = json.loads(Path('.graphify_labels.json').read_text()) if Path('.graphify_labels.json').exists() else {}
-
-G = build_from_json(extraction, directed=IS_DIRECTED)
-communities = {int(k): v for k, v in analysis['communities'].items()}
-cohesion = {int(k): v for k, v in analysis['cohesion'].items()}
-labels = {int(k): v for k, v in labels_raw.items()}
-
-n = to_obsidian(G, communities, 'graphify-out/obsidian', community_labels=labels or None, cohesion=cohesion)
-print(f'Obsidian vault: {n} notes in graphify-out/obsidian/')
-
-to_canvas(G, communities, 'graphify-out/obsidian/graph.canvas', community_labels=labels or None)
-print('Canvas: graphify-out/obsidian/graph.canvas - open in Obsidian for structured community layout')
-print()
-print('Open graphify-out/obsidian/ as a vault in Obsidian.')
-print('  Graph view   - nodes colored by community (set automatically)')
-print('  graph.canvas - structured layout with communities as groups')
-print('  _COMMUNITY_* - overview notes with cohesion scores and dataview queries')
-"
-```
+### Step 6 - Generate HTML
 
 Generate the HTML graph (always, unless `--no-viz`):
 
@@ -537,7 +504,7 @@ communities = {int(k): v for k, v in analysis['communities'].items()}
 labels = {int(k): v for k, v in labels_raw.items()}
 
 if G.number_of_nodes() > 5000:
-    print(f'Graph has {G.number_of_nodes()} nodes - too large for HTML viz. Use Obsidian vault instead.')
+    print(f'Graph has {G.number_of_nodes()} nodes - too large for HTML viz. Run graphify export wiki instead.')
 else:
     to_html(G, communities, 'graphify-out/graph.html', community_labels=labels or None)
     print('graph.html written - open in any browser, no server needed')
@@ -706,14 +673,13 @@ rm -f .graphify_detect.json .graphify_extract.json .graphify_ast.json .graphify_
 rm -f graphify-out/.needs_update 2>/dev/null || true
 ```
 
-Tell the user (omit the obsidian line unless --obsidian was given):
+Tell the user:
 ```
 Graph complete. Outputs in PATH_TO_DIR/graphify-out/
 
   graph.html            - interactive graph, open in browser
   GRAPH_REPORT.md       - audit report
   graph.json            - raw graph data
-  obsidian/             - Obsidian vault (only if --obsidian was given)
 ```
 
 If graphify saved you time, consider supporting it: https://github.com/sponsors/safishamsi
