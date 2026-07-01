@@ -167,6 +167,41 @@ def test_extract_corpus_parallel_accepts_str_and_mixed_paths(tmp_path, monkeypat
             assert merged["failed_chunks"] == 0
 
 
+def test_extract_corpus_parallel_no_llm_skips_extraction(tmp_path, monkeypatch, capsys):
+    """GRAPHIFY_NO_LLM=1 must return an empty merged result without calling the backend."""
+    _clear_backend_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", "1")
+    f1 = tmp_path / "a.md"
+    f1.write_text("# A\n\nNode one.\n")
+
+    with patch("graphify.llm._call_openai_compat") as mock_call:
+        merged = llm.extract_corpus_parallel([f1], backend="gemini", root=tmp_path)
+
+    mock_call.assert_not_called()
+    assert merged == {
+        "nodes": [], "edges": [], "hyperedges": [],
+        "input_tokens": 0, "output_tokens": 0, "failed_chunks": 0,
+    }
+    assert "GRAPHIFY_NO_LLM" in capsys.readouterr().err
+
+
+def test_extract_corpus_parallel_prints_backend_notice(tmp_path, monkeypatch, capsys):
+    """A pre-flight notice names the backend + base_url before files are sent out."""
+    _clear_backend_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+    f1 = tmp_path / "a.md"
+    f1.write_text("# A\n\nNode one.\n")
+    result = {"nodes": [], "edges": [], "hyperedges": [], "input_tokens": 1, "output_tokens": 1}
+
+    with patch("graphify.llm._call_openai_compat", return_value=result):
+        llm.extract_corpus_parallel([f1], backend="gemini", root=tmp_path, max_concurrency=1)
+
+    stderr = capsys.readouterr().err
+    assert "backend=gemini" in stderr
+    assert "1 files" in stderr
+
+
 def test_corpus_parallel_oversized_markdown_does_not_crash_on_fileslice(tmp_path, monkeypatch):
     # #1397/#1399 regression: a Markdown file large enough to be sliced into
     # FileSlice units must not crash extract_files_direct's Path() coercion

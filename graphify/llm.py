@@ -1773,6 +1773,22 @@ def extract_corpus_parallel(
     Accepts ``str`` paths as well as ``Path``; string entries are coerced up
     front so packing/slicing helpers can rely on ``Path`` semantics (#1386).
     """
+    if os.environ.get("GRAPHIFY_NO_LLM"):
+        print(
+            f"[graphify] GRAPHIFY_NO_LLM set - skipping semantic extraction "
+            f"for {len(files)} files (code-only graph will still build)",
+            file=sys.stderr,
+        )
+        return {
+            "nodes": [], "edges": [], "hyperedges": [],
+            "input_tokens": 0, "output_tokens": 0, "failed_chunks": 0,
+        }
+    base_url = BACKENDS.get(backend, {}).get("base_url", "?")
+    print(
+        f"[graphify] sending {len(files)} files to backend={backend} ({base_url}) "
+        f"for semantic extraction - set GRAPHIFY_NO_LLM=1 to skip",
+        file=sys.stderr,
+    )
     files = [f if isinstance(f, (Path, FileSlice)) else Path(f) for f in files]
     # Split oversized splittable documents into slices that cover the whole file
     # before packing, so content past _FILE_CHAR_CAP is extracted instead of
