@@ -355,9 +355,13 @@ def _pick_seeds(
     distinct single-term exact matches can each dominate their own community
     and fill every `max_communities` slot before a node that substring-matches
     MANY terms (but never wins the 1000x exact-match tier) is ever reached.
-    When `terms` is supplied, candidates for the fill loop are ranked by how
-    many distinct query terms they match at all (coverage), not raw score —
-    a broad multi-term match outranks a narrow single-term exact match here.
+    When `terms` is supplied, candidates for the fill loop are ranked by
+    IDF-weighted coverage rather than a raw term count — a term that appears
+    in most candidate nodes (a generic word like "status" or "running")
+    contributes little, while a term matching only a handful of nodes (a
+    specific identifier) contributes close to a full point. This lets a
+    broad multi-term match outrank a narrow single-term exact match here
+    without a hand-maintained stopword list.
     """
     if not scored:
         return []
@@ -371,10 +375,24 @@ def _pick_seeds(
         seen_communities = {G.nodes[n].get("community") for n in seeds}
         candidates = scored
         if terms:
-            def _coverage(nid: str) -> int:
+            def _node_text(nid: str) -> str:
                 data = G.nodes[nid]
-                text = f"{data.get('norm_label') or (data.get('label') or '').lower()} {(data.get('source_file') or '').lower()}"
-                return sum(1 for t in terms if t in text)
+                return f"{data.get('norm_label') or (data.get('label') or '').lower()} {(data.get('source_file') or '').lower()}"
+
+            doc_freq = {t: 0 for t in terms}
+            for _, nid in scored:
+                text = _node_text(nid)
+                for t in terms:
+                    if t in text:
+                        doc_freq[t] += 1
+            # log-dampened inverse document frequency: a term hitting every
+            # candidate contributes ~0, a term hitting only one contributes ~1.
+            term_weight = {t: 1.0 / math.log2(2 + df) for t, df in doc_freq.items()}
+
+            def _coverage(nid: str) -> float:
+                text = _node_text(nid)
+                return sum(term_weight[t] for t in terms if t in text)
+
             candidates = sorted(scored, key=lambda s: (-_coverage(s[1]), -s[0]))
         for score, nid in candidates:
             if len(seeds) >= max_communities:

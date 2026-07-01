@@ -671,6 +671,39 @@ def test_pick_seeds_multi_term_stays_single_community_unaffected():
     assert _pick_seeds(scored, G=G, multi_term=True) == ["fbs"]
 
 
+def test_pick_seeds_multi_term_idf_recovers_node_past_raw_coverage_cap():
+    """Ceiling case from agent-memory/plans/p1-multiterm-seed-ranking.md:
+    verbose queries hit generic words (here "g1"/"g2") that each appear in
+    many candidate nodes across many communities. Raw term-count coverage
+    lets 15 such noise communities (each "matching" 2 generic terms) fill
+    every diversity slot before a node matching one RARE, specific term
+    (real signal) is ever reached. IDF weighting fixes this: a term that
+    hits most candidates contributes near-zero, so the rare-term node
+    outranks the noise nodes despite a lower raw coverage count."""
+    G = nx.DiGraph()
+    G.add_node("main_seed", label="MainFunction", community=0)
+    scored = [(5000.0, "main_seed")]
+    for i in range(15):
+        nid = f"noise{i}"
+        G.add_node(nid, label=f"g1 g2 generic{i}", community=10 + i)
+        scored.append((100.0 - i, nid))
+    G.add_node("target_node", label="rare target function", community=999)
+    scored.append((12.3, "target_node"))
+
+    terms = ["g1", "g2", "rare"]
+
+    # Without IDF weighting (raw count): every noise node "covers" 2 terms,
+    # target covers only 1 — noise fills all slots, target is excluded.
+    seeds_unweighted = _pick_seeds(scored, G=G, multi_term=True)
+    assert "target_node" not in seeds_unweighted
+
+    # With IDF weighting: g1/g2 appear in 15 candidates each (near-zero
+    # weight), "rare" appears in exactly 1 (near-full weight) — target
+    # outranks every noise node despite matching only one term.
+    seeds_weighted = _pick_seeds(scored, G=G, multi_term=True, terms=terms)
+    assert "target_node" in seeds_weighted
+
+
 # --- actionable truncation hint (#897) ---
 
 def test_subgraph_to_text_truncation_hint_is_actionable():

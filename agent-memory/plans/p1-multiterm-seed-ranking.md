@@ -1,6 +1,6 @@
 # P1 — Multi-Term Seed Ranking (Coverage-Based)
 
-Status: **Active**
+Status: **Done** (ceiling closed 2026-07-01, see below)
 Priority: **P1** — search that misses the file a developer actually needs to edit defeats the point of the tool
 Owner surface: `_pick_seeds`, `_score_nodes` (`graphify/serve.py`)
 Created: 2026-07-01
@@ -28,11 +28,15 @@ Real-query validation against 3 production graphs (Home-Assistant, My-Investment
 - Verified against harness-terminal's real graph: seeds moved from generic README/BoardModel noise (`attention`, `running`, `done`, `copyPath`) to genuinely relevant candidates — `AgentStatusDot` (a dot-status UI component), `tab-bar.md`'s exact `[agentIcon?] [statusDot]` layout doc, and a plan doc literally titled "Git status dots in NodeRow."
 - Full suite green: `uv run pytest -q` — 2689 passed, 0 failures.
 
-## Ceiling (known, not fixed by this pass)
+## Ceiling — closed (2026-07-01)
 
-`SidebarSessionListView.swift`'s `.agentDotColor()` — the literal target function — still doesn't make the cut. Its community ranks 11th by coverage; `max_communities=5` stops before reaching it. Bumping the cap to "whatever number surfaces this one example" is overfitting to a single validation query, not a general fix — noted here instead of silently forcing it.
+`SidebarSessionListView.swift`'s `.agentDotColor()` previously didn't make the cut (community ranked 11th by raw coverage; `max_communities=5` stopped before reaching it).
 
-`ponytail:` if this recurs across other real queries (not just this one validation case), the next lever is either (a) raising `max_communities` with an empirically-chosen number backed by multiple real queries, or (b) scoping coverage to *meaningful* terms only (drop generic single-syllable words like "board"/"status"/"icon" from the coverage count so they stop occupying top-coverage slots) — not attempted here because it requires a stopword list, which is new surface area beyond what today's validation justifies.
+Closed via lever (b) from below, but without a hand-maintained stopword list: `_coverage` now weights each term by inverse document frequency computed over the candidate set itself — `1.0 / log2(2 + doc_freq(term))` — instead of counting raw hits. A term appearing in most candidates ("board"/"status"/"running") contributes near-zero; a term appearing in only a handful contributes close to a full point. This came from reading DeusData/codebase-memory-mcp's README (a competitor tool), which lists TF-IDF as one of 11 ranking signals specifically to fight generic-term pollution — same problem, established technique, no stopword list needed since "genericness" is measured directly from the graph rather than assumed from a fixed word list.
+
+Regression test: `tests/test_serve.py::test_pick_seeds_multi_term_idf_recovers_node_past_raw_coverage_cap` — reconstructs the shape of the ceiling case (15 noise communities each "covering" 2 generic terms vs. one target node covering 1 rare term) and asserts the target is excluded under raw counting, included under IDF weighting. Full suite green: 2730 passed, 0 failures.
+
+~~Bumping `max_communities` to force one example query to pass would have been overfitting~~ — not needed; IDF weighting fixes the general mechanism instead of the one instance.
 
 ## Verification
 
