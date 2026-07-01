@@ -3594,6 +3594,8 @@ def main() -> None:
                           min_community_size=min_community_size, built_at_commit=_commit,
                           learning=_llfr(out / "graph.json"))
         (out / "GRAPH_REPORT.md").write_text(report, encoding="utf-8")
+        from graphify.report import summarize as _summarize
+        (out / "GRAPH_SUMMARY.md").write_text(_summarize(report, out.parent.resolve().name), encoding="utf-8")
         stages.mark("report")
         from graphify.export import backup_if_protected as _backup
         _backup(out)

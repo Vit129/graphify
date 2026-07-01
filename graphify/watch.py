@@ -855,6 +855,8 @@ def _rebuild_code(
             _backup(out)
             graph_tmp.replace(existing_graph)
             report_path.write_text(report, encoding="utf-8")
+            from graphify.report import summarize as _summarize
+            (out / "GRAPH_SUMMARY.md").write_text(_summarize(report, out.parent.resolve().name), encoding="utf-8")
             labels_file.write_text(labels_json, encoding="utf-8")
 
         try:

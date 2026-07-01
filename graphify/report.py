@@ -4,6 +4,52 @@ from datetime import date
 import networkx as nx
 
 
+def summarize(report: str, project_name: str) -> str:
+    """Condense a full GRAPH_REPORT.md into a ~50-line digest for auto-loading
+    into an AI assistant's context (e.g. via CLAUDE.md/AGENTS.md @-import).
+
+    Keeps only the sections useful for orientation before an edit: Summary,
+    Graph Freshness, God Nodes, Surprising Connections. Each section is capped
+    so one giant community/god-node list can't blow up the digest size.
+    """
+    SECTIONS = [
+        ("## Summary", 8),
+        ("## Graph Freshness", 6),
+        ("## God Nodes", 13),
+        ("## Surprising Connections", 12),
+    ]
+    lines = report.splitlines()
+
+    def _section(header_prefix: str, max_lines: int) -> list[str]:
+        out: list[str] = []
+        on = False
+        for line in lines:
+            if line.startswith(header_prefix):
+                on = True
+                out.append(line)
+                continue
+            if on and line.startswith("## ") and not line.startswith(header_prefix):
+                break
+            if on:
+                out.append(line)
+                if len(out) - 1 >= max_lines:
+                    break
+        return out
+
+    out = [
+        f"# Graph Summary — {project_name}",
+        "_Auto-generated from GRAPH_REPORT.md · do not edit manually_",
+        "_Regen: `graphify update .`_",
+        "",
+    ]
+    for header, cap in SECTIONS:
+        section_lines = _section(header, cap)
+        if section_lines:
+            out += section_lines + [""]
+    out.append("_Full map → GRAPH_REPORT.md · query: `graphify query \"...\"`_")
+    return "\n".join(out) + "\n"
+
+
 def load_learning_for_report(graph_path) -> dict | None:
     """Assemble the report's work-memory inputs from sibling artifacts.
 
