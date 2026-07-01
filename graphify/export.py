@@ -30,6 +30,33 @@ _BACKUP_ARTIFACTS = [
 ]
 
 
+_DEFAULT_BACKUP_KEEP_DAYS = 14
+
+
+def _prune_old_backups(out: Path, keep_days: int = _DEFAULT_BACKUP_KEEP_DAYS) -> None:
+    """Delete dated backup dirs (YYYY-MM-DD, optionally _N suffixed) older than keep_days.
+
+    Best-effort: a dir with an unparseable name or a failed rmtree is skipped,
+    never raises. Runs on every backup_if_protected() call so retention stays
+    bounded without needing a separate cleanup command.
+    """
+    try:
+        keep_days = int(os.environ.get("GRAPHIFY_BACKUP_KEEP_DAYS", keep_days))
+    except ValueError:
+        keep_days = _DEFAULT_BACKUP_KEEP_DAYS
+    cutoff = date.today().toordinal() - keep_days
+    for child in out.iterdir():
+        if not child.is_dir():
+            continue
+        date_part = child.name.split("_", 1)[0]
+        try:
+            dir_date = date.fromisoformat(date_part)
+        except ValueError:
+            continue
+        if dir_date.toordinal() < cutoff:
+            shutil.rmtree(child, ignore_errors=True)
+
+
 def backup_if_protected(out_dir: Path) -> "Path | None":
     """Snapshot graph artifacts to a dated subfolder before an overwrite.
 
@@ -40,7 +67,8 @@ def backup_if_protected(out_dir: Path) -> "Path | None":
 
     Returns the backup folder path, or None if no backup was taken.
     Never raises — backup failure prints a warning but never blocks the write.
-    Set GRAPHIFY_NO_BACKUP=1 to disable.
+    Set GRAPHIFY_NO_BACKUP=1 to disable. Set GRAPHIFY_BACKUP_KEEP_DAYS to change
+    how many days of dated backups are retained (default 14).
     """
     if os.environ.get("GRAPHIFY_NO_BACKUP"):
         return None
@@ -62,6 +90,7 @@ def backup_if_protected(out_dir: Path) -> "Path | None":
         return None
 
     reason = "+".join(filter(None, ["semantic" if is_semantic else "", "curated" if is_curated else ""]))
+    _prune_old_backups(out)
     today = date.today().isoformat()
     backup_dir = out / today
     graph_src = out / "graph.json"

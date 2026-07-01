@@ -2,10 +2,14 @@ import json
 import math
 import re
 import tempfile
+from datetime import date, timedelta
 from pathlib import Path
 from graphify.build import build_from_json
 from graphify.cluster import cluster
-from graphify.export import to_json, to_cypher, to_graphml, to_html, to_canvas, to_obsidian
+from graphify.export import (
+    to_json, to_cypher, to_graphml, to_html, to_canvas, to_obsidian,
+    _prune_old_backups,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -603,3 +607,43 @@ def test_backup_env_disable(tmp_path, monkeypatch):
     (tmp_path / "graph.json").write_text('{"nodes":[],"links":[]}')
     (tmp_path / ".graphify_semantic_marker").write_text("{}")
     assert backup_if_protected(tmp_path) is None
+
+
+def test_prune_old_backups_removes_stale_dirs(tmp_path):
+    """Dated dirs older than keep_days are deleted; recent ones survive."""
+    old_dir = tmp_path / (date.today() - timedelta(days=30)).isoformat()
+    old_dir_suffixed = tmp_path / f"{(date.today() - timedelta(days=20)).isoformat()}_2"
+    recent_dir = tmp_path / (date.today() - timedelta(days=1)).isoformat()
+    for d in (old_dir, old_dir_suffixed, recent_dir):
+        d.mkdir()
+        (d / "graph.json").write_text("{}")
+
+    _prune_old_backups(tmp_path, keep_days=14)
+
+    assert not old_dir.exists()
+    assert not old_dir_suffixed.exists()
+    assert recent_dir.exists()
+
+
+def test_prune_old_backups_env_override(tmp_path, monkeypatch):
+    """GRAPHIFY_BACKUP_KEEP_DAYS overrides the default retention window."""
+    monkeypatch.setenv("GRAPHIFY_BACKUP_KEEP_DAYS", "1")
+    two_days_old = tmp_path / (date.today() - timedelta(days=2)).isoformat()
+    two_days_old.mkdir()
+
+    _prune_old_backups(tmp_path)
+
+    assert not two_days_old.exists()
+
+
+def test_backup_if_protected_prunes_stale_dirs(tmp_path):
+    """backup_if_protected() itself triggers pruning, not just the helper."""
+    from graphify.export import backup_if_protected
+    stale = tmp_path / (date.today() - timedelta(days=30)).isoformat()
+    stale.mkdir()
+    (tmp_path / "graph.json").write_text('{"nodes":[],"links":[]}')
+    (tmp_path / ".graphify_semantic_marker").write_text("{}")
+
+    backup_if_protected(tmp_path)
+
+    assert not stale.exists()
