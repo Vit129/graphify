@@ -647,6 +647,30 @@ def test_pick_seeds_respects_max_k():
     assert len(seeds) == 3
 
 
+def test_pick_seeds_multi_term_diversifies_across_communities():
+    """A coincidental exact match (e.g. a test variable literally named
+    "holdings") shouldn't crowd out a node in another community that
+    substring-matches several other query terms — gap_ratio alone drops it,
+    community diversification (multi_term=True) recovers it."""
+    G = nx.DiGraph()
+    G.add_node("noise", label="holdings", community=1)
+    G.add_node("real_match", label="useSyncStore", community=2)
+    scored = [(4982.0, "noise"), (8.2, "real_match")]
+    assert _pick_seeds(scored) == ["noise"]  # unchanged without G/multi_term
+    seeds = _pick_seeds(scored, G=G, multi_term=True)
+    assert "real_match" in seeds
+
+
+def test_pick_seeds_multi_term_stays_single_community_unaffected():
+    """Diversification only adds seeds from NEW communities — a clean
+    single-community result stays exactly as before."""
+    G = nx.DiGraph()
+    G.add_node("fbs", label="FooBarService", community=1)
+    G.add_node("err1", label="error", community=1)
+    scored = [(1000.0, "fbs"), (1.0, "err1")]
+    assert _pick_seeds(scored, G=G, multi_term=True) == ["fbs"]
+
+
 # --- actionable truncation hint (#897) ---
 
 def test_subgraph_to_text_truncation_hint_is_actionable():

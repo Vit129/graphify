@@ -326,13 +326,29 @@ def _score_nodes(G: nx.Graph, terms: list[str]) -> list[tuple[float, str]]:
     return scored
 
 
-def _pick_seeds(scored: list[tuple[float, str]], max_k: int = 3, gap_ratio: float = 0.2) -> list[str]:
+def _pick_seeds(
+    scored: list[tuple[float, str]],
+    max_k: int = 3,
+    gap_ratio: float = 0.2,
+    G: nx.Graph | None = None,
+    multi_term: bool = False,
+    max_communities: int = 5,
+) -> list[str]:
     """Select BFS seed nodes, stopping when score drops too far below the top.
 
     Prevents high-frequency noise terms (error, exception) from stealing seed
     slots from a dominant identifier match. When FooBarService scores 1000 and
     error nodes score 1.0, only FooBarService is seeded — the score gap is 99.9%
     which is well above the 20% threshold that would allow additional seeds.
+
+    Multi-term queries can hit the opposite failure: one term's exact-match
+    bonus (1000x a substring hit) can crown a coincidental exact match (e.g. a
+    test-fixture variable literally named "holdings") over a node that
+    substring-matches several OTHER query terms but lives in a different
+    community — the gap_ratio cutoff above then discards it. Manually
+    splitting the query into single terms already finds these nodes; when
+    `G`/`multi_term` are supplied, automate that by keeping the best-scoring
+    node from each additional distinct community, up to `max_communities`.
     """
     if not scored:
         return []
@@ -342,6 +358,16 @@ def _pick_seeds(scored: list[tuple[float, str]], max_k: int = 3, gap_ratio: floa
         if seeds and score < top_score * gap_ratio:
             break
         seeds.append(nid)
+    if G is not None and multi_term:
+        seen_communities = {G.nodes[n].get("community") for n in seeds}
+        for score, nid in scored:
+            if len(seeds) >= max_communities:
+                break
+            comm = G.nodes[nid].get("community")
+            if comm in seen_communities:
+                continue
+            seen_communities.add(comm)
+            seeds.append(nid)
     return seeds
 
 
@@ -627,7 +653,7 @@ def _query_graph_text(
 ) -> str:
     terms = _query_terms(question)
     scored = _score_nodes(G, terms)
-    start_nodes = _pick_seeds(scored)
+    start_nodes = _pick_seeds(scored, G=G, multi_term=len(set(terms)) > 1)
     if not start_nodes:
         return "No matching nodes found."
     resolved_filters, filter_source = _resolve_context_filters(question, context_filters)
