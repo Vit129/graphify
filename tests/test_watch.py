@@ -176,6 +176,23 @@ def test_graphify_root_preserves_absolute_when_user_supplied(tmp_path):
     )
 
 
+def test_rebuild_code_rank_by_pagerank_reaches_god_nodes(tmp_path):
+    """graphify update --rank-by pagerank must thread through to god_nodes()
+    without crashing, and the resulting GRAPH_REPORT.md must still render a
+    God Nodes section (smoke test for the CLI -> _rebuild_code -> god_nodes wiring)."""
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text(
+        "def a(): return b()\ndef b(): return c()\ndef c(): pass\n", encoding="utf-8"
+    )
+    assert _rebuild_code(corpus, acquire_lock=False, rank_by="pagerank") is True
+
+    report = (corpus / "graphify-out" / "GRAPH_REPORT.md").read_text(encoding="utf-8")
+    assert "## God Nodes" in report
+
+
 def test_rebuild_code_evicts_nodes_from_deleted_files(tmp_path):
     """#1007: graphify update (_rebuild_code with no changed_paths) must remove
     nodes and edges from files deleted since the last run."""

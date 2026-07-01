@@ -3629,14 +3629,27 @@ def main() -> None:
     elif cmd == "update":
         force = os.environ.get("GRAPHIFY_FORCE", "").lower() in ("1", "true", "yes")
         no_cluster = False
+        rank_by = os.environ.get("GRAPHIFY_RANK_BY", "degree")
         args = sys.argv[2:]
         watch_arg: str | None = None
-        for a in args:
+        i_arg = 0
+        while i_arg < len(args):
+            a = args[i_arg]
             if a == "--force":
                 force = True
+                i_arg += 1
                 continue
             if a == "--no-cluster":
                 no_cluster = True
+                i_arg += 1
+                continue
+            if a == "--rank-by" and i_arg + 1 < len(args):
+                rank_by = args[i_arg + 1]
+                i_arg += 2
+                continue
+            if a.startswith("--rank-by="):
+                rank_by = a.split("=", 1)[1]
+                i_arg += 1
                 continue
             if a.startswith("-"):
                 print(f"error: unknown update option: {a}", file=sys.stderr)
@@ -3645,6 +3658,11 @@ def main() -> None:
                 print("error: update accepts at most one path argument", file=sys.stderr)
                 sys.exit(2)
             watch_arg = a
+            i_arg += 1
+
+        if rank_by not in ("degree", "pagerank"):
+            print(f"error: --rank-by must be 'degree' or 'pagerank', got {rank_by!r}", file=sys.stderr)
+            sys.exit(2)
 
         if watch_arg is not None:
             watch_path = Path(watch_arg)
@@ -3664,7 +3682,7 @@ def main() -> None:
         # Interactive CLI: block on the per-repo lock rather than skip, so the
         # user sees their explicit `graphify update` complete instead of
         # exiting silently when a hook-driven rebuild happens to be running.
-        ok = _rebuild_code(watch_path, force=force, no_cluster=no_cluster, block_on_lock=True)
+        ok = _rebuild_code(watch_path, force=force, no_cluster=no_cluster, block_on_lock=True, rank_by=rank_by)
         if ok:
             print("Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.")
             if not (
