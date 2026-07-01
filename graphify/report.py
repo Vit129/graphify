@@ -261,7 +261,7 @@ def generate(
             ]
 
     # --- Gaps section ---
-    from .analyze import _is_file_node, _is_concept_node
+    from .analyze import _is_file_node, _is_concept_node, unreachable_functions
 
     isolated = [
         n for n in G.nodes()
@@ -274,7 +274,8 @@ def generate(
         cid: nodes for cid, nodes in communities.items()
         if 0 < sum(1 for n in nodes if not _is_file_node(G, n)) < 3
     }
-    gap_count = len(isolated) + len(thin_communities)
+    dead_functions = unreachable_functions(G)
+    gap_count = len(isolated) + len(thin_communities) + len(dead_functions)
 
     if gap_count > 0 or amb_pct > 20:
         lines += ["", "## Knowledge Gaps"]
@@ -285,6 +286,11 @@ def generate(
             lines.append("  These have ≤1 connection - possible missing edges or undocumented components.")
         if thin_communities:
             lines.append(f"- **{len(thin_communities)} thin communities (<{min_community_size} nodes) omitted from report** — run `graphify query` to explore isolated nodes.")
+        if dead_functions:
+            dead_labels = [d["label"] for d in dead_functions[:5]]
+            suffix = f" (+{len(dead_functions)-5} more)" if len(dead_functions) > 5 else ""
+            lines.append(f"- **{len(dead_functions)} possibly unreachable function(s):** {', '.join(f'`{l}`' for l in dead_labels)}{suffix}")
+            lines.append("  Not reached from any recognized entry point - could be dead code, or dynamically dispatched/decorator-registered.")
         if amb_pct > 20:
             lines.append(f"- **High ambiguity: {amb_pct}% of edges are AMBIGUOUS.** Review the Ambiguous Edges section above.")
 

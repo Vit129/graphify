@@ -435,6 +435,71 @@ def _cross_community_surprises(
     return deduped[:top_n]
 
 
+def unreachable_functions(G: nx.Graph, top_n: int = 15) -> list[dict]:
+    """Heuristic dead-code scan: function nodes unreachable from any recognized entry point.
+
+    Builds a directed calls-only graph from the `_src`/`_tgt` attrs already stashed
+    on `calls`/`indirect_call` edges (build.py), then flags function nodes that are
+    neither an entry point themselves nor reachable from one via nx.descendants().
+
+    A function counts as an entry point if it has in-degree 0 in the calls-digraph
+    AND its name doesn't start with `_` (assumed public/exported), or its name
+    matches main/__main__/test_*.
+
+    ponytail: name-based entry-point heuristic - misses dynamic dispatch,
+    decorator-registered callbacks, and framework-invoked entry points that don't
+    match this naming convention. Upgrade path: the per-language indirect_call
+    edges already captured during extraction partially cover dynamic dispatch -
+    could tighten the heuristic to trust those callees as reachable too.
+    """
+    calls = nx.DiGraph()
+    for u, v, data in G.edges(data=True):
+        if data.get("relation") not in ("calls", "indirect_call"):
+            continue
+        calls.add_edge(data.get("_src", u), data.get("_tgt", v))
+
+    def _is_function(node_id: str) -> bool:
+        return not (
+            _is_file_node(G, node_id)
+            or _is_concept_node(G, node_id)
+            or _is_json_key_node(G, node_id)
+        )
+
+    def _is_entry_name(node_id: str) -> bool:
+        label = G.nodes[node_id].get("label", "").strip(".()")
+        if label in ("main", "__main__"):
+            return True
+        if label.startswith("test_") or label.startswith("Test"):
+            return True
+        return not label.startswith("_")
+
+    def _in_degree(node_id: str) -> int:
+        return calls.in_degree(node_id) if node_id in calls else 0
+
+    function_nodes = {n for n in G.nodes() if _is_function(n)}
+    entry_points = {
+        n for n in function_nodes
+        if _in_degree(n) == 0 and _is_entry_name(n)
+    }
+
+    reachable: set[str] = set(entry_points)
+    for ep in entry_points:
+        if ep in calls:
+            reachable |= nx.descendants(calls, ep)
+
+    dead = [n for n in function_nodes if n not in reachable and n not in entry_points]
+    dead.sort(key=lambda n: G.nodes[n].get("label", n))
+
+    result = []
+    for n in dead[:top_n]:
+        result.append({
+            "id": n,
+            "label": G.nodes[n].get("label", n),
+            "source_file": G.nodes[n].get("source_file", ""),
+        })
+    return result
+
+
 def suggest_questions(
     G: nx.Graph,
     communities: dict[int, list[str]],
