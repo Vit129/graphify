@@ -65,10 +65,25 @@ def _is_searchable(term: str) -> bool:
     return True
 
 
+# English question/filler words dropped from query terms so content words drive
+# BFS seeding. Without this, "how does the frontier cache work" seeds on "how"/
+# "the"/"work" (which prefix-match prose labels like "Working Principles" at the
+# 100x prefix tier) instead of "frontier"/"cache", landing in the wrong part of
+# the graph. Merged from this fork's own P1-reopen stopword set and upstream's
+# independent fix for the same class of bug (#query-stopwords) — the two lists
+# overlapped heavily but each had words the other missed. Applied to query terms
+# only via `_query_terms`'s fallback-to-unfiltered behavior below — node text is
+# never filtered, so a symbol literally named `work` stays findable via
+# explain/path.
 _STOPWORDS = frozenset({
     "how", "does", "is", "are", "the", "a", "an", "to", "of", "in", "on",
     "for", "and", "or", "what", "which", "that", "do", "did", "will",
     "would", "should", "can", "could", "with", "from", "at", "by", "this",
+    "why", "when", "where", "who", "whom", "whose", "was", "were", "be",
+    "been", "being", "shall", "may", "might", "must", "has", "have", "had",
+    "but", "not", "without", "into", "onto", "off", "these", "those",
+    "there", "here", "its", "their", "them", "they", "about", "any", "all",
+    "some", "work", "works", "working",
 })
 
 
@@ -137,19 +152,23 @@ def _expand_synonyms(terms: list[str], raw_question: str) -> list[str]:
 
 
 def _query_terms(question: str) -> list[str]:
-    """Split a query into searchable terms, segmenting Chinese text."""
+    """Split a query into searchable terms, segmenting Chinese text, drop
+    stopwords (falling back to the unfiltered terms if the query is all
+    stopwords, e.g. "how does it work", so it still seeds on something), then
+    expand synonyms."""
     terms: list[str] = []
     for raw in question.split():
         if _has_chinese(raw):
             for seg in _segment_chinese(raw.lower().strip()):
                 seg = seg.strip()
-                if seg and _is_searchable(seg) and seg not in _STOPWORDS:
+                if seg and _is_searchable(seg):
                     terms.append(seg)
         else:
             for tok in re.findall(r"\w+", raw.lower()):
-                if _is_searchable(tok) and tok not in _STOPWORDS:
+                if _is_searchable(tok):
                     terms.append(tok)
-    return _expand_synonyms(terms, question)
+    content = [t for t in terms if t not in _STOPWORDS]
+    return _expand_synonyms(content or terms, question)
 
 
 # --- P5: typo/abbreviation cascade fallback ---

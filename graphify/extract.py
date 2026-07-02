@@ -2228,6 +2228,45 @@ def _cpp_local_var_types(body_node, source: bytes, table: dict[str, str]) -> Non
             stack.append(c)
 
 
+def _swift_local_var_types(body_node, source: bytes, table: dict[str, str]) -> None:
+    """Collect ``var -> Type`` from local ``let``/``var`` bindings in a Swift
+    function body, so a member call on the local (``x.method()``) resolves to Type
+    in the cross-file member-call pass (#1604).
+
+    Two initializer shapes are recorded, PRECISION over recall:
+      - a constructor call ``let x = Type()`` (``_swift_constructor_type``);
+      - a static-member access ``let x = Type.shared`` (a navigation_expression
+        with an upper-cased head) — the singleton-cached-into-a-local idiom, one
+        of the most common Swift call patterns and previously resolved to nothing.
+    Nested function declarations are not descended into (their locals are scoped
+    away); the first binding for a name wins, so a class property of the same name
+    already in the table is not overwritten.
+    """
+    stack = [body_node]
+    while stack:
+        n = stack.pop()
+        if n.type == "function_declaration" and n is not body_node:
+            continue
+        if n.type == "property_declaration":
+            prop_type: str | None = None
+            for child in n.children:
+                if child.type == "call_expression":
+                    prop_type = _swift_constructor_type(child, source)
+                    break
+                if child.type == "navigation_expression":
+                    head = child.children[0] if child.children else None
+                    if head is not None and head.type == "simple_identifier":
+                        htext = _read_text(head, source)
+                        if htext and htext[:1].isupper():
+                            prop_type = htext
+                    break
+            name = _swift_property_name(n, source)
+            if name and prop_type and name not in table:
+                table[name] = prop_type
+        for c in n.children:
+            stack.append(c)
+
+
 def _objc_local_var_types(body_node, source: bytes, table: dict[str, str]) -> None:
     """Collect ``var -> ClassName`` from ObjC local declarations (``Foo *f = ...;``)
     in a method body, for receiver typing in the cross-file message-send pass
@@ -2634,16 +2673,37 @@ def _csharp_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: 
 
 def _swift_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
                       nodes: list, edges: list, seen_ids: set, function_bodies: list,
-                      parent_class_nid: str | None, add_node_fn, add_edge_fn) -> bool:
+                      parent_class_nid: str | None, add_node_fn, add_edge_fn,
+                      ensure_named_node_fn) -> bool:
     """Handle enum_entry for Swift. Returns True if handled."""
     if node.type == "enum_entry" and parent_class_nid:
+        line = node.start_point[0] + 1
         for child in node.children:
             if child.type == "simple_identifier":
                 case_name = _read_text(child, source)
                 case_nid = _make_id(parent_class_nid, case_name)
-                line = node.start_point[0] + 1
                 add_node_fn(case_nid, case_name, line)
                 add_edge_fn(parent_class_nid, case_nid, "case_of", line)
+        # Associated-value types nest as `enum_type_parameters -> user_type ->
+        # type_identifier` (a sibling of the case-name simple_identifier). The
+        # case-name loop above never descends into them, so `case started(Session)`
+        # used to drop the Event -> Session reference entirely. Mirror the Swift
+        # property/parameter emit style: collect the type refs and emit a
+        # `references` edge from the ENUM node to each collected type.
+        for child in node.children:
+            if child.type != "enum_type_parameters":
+                continue
+            for grand in child.children:
+                if not grand.is_named:
+                    continue
+                refs: list[tuple[str, str]] = []
+                _swift_collect_type_refs(grand, source, False, refs)
+                for ref_name, role in refs:
+                    ctx = "generic_arg" if role == "generic_arg" else "type"
+                    target_nid = ensure_named_node_fn(ref_name, line)
+                    if target_nid != parent_class_nid:
+                        add_edge_fn(parent_class_nid, target_nid, "references",
+                                    line, context=ctx)
         return True
     return False
 
@@ -3704,6 +3764,7 @@ def _extract_generic(
                         continue
                     for sub in child.children:
                         base = ""
+                        template_args_node = None
                         if sub.type == "type_identifier":
                             base = _read_text(sub, source)
                         elif sub.type == "qualified_identifier":
@@ -3715,6 +3776,12 @@ def _extract_generic(
                         elif sub.type == "template_type":
                             tname = sub.child_by_field_name("name")
                             base = _read_text(tname, source) if tname else _read_text(sub, source)
+                            # The base's template_argument_list carries generic
+                            # type arguments (class Car : public Base<Dep>). The
+                            # Java handler (_emit_java_parent_type) emits these as
+                            # generic_arg references; C++ dropped them because we
+                            # only emitted the `inherits` edge on the base name.
+                            template_args_node = sub.child_by_field_name("arguments")
                         else:
                             continue
                         if not base:
@@ -3732,6 +3799,19 @@ def _extract_generic(
                                 })
                                 seen_ids.add(base_nid)
                         add_edge(class_nid, base_nid, "inherits", line)
+                        # Emit a generic_arg reference for each type argument on the
+                        # base (Base<Dep> -> Car references Dep). _cpp_collect_type_refs
+                        # handles nested/qualified args (Base<std::vector<Dep>>) too.
+                        if template_args_node is not None:
+                            arg_refs: list[tuple[str, str]] = []
+                            for arg in template_args_node.children:
+                                if arg.is_named:
+                                    _cpp_collect_type_refs(arg, source, True, arg_refs)
+                            for ref_name, _role in arg_refs:
+                                target_nid = ensure_named_node(ref_name, line)
+                                if target_nid != class_nid:
+                                    add_edge(class_nid, target_nid, "references",
+                                             line, context="generic_arg")
 
             # Find body and recurse
             body = _find_body(node, config)
@@ -3822,6 +3902,35 @@ def _extract_generic(
                          "references", line, context="field", metadata=metadata)
             return
 
+        if (config.ts_module == "tree_sitter_c_sharp"
+                and t == "property_declaration"
+                and parent_class_nid):
+            # C# auto-properties (`public Widget Main { get; set; }`) are the
+            # idiomatic way to declare state, yet only field_declaration was
+            # handled — so property types produced no references edge. Unlike a
+            # field, a property exposes its type on the node directly (no
+            # variable_declaration wrapper), so read it straight off the `type`
+            # field. Use _csharp_collect_type_refs (like the Java/PHP/Kotlin
+            # siblings) so `List<Widget>` yields both the List field ref and the
+            # Widget generic_arg ref.
+            type_node = node.child_by_field_name("type")
+            if type_node is not None:
+                line = node.start_point[0] + 1
+                refs: list[tuple[str, str, bool, str]] = []
+                _csharp_collect_type_refs(type_node, source, False, refs)
+                for ref_name, role, qualified, qualifier in refs:
+                    ctx = "generic_arg" if role == "generic_arg" else "field"
+                    target_nid = ensure_named_node(ref_name, line)
+                    if target_nid != parent_class_nid:
+                        metadata = {"ref_token": ref_name}
+                        if qualified:
+                            metadata["qualified"] = True
+                        if qualifier:
+                            metadata["ref_qualifier"] = qualifier
+                        add_edge(parent_class_nid, target_nid, "references",
+                                 line, context=ctx, metadata=metadata)
+            return
+
         if (config.ts_module == "tree_sitter_java"
                 and t == "field_declaration"
                 and parent_class_nid):
@@ -3898,13 +4007,25 @@ def _extract_generic(
                         ctor = _swift_constructor_type(child, source)
                         if ctor is not None:
                             prop_type = ctor
+                # #1604 Stage 2b: `let x = Type.shared` (or any `Type.staticProp`)
+                # binds x to Type via a static-member access, which is a
+                # navigation_expression, not a constructor call. Infer x's type from
+                # the uppercase head so later `x.method()` calls resolve to Type. This
+                # is the singleton idiom (`Type.shared`) cached into a local var and
+                # called on a subsequent line — extremely common in Swift.
+                elif child.type == "navigation_expression" and prop_type is None:
+                    head = child.children[0] if child.children else None
+                    if head is not None and head.type == "simple_identifier":
+                        htext = _read_text(head, source)
+                        if htext and htext[:1].isupper():
+                            prop_type = htext
             prop_name = _swift_property_name(node, source)
             if prop_name and prop_type:
                 type_table[prop_name] = prop_type
             return
 
         if (config.ts_module == "tree_sitter_scala"
-                and t == "val_definition"
+                and t in ("val_definition", "var_definition")
                 and parent_class_nid):
             type_node = node.child_by_field_name("type")
             if type_node is not None:
@@ -4105,8 +4226,14 @@ def _extract_generic(
                         break
                 if params_container is not None:
                     for p in params_container.children:
-                        if p.type != "simple_parameter":
+                        # PHP 8 constructor property promotion (`__construct(private
+                        # Repo $repo)`) parses the promoted param as
+                        # property_promotion_parameter, not simple_parameter. Its
+                        # type sits in the same direct named child shape, so accept
+                        # both here; a promoted param is additionally a class field.
+                        if p.type not in ("simple_parameter", "property_promotion_parameter"):
                             continue
+                        is_promoted = p.type == "property_promotion_parameter"
                         type_node = None
                         for sub in p.children:
                             if sub.type in ("named_type", "primitive_type", "nullable_type",
@@ -4120,6 +4247,13 @@ def _extract_generic(
                             target_nid = ensure_named_node(ref_name, line)
                             if target_nid != func_nid:
                                 add_edge(func_nid, target_nid, "references", line, context=ctx)
+                            # A promoted param declares a real class field; mirror
+                            # the property_declaration field-context edge so the
+                            # type is discoverable as a class field too.
+                            if is_promoted and parent_class_nid and target_nid != parent_class_nid:
+                                fctx = "generic_arg" if role == "generic_arg" else "field"
+                                add_edge(parent_class_nid, target_nid, "references",
+                                         line, context=fctx)
                 return_node = _php_method_return_type_node(node)
                 if return_node is not None:
                     refs = []
@@ -4343,7 +4477,8 @@ def _extract_generic(
         if config.ts_module == "tree_sitter_swift":
             if _swift_extra_walk(node, source, file_nid, stem, str_path,
                                   nodes, edges, seen_ids, function_bodies,
-                                  parent_class_nid, add_node, add_edge):
+                                  parent_class_nid, add_node, add_edge,
+                                  ensure_named_node):
                 return
 
         # Python's `@property` / `@staticmethod` / `@classmethod` wrap the
@@ -4991,6 +5126,13 @@ def _extract_generic(
     if config.ts_module == "tree_sitter_cpp":
         for _caller_nid, body_node in function_bodies:
             _cpp_local_var_types(body_node, source, type_table)
+
+    # Swift: type local `let x = Type()` / `let x = Type.shared` bindings inside
+    # method bodies so `x.method()` on a later line resolves — class-level
+    # properties are typed in the walk, but method-body locals were not (#1604).
+    if config.ts_module == "tree_sitter_swift":
+        for _caller_nid, body_node in function_bodies:
+            _swift_local_var_types(body_node, source, type_table)
 
     for caller_nid, body_node in function_bodies:
         walk_calls(body_node, caller_nid)
@@ -8531,6 +8673,22 @@ def extract_powershell(path: Path) -> dict:
                 class_nid = _make_id(stem, class_name)
                 add_node(class_nid, class_name, line)
                 add_edge(file_nid, class_nid, "contains", line)
+                # Base type(s) after ':'. PowerShell has no syntactic base vs
+                # interface split, so (matching the C# convention) treat the
+                # first base as the superclass (inherits) and the rest as
+                # interfaces (implements). Bases are the simple_name children
+                # after the ':' token.
+                colon_seen = False
+                base_index = 0
+                for child in node.children:
+                    if child.type == ":":
+                        colon_seen = True
+                    elif colon_seen and child.type == "simple_name":
+                        base_nid = ensure_named_node(_read_text(child, source), line)
+                        if base_nid != class_nid:
+                            rel = "inherits" if base_index == 0 else "implements"
+                            add_edge(class_nid, base_nid, rel, line)
+                        base_index += 1
                 for child in node.children:
                     walk(child, parent_class_nid=class_nid)
             return
@@ -11646,6 +11804,18 @@ def extract_objc(path: Path) -> dict:
                 proto_nid = _make_id(stem, name)
                 add_node(proto_nid, f"<{name}>", line)
                 add_edge(file_nid, proto_nid, "contains", line)
+                # Adopted protocols: `@protocol Derived <Base, Other>`. These
+                # nest under a protocol_reference_list node (distinct from the
+                # parameterized_arguments node used by @interface adoption), so
+                # they were never emitted. Emit an `implements` edge for each,
+                # matching how @interface protocol adoption is handled.
+                for child in node.children:
+                    if child.type == "protocol_reference_list":
+                        for sub in child.children:
+                            if sub.type == "identifier":
+                                base_nid = ensure_named_node(_read(sub), line)
+                                if base_nid != proto_nid:
+                                    add_edge(proto_nid, base_nid, "implements", line)
                 for child in node.children:
                     walk(child, proto_nid)
             return

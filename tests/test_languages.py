@@ -227,6 +227,15 @@ def test_cpp_struct_inherits_edge():
     assert found, "RetryingHttpClient (struct) should have inherits edge to HttpClient"
 
 
+def test_cpp_generic_parents_include_type_argument_references():
+    """`class PooledClient : public Connection<HttpClient>` must emit the inherits
+    edge to Connection AND a generic_arg reference to the HttpClient type argument,
+    matching the Java base-class behaviour (_emit_java_parent_type)."""
+    r = extract_cpp(FIXTURES / "sample.cpp")
+    assert ("PooledClient", "Connection") in _edge_labels(r, "inherits")
+    assert ("PooledClient", "HttpClient") in _edge_labels(r, "references", "generic_arg")
+
+
 # ── CUDA ──────────────────────────────────────────────────────────────────────
 # CUDA is a C++ superset, so .cu/.cuh route through the C++ (tree-sitter-cpp)
 # extractor. These tests guard that __global__/__device__ kernels, host
@@ -542,6 +551,17 @@ def test_csharp_field_type_references_have_field_context():
     ), "DataProcessor field declarations should reference HttpClient with field context"
 
 
+def test_csharp_property_type_references_have_field_context():
+    r = extract_csharp(FIXTURES / "sample.cs")
+    field_refs = _edge_labels(r, "references", "field")
+    # `public Processor Owner { get; set; }` — property type -> field ref.
+    assert ("DataProcessor", "Processor") in field_refs
+    # `public List<Processor> Workers { get; set; }` — the List container -> field.
+    assert ("DataProcessor", "List") in field_refs
+    # ...and the generic argument -> generic_arg.
+    assert ("DataProcessor", "Processor") in _edge_labels(r, "references", "generic_arg")
+
+
 def test_csharp_call_edges_have_call_context():
     r = extract_csharp(FIXTURES / "sample.cs")
     node_by_id = {n["id"]: n["label"] for n in r["nodes"]}
@@ -653,6 +673,11 @@ def test_scala_constructor_parameter_field_context():
 def test_scala_val_definition_field_context():
     r = extract_scala(FIXTURES / "sample.scala")
     assert ("HttpClient", "Config") in _edge_labels(r, "references", "field")
+
+
+def test_scala_var_definition_field_context():
+    r = extract_scala(FIXTURES / "sample.scala")
+    assert ("HttpClient", "BaseClient") in _edge_labels(r, "references", "field")
 
 
 def test_scala_method_return_type_context():
@@ -772,6 +797,16 @@ def test_php_property_parameter_and_return_contexts():
     assert ("run", "Result") in _edge_labels(r, "references", "return_type")
 
 
+def test_php_constructor_property_promotion_contexts():
+    # PHP 8 constructor property promotion: a promoted param is both a
+    # constructor parameter (parameter_type) and a class field (field).
+    r = extract_php(FIXTURES / "sample.php")
+    assert ("Service", "Result") in _edge_labels(r, "references", "field")
+    assert ("__construct", "Result") in _edge_labels(r, "references", "parameter_type")
+    # A non-promoted param must not leak a field edge onto the class.
+    assert ("Service", "string") not in _edge_labels(r, "references", "field")
+
+
 # ── Swift ────────────────────────────────────────────────────────────────────
 
 def test_swift_no_error():
@@ -864,6 +899,10 @@ def test_swift_enum_cases_have_case_of_edge():
     r = extract_swift(FIXTURES / "sample.swift")
     case_edges = [e for e in r["edges"] if e["relation"] == "case_of"]
     assert len(case_edges) >= 2
+
+def test_swift_enum_associated_value_type_emits_references():
+    r = extract_swift(FIXTURES / "sample.swift")
+    assert ("NetworkError", "Config") in _edge_labels(r, "references", "type")
 
 def test_swift_finds_deinit():
     r = extract_swift(FIXTURES / "sample.swift")
@@ -1057,6 +1096,16 @@ def test_objc_splits_inherits_and_implements():
     assert ("Animal", "NSObject") in _edge_labels(r, "inherits")
     assert ("Dog", "Animal") in _edge_labels(r, "inherits")
     assert ("Animal", "SampleDelegate") in _edge_labels(r, "implements")
+
+
+def test_objc_protocol_adopts_protocol():
+    """`@protocol Derived <Base>` must emit an implements edge Derived->Base.
+    Protocol-on-protocol adoption nests under a protocol_reference_list node
+    (distinct from the parameterized_arguments node used by @interface
+    adoption), so the edge was previously dropped. Protocol nodes are labeled
+    `<Name>`, so the edge reads (<Derived>, <Base>)."""
+    r = extract_objc(FIXTURES / "sample.m")
+    assert ("<Derived>", "<Base>") in _edge_labels(r, "implements")
 
 
 def test_objc_property_type_context():
@@ -1624,6 +1673,13 @@ def test_powershell_finds_class_and_method():
     labels = [n["label"] for n in r["nodes"]]
     assert "DataProcessor" in labels
     assert any("Transform" in l for l in labels)
+
+
+def test_powershell_class_base_type_emits_inherits_edge():
+    # `class Circle : Shape` — the base type after ':' was previously dropped
+    # because the handler only read the first simple_name (the class name).
+    r = extract_powershell(FIXTURES / "sample.ps1")
+    assert ("Circle", "Shape") in _edge_labels(r, "inherits")
 
 
 def test_powershell_property_field_type_context():
