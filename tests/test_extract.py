@@ -1487,6 +1487,31 @@ def test_extract_json_config_by_key_probe(tmp_path):
     assert "skipped" not in result
 
 
+def test_extract_json_kiro_hook_still_extracted(tmp_path):
+    """.kiro.hook files (Kiro Autopilot automation hooks) are plain JSON with
+    no telltale config key (name/version/description/when/then aren't in
+    _CONFIG_JSON_KEYS — too generic, real risk of false-positiving on data
+    JSON) — recognized by the `.kiro.hook` filename suffix instead. Real
+    files found across multiple personal projects during a real-project
+    coverage audit; previously silently produced 0 nodes as unrecognized
+    data JSON."""
+    hook = tmp_path / "agent-memory-checkpoint.kiro.hook"
+    hook.write_text(json.dumps({
+        "name": "Agent Memory Checkpoint",
+        "when": {"type": "postTaskExecution"},
+        "then": {"type": "askAgent", "prompt": "checkpoint memory"},
+    }))
+    result = extract_json(hook)
+    labels = [n["label"] for n in result["nodes"]]
+    assert "name" in labels
+    assert "skipped" not in result
+
+
+def test_extract_hook_dispatches_to_json_extractor():
+    from graphify.extract import _get_extractor
+    assert _get_extractor(Path("foo.kiro.hook")) is extract_json
+
+
 def test_extract_bash_via_dispatch():
     from graphify.extract import _get_extractor
     assert _get_extractor(Path("foo.sh")) is extract_bash

@@ -231,3 +231,126 @@ this exist and what did we look at before building it."
   removing vendored/generated noise, fish had 2 real files and TOML had essentially 1
   (`cliff.toml`, a changelog-generator config) — too low a real-file count to justify new extractor
   code right now, documented as a non-goal with the reasoning rather than left unexplained.
+
+## P8 — SCSS + Gherkin, Robot cross-file resolution (explicit override of P7's non-goals)
+
+- Cross-checked dispatch coverage against harness-terminal's own `LSPServerRegistry.swift` (its
+  independent "what counts as a supported language" list) — every LSP-backed language it lists was
+  already covered except Gherkin, SCSS/Sass, and treating `.zsh`/`.jsonc`/`.markdown`/`.hxx` as
+  aliases of an existing extractor. All six were checked against real local files and rejected on
+  the same real-file-count grounds as fish/TOML — `.zsh` in particular looked like a free
+  `extract_bash` alias until actually parsing a real file with `tree-sitter-bash` turned up genuine
+  `ERROR` nodes on zsh-only syntax (`${+functions[...]}`, `(( ))`), proving bash's grammar can't
+  parse zsh even setting the file-count question aside; `.jsonc` similarly turned up `ERROR` nodes
+  parsing a comment with `tree-sitter-json`.
+- User then explicitly asked for two of the just-rejected items anyway (SCSS/Sass, Gherkin) plus
+  reopening P6's documented Robot `.resource` cross-file non-goal. Built all three, but the
+  real-file-count methodology itself wasn't silently abandoned — re-checking SCSS's earlier "1 real
+  file" while building this found it was `.venv/.../coverage/htmlfiles/style.scss`, a vendored
+  Python package template, not real project source (actual count: 0, same as Gherkin). Recorded
+  explicitly as a deliberate user override, not new evidence changing the verdict — see
+  `p8-scss-cross-file-and-gherkin.md`.
+- Robot `.resource` cross-file resolution turned out not to need a bespoke resolver: `extract.py`
+  already has a generic `raw_calls` deferral mechanism (any per-file extractor can emit an
+  unresolved call and the shared cross-file pass in `extract()` matches it against every other
+  file's node labels). `extract_robot` previously *dropped* keyword calls it couldn't resolve
+  locally instead of deferring them — the fix was routing them into that existing mechanism, not
+  building a new one. Also had to add `.robot`/`.resource` to `_CASE_INSENSITIVE_EXTS` (the set
+  #1581 introduced for PHP/SQL/Nim), since Robot Framework keyword names are case-insensitive by
+  spec (`log message` must resolve to a keyword defined as `Log Message`). Validated on
+  harness-terminal's real suite: 53 previously-invisible cross-file `calls` edges into a shared
+  `.resource` file's keywords.
+- Gherkin has no maintained tree-sitter grammar published on PyPI (checked `tree-sitter-gherkin`
+  and `tree-sitter-cucumber` directly — neither resolves). Rather than force a tree-sitter fit,
+  `extract_gherkin` is a hand-rolled line scanner — reasonable because Gherkin's format is
+  genuinely line-oriented/keyword-prefixed (`Feature:`, `Scenario:`), unlike CSS/YAML's real
+  nesting that justified a full parser for those.
+
+## P9 — Lightweight query synonym expansion (the semantic-search re-decision)
+
+- After P1-P8, the one gap explicitly *not* claimed fixed: query and code using different words
+  for the same concept ("log the user in" vs `authenticate`), zero literal terms in common — no
+  amount of BM25/typo/fuzzy tuning bridges that, only recall of a *different* word helps. This is
+  exactly what embeddings solve well and lexical search structurally can't.
+- The origin-story section of this doc already records full embedding search as evaluated and
+  rejected once (infra cost). Re-deciding that mid-session without asking would have been the same
+  mistake as the P1/P5 confusion earlier this session (silently building something adjacent to,
+  not identical with, what was actually being asked) — except worse, because it would have
+  silently *reversed* a decision instead of just missing one. Surfaced as an explicit
+  `AskUserQuestion` with the real tradeoff spelled out: local embedding model (real dependency +
+  slower indexing, private/free), API embeddings (best quality, needs a key + network + per-query
+  cost — a real constraint for a local dev-tool MCP server), lightweight query expansion (small
+  synonym map, ~5% of the effort, ceiling is it only helps mapped word pairs), or skip. **User
+  picked lightweight query expansion.**
+- Implementation rides the existing pipeline instead of adding a new one: `_query_terms` (the one
+  choke-point every consumer already reads from) expands matched terms via a curated
+  `_SYNONYM_GROUPS` table, then hands the enriched term list to the *unmodified* BM25 scorer — same
+  "corrected/expanded terms re-enter the normal pipeline, don't get a second scoring path" pattern
+  P5's typo/abbreviation cascade already established.
+- The motivating example itself ("log the user **in**") turned out to need more than single-token
+  synonym lookup: "in" is a filtered stopword, and "log" alone is too overloaded with logging to
+  put in a synonym group unconditionally. Solved with a second mechanism — bounded-word-gap regexes
+  matched against the *raw* question — specifically because the object ("the user") splits the
+  phrasal verb; a plain substring check for `"log in"` verified failed on this exact input during
+  test-writing (caught by the test, not assumed correct) before being fixed to a proximity regex.
+
+## P10 — TOML + fish, and the first real-work-project validation
+
+- Asked directly "does it find everything" after P9, honestly answered with the known ceilings
+  (SCSS/Gherkin never validated against real files, TOML/fish rejected on real-file-count, never
+  validated against the user's actual work repo). User's response: go search wider and close what
+  can be closed — not "silently claim it's done," an explicit instruction to re-verify before
+  accepting the earlier verdict.
+- The TOML/fish rejection in P7 searched only `~/Git` and `~/Documents`. Widening to the whole home
+  directory reversed it: `~/.config/starship.toml`, `~/.codex/config.toml`, a second real
+  `cliff.toml` (My-Investment-Port, not just harness-terminal), several `ponytail` plugin command
+  configs for TOML; `~/.config/fish/config.fish` and harness-terminal's real `harness.fish` (3
+  genuine OSC-133 prompt-hook function definitions) for fish. Same lesson P7 already learned about
+  `.dia`/`.podspec` false positives, mirrored in the opposite direction this time: a narrow search
+  scope produces false *negatives* just as easily as a loose noise filter produces false positives
+  — the fix both times was widening what got checked, not trusting the first pass's scope.
+  SCSS/Gherkin were re-searched with the same wider scope and still came back at 0 real files —
+  not reversed, because no new evidence turned up this time.
+- `tree-sitter-toml` exists on PyPI and parses real `cliff.toml`/`starship.toml` with 0 errors, so
+  `extract_toml` is a normal tree-sitter extractor, added as a hard dependency (config-file volume
+  found put it in the same tier as YAML/CSS/HTML, not the low-volume `robot`/`scss` extras tier).
+  Fish has no published tree-sitter binding (checked 3 plausible package names) — `extract_fish`
+  is a hand-rolled `function <name>` scanner, the same choice made for Gherkin and for the same
+  reason (a simple anchored-keyword format doesn't need a full grammar).
+- First real end-to-end validation this session against the user's actual work project
+  (`~/Git/Company/cpi-qa-automation`, not a personal side project): 198 files, all formats already
+  supported before this plan (`.ts`/`.md`/`.yml`/`.json`/`.sql`/`.html`), 0 extraction errors.
+  Real queries confirm the whole pipeline works on real day-job code, not just personal-repo
+  fixtures: `"submit order flow"` seeds `submitOrderFlow()`/`submitEditFlow()`/`submitSmartFlow()`
+  — the exact functions this project's own earlier memory notes named as real examples.
+
+## P11 — "แล้วกับ personal project" (the same check, now for all 9 personal projects)
+
+- P10 validated exactly one project (the user's work repo). Asked directly whether personal
+  projects got the same treatment — they hadn't, not really: earlier validation this session
+  touched harness-terminal heavily but not the other 8. Extension-census-audited all 9
+  (`9arm-skills` through `My-Investment-Port`) the same way P7's original audit worked, then
+  extraction-ran every one against the current dispatch table.
+- Two outcomes from the raw extension hits this surfaced, in opposite directions — worth recording
+  both since only checking for false negatives (missing formats) would repeat the mistake P7's
+  narrow-scope search made, but only checking for false positives would miss real gaps:
+  - **False negative (a real gap):** `.kiro.hook` files (Kiro Autopilot hooks, part of the user's
+    own agent-orchestration stack per their profile) are plain JSON but didn't match
+    `extract_json`'s existing config/manifest recognizer, so they silently produced 0 nodes. 16
+    real files across 2 projects. Fixed with a precise filename-suffix check rather than loosening
+    the generic top-level-key probe (which risks false-positiving on real data JSON — the exact
+    failure mode #1224 already exists to prevent).
+  - **False positives correctly rejected:** `.golden` (content is a raw buffer dump with the
+    test name only in the filename, not the content — same class as `junit.xml`), `.strings` (0
+    real git-tracked files — every raw hit was a compiled binary plist inside a `.app` bundle, not
+    plain-text source), Home-Assistant's `.storage/*.iids`/`.aids`/`.state` (git-tracked, which
+    made this the closest call, but content is pure generated HomeKit runtime state — git-tracked
+    status alone isn't evidence of "real source worth extracting," content still has to be
+    checked).
+  - A live instance of the "raw counts need active triage" lesson happened *during* validation,
+    not just during the audit: an early un-scoped real-query test against Home-Assistant surfaced a
+    `custom_components/hacs/hacs_frontend/` minified vendor JS bundle as a top BFS-seed result —
+    HACS (Home Assistant Community Store) installs third-party integration frontends into the repo
+    tree, the same category of noise as `node_modules`/`Sparkle.framework` from earlier sessions.
+    Caught by inspecting the actual query output before reporting it, not assumed clean because the
+    extraction step itself succeeded with 0 errors.

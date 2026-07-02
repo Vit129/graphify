@@ -183,6 +183,8 @@ Install only what you need:
 | `postgres` | Live PostgreSQL introspection (`--postgres DSN`) | `uv tool install "graphifyy[postgres]"` |
 | `dm` | BYOND DreamMaker `.dm`/`.dme` AST extraction (may need a C compiler + `python3-dev` if no wheel matches your platform) | `uv tool install "graphifyy[dm]"` |
 | `terraform` | Terraform / HCL `.tf`/`.tfvars`/`.hcl` AST extraction | `uv tool install "graphifyy[terraform]"` |
+| `robot` | Robot Framework `.robot`/`.resource` AST extraction | `uv tool install "graphifyy[robot]"` |
+| `scss` | SCSS `.scss` AST extraction (plain `.css` needs no extra) | `uv tool install "graphifyy[scss]"` |
 | `chinese` | Chinese query segmentation (jieba) | `uv tool install "graphifyy[chinese]"` |
 | `all` | Everything above | `uv tool install "graphifyy[all]"` |
 
@@ -245,12 +247,12 @@ To remove graphify from all platforms at once: `graphify uninstall` (add `--purg
 
 | Type | Extensions |
 |------|-----------|
-| Code (36 tree-sitter grammars) | `.py .ts .js .jsx .tsx .mjs .go .rs .java .c .cpp .h .hpp .cu .cuh .metal .rb .cs .kt .scala .php .swift .lua .luau .zig .ps1 .psm1 .ex .exs .m .mm .jl .vue .svelte .astro .groovy .gradle .dart .v .sv .svh .sql .f .f90 .f95 .f03 .f08 .pas .pp .dpr .dpk .lpr .inc .dfm .lfm .lpk .sh .bash .json .dm .dme .dmi .dmm .dmf .sln .slnx .csproj .fsproj .vbproj .xaml .razor .cshtml` (`.dm`/`.dme` requires `uv tool install graphifyy[dm]`; CUDA `.cu`/`.cuh` and Metal `.metal` reuse the C++ grammar) |
+| Code (54 tree-sitter grammars) | `.py .ts .js .jsx .tsx .mjs .gs .go .rs .java .c .cpp .h .hpp .cu .cuh .metal .rb .cs .kt .scala .php .swift .lua .luau .zig .ps1 .psm1 .ex .exs .m .mm .jl .vue .svelte .astro .groovy .gradle .dart .v .sv .svh .sql .f .f90 .f95 .f03 .f08 .pas .pp .dpr .dpk .lpr .inc .dfm .lfm .lpk .sh .bash .fish .json .hook .toml .yaml .yml .css .scss .html .htm .robot .resource .feature .dm .dme .dmi .dmm .dmf .sln .slnx .csproj .fsproj .vbproj .xaml .razor .cshtml` (`.dm`/`.dme` requires `uv tool install graphifyy[dm]`; `.scss` requires `uv tool install graphifyy[scss]`; `.robot`/`.resource` requires `uv tool install graphifyy[robot]`; CUDA `.cu`/`.cuh` and Metal `.metal` reuse the C++ grammar; `.gs` reuses the JS grammar; `.feature` and `.fish` are hand-written scanners — no published tree-sitter grammar exists for either) |
 | Salesforce Apex | `.cls .trigger` (regex-based; classes, interfaces, enums, methods, triggers, SOQL/DML edges) |
 | Terraform / HCL | `.tf .tfvars .hcl` (requires `uv tool install graphifyy[terraform]`) |
 | MCP configs | `.mcp.json` `mcp.json` `mcp_servers.json` `claude_desktop_config.json` — extracts server nodes, package refs, env var requirements |
 | Package manifests | `apm.yml` `pyproject.toml` `go.mod` `pom.xml` — one canonical package node per package (by name) plus `depends_on` edges, so a package referenced from many manifests is a single hub |
-| Docs | `.md .mdx .qmd .html .txt .rst .yaml .yml` (markdown `[text](./other.md)` links and `[[wikilinks]]` become `references` edges between docs) |
+| Docs | `.md .mdx .qmd .txt .rst` (markdown `[text](./other.md)` links and `[[wikilinks]]` become `references` edges between docs) |
 | Office | `.docx .xlsx` (requires `uv tool install graphifyy[office]`) |
 | Google Workspace | `.gdoc .gsheet .gslides` (opt-in; requires `gws` auth and `--google-workspace`; Sheets need `uv tool install graphifyy[google]`) |
 | PDFs | `.pdf` |
@@ -368,6 +370,8 @@ python -m graphify.serve graphify-out/graph.json --transport http --host 0.0.0.0
 ```
 
 The MCP server gives your assistant structured access: `query_graph`, `get_node`, `get_neighbors`, `shortest_path`, `list_prs`, `get_pr_impact`, `triage_prs`.
+
+Queries are scored with real BM25 over camelCase/snake_case-aware tokens, plus a small curated synonym map (`login`/`authenticate`, `delete`/`remove`, etc.) so a query phrased differently from the code it targets still has a chance to match. A typo (`sesion` → `session`) or abbreviation (`hus` → `handleUserSession`) that returns nothing on the first pass is automatically corrected against the graph's own vocabulary and re-run, with a note in the response when that happens.
 
 ### Shared HTTP server
 
