@@ -12,6 +12,7 @@ from graphify.serve import (
     _bfs,
     _dfs,
     _find_node,
+    _search_tokens,
     _trigrams,
     _node_search_text,
     _get_trigram_index,
@@ -134,6 +135,97 @@ def test_score_nodes_multiword_exact_label_outranks_superset():
     # Resolves uniquely to the exact label, strictly ahead of the superset.
     assert scored[0][1] == "exact"
     assert scored[0][0] > scored[1][0], "exact label must strictly outrank superset/token-bag matches"
+
+
+# --- _search_tokens (P3: camelCase/snake_case/kebab-case splitting) ---
+
+def test_search_tokens_splits_camel_case():
+    assert _search_tokens("getUserData") == ["get", "user", "data"]
+
+
+def test_search_tokens_splits_snake_case():
+    assert _search_tokens("get_user_data") == ["get", "user", "data"]
+
+
+def test_search_tokens_splits_kebab_case():
+    assert _search_tokens("get-user-data") == ["get", "user", "data"]
+
+
+def test_search_tokens_keeps_acronym_run_together():
+    """HTTPServer -> [HTTP, Server], not [H, T, T, P, Server]."""
+    assert _search_tokens("HTTPServer") == ["http", "server"]
+    assert _search_tokens("parseHTTPResponse") == ["parse", "http", "response"]
+
+
+def test_search_tokens_preserves_plain_words():
+    assert _search_tokens("Get") == ["get"]
+    assert _search_tokens("extract") == ["extract"]
+
+
+def test_search_tokens_non_latin_scripts_unaffected():
+    """Non-Latin scripts keep matching as whole runs (no case to split on)."""
+    assert _search_tokens("路由") == ["路由"]
+
+
+# --- _score_nodes (P3: camelCase/snake_case sub-word matching) ---
+
+def test_score_nodes_camel_case_subword_hits_prefix_tier_not_substring():
+    """A query term equal to one camelCase sub-word of the label must score
+    at the prefix tier, not fall through to the (100x weaker) substring tier
+    that swallowed it before P3's tokenizer fix.
+    """
+    G = nx.Graph()
+    G.add_node("n1", label="getUserData", source_file="user.py", community=0)
+    G.add_node("n2", label="getOtherThing", source_file="other.py", community=0)
+    scored = _score_nodes(G, ["user"])
+    nids = [nid for _, nid in scored]
+    assert nids[0] == "n1"
+    assert "n2" not in nids
+
+
+def test_score_nodes_camel_case_subword_does_not_outrank_whole_label_exact_match():
+    """A sub-word match (e.g. "payload" inside "PayloadFactory") must not tie
+    with a true whole-label exact match ("Payload") — regression guard for the
+    tiering bug caught while implementing P3 (sub-word match was briefly
+    promoted all the way to the EXACT tier instead of PREFIX).
+    """
+    G = nx.Graph()
+    G.add_node("exact", label="Payload", source_file="payload.py", community=0)
+    G.add_node("partial", label="PayloadFactory", source_file="factory.py", community=0)
+    scored = _score_nodes(G, ["payload"])
+    assert scored[0][1] == "exact"
+    assert scored[0][0] > scored[1][0]
+
+
+def test_score_nodes_snake_case_subword_hits_prefix_tier():
+    """"user" is a whole sub-word (real token) of "get_user_data" — matches.
+
+    P1 reopen (BM25 rewrite): "user" is only an *unanchored substring* of
+    "superuser_flag" ("user" is not its own morpheme — "superuser" is one
+    token), not a real word-boundary match. BM25 scores by exact token
+    equality, so "superuser_flag" now correctly scores 0 and doesn't
+    appear at all — this is the intended effect of the rewrite, not a
+    regression: coincidental unanchored-substring matches (a token merely
+    *containing* the query characters, not equaling any real morpheme)
+    were exactly the noise class that caused the original P1 bug
+    (single-word coincidental matches outranking the real target).
+    """
+    G = nx.Graph()
+    G.add_node("n1", label="get_user_data", source_file="user.py", community=0)
+    G.add_node("n2", label="superuser_flag", source_file="flag.py", community=0)
+    scored = _score_nodes(G, ["user"])
+    nids = [nid for _, nid in scored]
+    assert nids == ["n1"]
+
+
+def test_find_node_matches_spaced_query_against_camel_case_label():
+    """_find_node's exact-match tier resolves a spaced-out query against a
+    camelCase label via the same tokenizer fix (label_tokens), with no
+    separate code change needed in _find_node itself.
+    """
+    G = nx.Graph()
+    G.add_node("n1", label="getUserData", source_file="user.py")
+    assert _find_node(G, "get user data") == ["n1"]
 
 
 def test_find_node_ignores_trailing_punctuation():
@@ -275,11 +367,12 @@ def test_trigram_index_cached_and_rebuilt_per_graph():
 
 
 def test_query_terms_strips_search_punctuation():
-    assert _query_terms("what calls extract?") == ["what", "calls", "extract"]
+    # "what" is a stopword (P1 reopen) — dropped, not just punctuation-stripped.
+    assert _query_terms("what calls extract?") == ["calls", "extract"]
 
 
 def test_query_terms_filters_only_short_english_terms(monkeypatch):
-    import graphify.serve as serve_mod
+    import graphify.query as query_mod
 
     class FakeJieba:
         def cut(self, text):
@@ -292,7 +385,7 @@ def test_query_terms_filters_only_short_english_terms(monkeypatch):
                 "a前": ["a", "前"],
             }[text]
 
-    monkeypatch.setattr(serve_mod, "_jieba", FakeJieba())
+    monkeypatch.setattr(query_mod, "_jieba", FakeJieba())
     terms = _query_terms("前端 dependency 依赖 install 安装 to of 包管理器 项目约定 a前")
     assert terms == ["前端", "dependency", "依赖", "install", "安装", "包", "管理器", "包管理器", "项目", "约定", "项目约定", "前", "a前"]
 
@@ -581,11 +674,20 @@ def test_idf_downweights_common_terms():
 
 
 def test_idf_cached_on_graph():
-    """IDF results are stored in G.graph so repeated queries don't recompute."""
+    """BM25 corpus (tokens/df/avgdl/N) is stored in G.graph so repeated
+    queries don't retokenize every label from scratch.
+
+    P1 reopen (BM25 rewrite): _score_nodes no longer calls _compute_idf
+    directly (that function still exists and is tested independently below
+    — nothing else in the codebase calls it), so this test's premise
+    changed from "_idf_cache gets populated" to "_bm25_corpus gets
+    populated" — same caching *behavior*, different mechanism.
+    """
     G = _make_graph()
     _score_nodes(G, ["extract"])
-    assert "_idf_cache" in G.graph
-    assert "extract" in G.graph["_idf_cache"]
+    assert "_bm25_corpus" in G.graph
+    docs, df, avgdl, N = G.graph["_bm25_corpus"]
+    assert "extract" in df
 
 
 def test_idf_new_graph_starts_fresh():
@@ -704,6 +806,80 @@ def test_pick_seeds_multi_term_idf_recovers_node_past_raw_coverage_cap():
     assert "target_node" in seeds_weighted
 
 
+# --- P1 reopen: _score_nodes's discrete tier system, not _pick_seeds, is the
+# real defect (see p1-multiterm-seed-ranking-reopen.md) ---
+
+def test_query_terms_filters_stopwords():
+    """Function words (wh-words, articles, auxiliary verbs, prepositions) carry
+    no search signal and pollute both the exact-match tier in _score_nodes and
+    the BM25 IDF weighting that replaces it — see
+    p1-multiterm-seed-ranking-reopen.md."""
+    terms = _query_terms("how does the daemon forward browser requests to the GUI")
+    assert "how" not in terms
+    assert "does" not in terms
+    assert "the" not in terms
+    assert "to" not in terms
+    assert "daemon" in terms
+    assert "forward" in terms
+    assert "browser" in terms
+    assert "requests" in terms
+    assert "gui" in terms
+
+
+def test_query_terms_stopword_filter_does_not_remove_real_short_terms():
+    """A stopword filter must be an exact-match list, not a length heuristic —
+    real short identifiers/terms (length > 2, per the existing _is_searchable
+    rule) must survive untouched even if they'd superficially resemble a
+    function word."""
+    terms = _query_terms("run cli for gui")
+    assert "run" in terms
+    assert "cli" in terms
+    assert "gui" in terms
+    # "for" is a stopword and must be dropped:
+    assert "for" not in terms
+
+
+def test_score_nodes_bm25_short_label_does_not_arbitrarily_dominate_broad_match():
+    """A single-token node that exact-matches ONE query term must not
+    automatically outrank a node whose label substring-matches THREE query
+    terms, purely because of a fixed 1000x/1x tier gap. BM25's saturation +
+    length normalization must let broad coverage compete with narrow exact
+    matches based on actual term rarity, not a hand-picked multiplier."""
+    G = nx.DiGraph()
+    G.add_node("noise", label="requests", community=1)
+    G.add_node("target", label="forwardBrowserRequest", community=2)
+    # Populate enough of a corpus that "requests" is not universally rare —
+    # mirrors the real repro where "requests" appears in exactly 1 other
+    # label (df=8 on the real graph) while "forward"/"browser" are also rare.
+    for i in range(20):
+        G.add_node(f"filler{i}", label=f"filler{i}", community=10 + i)
+    terms = ["daemon", "forward", "browser", "requests"]
+    scored = _score_nodes(G, terms)
+    scored_map = {nid: s for s, nid in scored}
+    assert scored_map["target"] >= scored_map.get("noise", 0), (
+        "a node matching 2 of 4 terms (forward, browser — substrings of "
+        "forwardBrowserRequest) must not lose to a single exact match on "
+        "one generic term when BM25 scoring is used"
+    )
+
+
+def test_pick_seeds_bm25_scored_natural_language_query_reaches_real_target():
+    """End-to-end reproduction of the harness-terminal ceiling case, using
+    _score_nodes directly (not a synthetic score list) — the real defect
+    was in _score_nodes's tier system, not _pick_seeds's selection logic.
+    With BM25 scoring, .forwardBrowserRequest() must land in the raw top-3
+    without requiring _pick_seeds's community-diversification fallback."""
+    G = nx.DiGraph()
+    G.add_node("noise_requests", label="requests", community=1)
+    G.add_node("noise_daemon", label="daemon", community=2)
+    G.add_node("noise_browser", label="browser", community=3)
+    G.add_node("target", label="forwardBrowserRequest", community=4)
+    terms = _query_terms("how does the daemon forward browser requests to the GUI")
+    scored = _score_nodes(G, terms)
+    seeds = _pick_seeds(scored, G=G, multi_term=True, terms=terms)
+    assert "target" in seeds
+
+
 # --- actionable truncation hint (#897) ---
 
 def test_subgraph_to_text_truncation_hint_is_actionable():
@@ -764,14 +940,14 @@ def test_query_graph_text_context_filter_aliases_resolve():
 
 def test_query_terms_chinese_segments_with_cached_jieba(monkeypatch):
     """Chinese text should use the cached jieba module and keep the original term."""
-    import graphify.serve as serve_mod
+    import graphify.query as query_mod
 
     class FakeJieba:
         def cut(self, text):
             assert text == "页面路由"
             return ["页面", "路由"]
 
-    monkeypatch.setattr(serve_mod, "_jieba", FakeJieba())
+    monkeypatch.setattr(query_mod, "_jieba", FakeJieba())
     terms = _query_terms("页面路由")
     assert terms == ["页面", "路由", "页面路由"]
 
@@ -795,10 +971,10 @@ def test_query_terms_non_chinese_scripts_are_not_segmented():
 
 def test_query_terms_chinese_no_jieba_fallback(monkeypatch):
     """When jieba is not installed, fallback to character bigrams."""
-    import graphify.serve as serve_mod
+    import graphify.query as query_mod
 
-    monkeypatch.setattr(serve_mod, "_jieba", None)
-    terms = serve_mod._query_terms("页面路由")
+    monkeypatch.setattr(query_mod, "_jieba", None)
+    terms = query_mod._query_terms("页面路由")
     # bigram fallback: ["页面", "面路", "路由"] + original "页面路由"
     assert "页面" in terms
     assert "路由" in terms
