@@ -708,6 +708,18 @@ def test_extract_js_member_require_emits_property_symbol():
     assert _make_id(helpers_stem, "helperFn") in sym_targets
 
 
+def test_extract_gs_dispatches_to_js_extractor(tmp_path):
+    """Google Apps Script (.gs) is JS syntax — dispatch it to extract_js
+    rather than leaving it unsupported; no new extractor code needed."""
+    from graphify.extract import extract
+
+    f = tmp_path / "sync.gs"
+    f.write_text("function doGet(e) {\n  return ContentService.createTextOutput('ok');\n}\n")
+    result = extract([str(f)])
+    labels = [n["label"] for n in result["nodes"]]
+    assert "doGet()" in labels
+
+
 def test_extract_js_arrow_function_still_extracted():
     """Regression: arrow functions in lexical_declaration must still produce nodes."""
     from graphify.extract import extract_js

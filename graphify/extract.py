@@ -29,12 +29,16 @@ from graphify.extractors.base import (  # noqa: F401
     _read_text,
 )
 from graphify.extractors.blade import extract_blade  # noqa: F401
+from graphify.extractors.css import extract_css  # noqa: F401
 from graphify.extractors.csharp import (
     _resolve_cross_file_csharp_imports,
     _resolve_csharp_type_references,
 )
 from graphify.extractors.elixir import extract_elixir  # noqa: F401
+from graphify.extractors.html import extract_html  # noqa: F401
 from graphify.extractors.razor import extract_razor  # noqa: F401
+from graphify.extractors.robot import extract_robot  # noqa: F401
+from graphify.extractors.yaml_ import extract_yaml  # noqa: F401
 from graphify.extractors.zig import extract_zig  # noqa: F401
 from graphify.security import sanitize_metadata
 from graphify.paths import disambiguate_ambiguous_candidates
@@ -2412,6 +2416,35 @@ def _js_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
                    callable_def_nids: set | None = None,
                    local_bound_names: dict | None = None) -> bool:
     """Handle lexical_declaration (arrow functions, CJS requires, module-level const literals) for JS/TS. Returns True if handled."""
+    # Playwright/Jest-style test('description', ...) / describe('description', ...)
+    # calls -> a node per test case, so a spec.ts test block is individually
+    # findable by its description text (previously invisible: only the file and
+    # any top-level helper functions got nodes, never the test() calls themselves).
+    # Bare-identifier callees only (test/it/describe) — not test.only/.skip/.each,
+    # which stay out of scope until a real query gap demands them (#P4).
+    #
+    # Deliberately returns False (not True): returning True here would stop the
+    # default recursion below from ever reaching this call's children, silently
+    # dropping any describe(() => { it(...) }) nesting. Falling through lets the
+    # existing default-recurse case walk into the callback body and find nested
+    # test/describe calls the same way it already finds the const/require
+    # declarations inside one (see the scope-guard comment on lexical_declaration
+    # below, which documents that exact existing recursion path).
+    if node.type == "call_expression":
+        fn = node.child_by_field_name("function")
+        if fn is not None and fn.type == "identifier":
+            callee_name = _read_text(fn, source)
+            if callee_name in ("test", "it", "describe"):
+                args = node.child_by_field_name("arguments")
+                positional = [c for c in args.children if c.is_named] if args else []
+                if positional and positional[0].type == "string":
+                    desc = _read_text(positional[0], source).strip("'\"` ")
+                    if desc:
+                        line = node.start_point[0] + 1
+                        nid = _make_id(stem, desc, str(line))
+                        add_node_fn(nid, desc, line)
+                        add_edge_fn(file_nid, nid, "contains", line)
+
     # CommonJS / prototype member assignments whose value is a function:
     #   exports.X = () => {}     → file-contained function  X()
     #   module.exports.X = fn    → file-contained function  X()
@@ -14875,6 +14908,7 @@ _DISPATCH: dict[str, Any] = {
     ".js": extract_js,
     ".jsx": extract_js,
     ".mjs": extract_js,
+    ".gs": extract_js,
     ".ts": extract_js,
     ".tsx": extract_js,
     ".go": extract_go,
@@ -14928,6 +14962,9 @@ _DISPATCH: dict[str, Any] = {
     ".sv": extract_verilog,
     ".svh": extract_verilog,
     ".sql": extract_sql,
+    ".css": extract_css,
+    ".html": extract_html,
+    ".htm": extract_html,
     ".md": extract_markdown,
     ".mdx": extract_markdown,
     ".qmd": extract_markdown,
@@ -14943,6 +14980,8 @@ _DISPATCH: dict[str, Any] = {
     ".sh": extract_bash,
     ".bash": extract_bash,
     ".json": extract_json,
+    ".yaml": extract_yaml,
+    ".yml": extract_yaml,
     ".tf": extract_terraform,
     ".tfvars": extract_terraform,
     ".hcl": extract_terraform,
@@ -14961,6 +15000,8 @@ _DISPATCH: dict[str, Any] = {
     ".cshtml": extract_razor,
     ".cls": extract_apex,
     ".trigger": extract_apex,
+    ".robot": extract_robot,
+    ".resource": extract_robot,
 }
 
 

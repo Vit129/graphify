@@ -1,0 +1,923 @@
+"""Query engine: tokenize -> score -> seed -> traverse -> render.
+
+Extracted from serve.py (2026-07-02) purely to keep file size manageable —
+no behavior change. serve.py re-exports everything here so existing imports
+(`from graphify.serve import _score_nodes`, etc.) keep working unmodified.
+
+This module owns the full lexical query pipeline: BM25 scoring, camelCase/
+snake_case tokenization, trigram indexing, typo/abbreviation fuzzy fallback,
+context-filter inference, BFS/DFS traversal, and text rendering. It has no
+dependency on the MCP transport layer (stdio/HTTP) in serve.py — the
+dependency direction is one-way: serve.py imports from here, never the
+reverse.
+"""
+from __future__ import annotations
+import math
+import re
+from array import array
+from pathlib import Path
+import networkx as nx
+from graphify.security import sanitize_label
+
+try:
+    import jieba as _jieba  # type: ignore[import-untyped]
+except ImportError:
+    _jieba = None
+
+
+def _strip_diacritics(text: str | None) -> str:
+    import unicodedata
+    if not isinstance(text, str):
+        text = "" if text is None else str(text)
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
+_CAMEL_SPLIT_RE = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+|[^\W\d_]+")
+
+
+def _search_tokens(text: str) -> list[str]:
+    """Split text into word tokens on punctuation/underscore/hyphen *and*
+    camelCase/PascalCase boundaries, stripping diacritics.
+    """
+    return [tok.lower() for tok in _CAMEL_SPLIT_RE.findall(_strip_diacritics(str(text)))]
+
+
+def _has_chinese(text: str) -> bool:
+    return any("一" <= ch <= "鿿" for ch in text)
+
+
+def _segment_chinese(text: str) -> list[str]:
+    """Segment Chinese text and keep the original term for exact matching."""
+    if _jieba is not None:
+        segments = [w for w in _jieba.cut(text) if len(w.strip()) > 0]
+    else:
+        segments = [text[i:i + 2] for i in range(len(text) - 1)] or [text]
+    if len(text) > 1 and text not in segments:
+        segments.append(text)
+    return segments
+
+
+def _is_searchable(term: str) -> bool:
+    """True if term is Chinese, non-English, or an English word longer than 2 chars."""
+    if all("a" <= ch <= "z" for ch in term):
+        return len(term) > 2
+    return True
+
+
+_STOPWORDS = frozenset({
+    "how", "does", "is", "are", "the", "a", "an", "to", "of", "in", "on",
+    "for", "and", "or", "what", "which", "that", "do", "did", "will",
+    "would", "should", "can", "could", "with", "from", "at", "by", "this",
+})
+
+
+def _query_terms(question: str) -> list[str]:
+    """Split a query into searchable terms, segmenting Chinese text."""
+    terms: list[str] = []
+    for raw in question.split():
+        if _has_chinese(raw):
+            for seg in _segment_chinese(raw.lower().strip()):
+                seg = seg.strip()
+                if seg and _is_searchable(seg) and seg not in _STOPWORDS:
+                    terms.append(seg)
+        else:
+            for tok in re.findall(r"\w+", raw.lower()):
+                if _is_searchable(tok) and tok not in _STOPWORDS:
+                    terms.append(tok)
+    return terms
+
+
+# --- P5: typo/abbreviation cascade fallback ---
+#
+# Only invoked when the primary lexical pass (_score_nodes/_pick_seeds) finds
+# nothing at all. Corrects failing query terms against the graph's own
+# vocabulary, then hands the corrected terms back to the *unmodified*
+# _score_nodes pipeline.
+
+_NGRAM_SPAN_SIZES = (2, 3)
+
+
+def _get_vocabulary(G: nx.Graph) -> tuple[set[str], dict[int, list[str]], set[str], dict[int, list[str]]]:
+    """Two separate candidate pools, each length-bucketed, cached together on
+    G.graph like _idf_cache / _trigram_index: typo pool (sub-words + whole
+    labels + 2-/3-token spans) and abbreviation pool (sub-words + whole
+    labels only, no spans — mixing them in was tried and reverted, see
+    git history for the rationale).
+    """
+    cached = G.graph.get("_vocabulary")
+    if cached is not None:
+        return cached
+    typo_words: set[str] = set()
+    abbr_words: set[str] = set()
+    for _, data in G.nodes(data=True):
+        label = data.get("label") or ""
+        tokens = _search_tokens(label)
+        typo_words.update(tokens)
+        abbr_words.update(tokens)
+        whole = "".join(tokens)
+        if whole:
+            typo_words.add(whole)
+            abbr_words.add(whole)
+        for span_size in _NGRAM_SPAN_SIZES:
+            for i in range(len(tokens) - span_size + 1):
+                span = "".join(tokens[i:i + span_size])
+                if span:
+                    typo_words.add(span)
+    typo_buckets: dict[int, list[str]] = {}
+    for w in typo_words:
+        typo_buckets.setdefault(len(w), []).append(w)
+    abbr_buckets: dict[int, list[str]] = {}
+    for w in abbr_words:
+        abbr_buckets.setdefault(len(w), []).append(w)
+    result = (typo_words, typo_buckets, abbr_words, abbr_buckets)
+    G.graph["_vocabulary"] = result
+    return result
+
+
+def _damerau_levenshtein(a: str, b: str) -> int:
+    """Edit distance with adjacent transposition as a single edit."""
+    la, lb = len(a), len(b)
+    d: dict[tuple[int, int], int] = {}
+    for i in range(-1, la + 1):
+        d[(i, -1)] = i + 1
+    for j in range(-1, lb + 1):
+        d[(-1, j)] = j + 1
+    for i in range(la):
+        for j in range(lb):
+            cost = 0 if a[i] == b[j] else 1
+            d[(i, j)] = min(
+                d[(i - 1, j)] + 1,
+                d[(i, j - 1)] + 1,
+                d[(i - 1, j - 1)] + cost,
+            )
+            if i and j and a[i] == b[j - 1] and a[i - 1] == b[j]:
+                d[(i, j)] = min(d[(i, j)], d[(i - 2, j - 2)] + cost)
+    return d[(la - 1, lb - 1)]
+
+
+def _subsequence_score(query: str, target: str) -> int | None:
+    """Greedy ordered-subsequence match score, or None if `query`'s
+    characters don't all appear in `target` in order.
+    """
+    ti = 0
+    score = 0
+    last = -1
+    for qc in query:
+        found = False
+        while ti < len(target):
+            if target[ti] == qc:
+                score += 3
+                if last == ti - 1:
+                    score += 6
+                gap = ti - (last + 1)
+                if gap > 0:
+                    score -= gap
+                last = ti
+                ti += 1
+                found = True
+                break
+            ti += 1
+        if not found:
+            return None
+    if target.startswith(query):
+        score += 60
+    return score
+
+
+def _correct_term(term: str, G: nx.Graph) -> str | None:
+    """Best vocabulary correction for a term that matched nothing verbatim."""
+    if len(term) < 3:
+        return None
+    typo_words, typo_buckets, abbr_words, abbr_buckets = _get_vocabulary(G)
+    if term in typo_words:
+        return None
+
+    max_dist = 1 if len(term) <= 4 else 2
+    best_typo: tuple[int, str] | None = None
+    for length in range(len(term) - max_dist, len(term) + max_dist + 1):
+        for cand in typo_buckets.get(length, ()):
+            dist = _damerau_levenshtein(term, cand)
+            if dist <= max_dist and (best_typo is None or dist < best_typo[0]):
+                best_typo = (dist, cand)
+    if best_typo is not None:
+        return best_typo[1]
+
+    if len(term) <= 5:
+        best_abbr: tuple[int, str] | None = None
+        for length, cands in abbr_buckets.items():
+            if length < len(term) * 2:
+                continue
+            for cand in cands:
+                score = _subsequence_score(term, cand)
+                if score is not None and (best_abbr is None or score > best_abbr[0]):
+                    best_abbr = (score, cand)
+        if best_abbr is not None:
+            return best_abbr[1]
+
+    return None
+
+
+def _apply_vocabulary_corrections(
+    G: nx.Graph, terms: list[str]
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Map _correct_term over `terms`."""
+    corrected_terms: list[str] = []
+    corrections: list[tuple[str, str]] = []
+    for t in terms:
+        fix = _correct_term(t, G)
+        if fix is not None:
+            corrected_terms.append(fix)
+            corrections.append((t, fix))
+        else:
+            corrected_terms.append(t)
+    return corrected_terms, corrections
+
+
+def _fuzzy_substring_distance(pattern: str, text: str) -> int:
+    """Minimum edit distance between `pattern` and *some* substring of `text`
+    (Bitap/agrep-style approximate substring search, plain DP variant).
+    """
+    m, n = len(pattern), len(text)
+    prev = [0] * (n + 1)
+    for i in range(1, m + 1):
+        curr = [i] + [0] * n
+        for j in range(1, n + 1):
+            cost = 0 if pattern[i - 1] == text[j - 1] else 1
+            curr[j] = min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+        prev = curr
+    return min(prev)
+
+
+def _fuzzy_substring_seeds(
+    G: nx.Graph, terms: list[str], *, max_results: int = 5, min_term_len: int = 4
+) -> list[str]:
+    """Last-resort fallback when neither the primary lexical pass nor
+    _correct_term's vocabulary correction finds anything.
+    """
+    candidates: list[tuple[int, str]] = []
+    for term in terms:
+        if len(term) < min_term_len:
+            continue
+        max_dist = max(1, len(term) // 3)
+        for nid, data in G.nodes(data=True):
+            whole = "".join(_search_tokens(data.get("label") or ""))
+            if len(whole) < len(term):
+                continue
+            dist = _fuzzy_substring_distance(term, whole)
+            if dist <= max_dist:
+                candidates.append((dist, nid))
+    candidates.sort(key=lambda c: c[0])
+    seen: set[str] = set()
+    seeds: list[str] = []
+    for _, nid in candidates:
+        if nid not in seen:
+            seen.add(nid)
+            seeds.append(nid)
+        if len(seeds) >= max_results:
+            break
+    return seeds
+
+
+_EXACT_MATCH_BONUS = 1000.0
+_PREFIX_MATCH_BONUS = 100.0
+_SOURCE_MATCH_BONUS = 0.5
+
+
+def _compute_idf(G: nx.Graph, terms: list[str]) -> dict[str, float]:
+    """IDF weights for query terms, cached in G.graph['_idf_cache']."""
+    cache: dict[str, float] = G.graph.setdefault("_idf_cache", {})
+    N = G.number_of_nodes() or 1
+    uncached = [t for t in terms if t not in cache]
+    if uncached:
+        df: dict[str, int] = {t: 0 for t in uncached}
+        for _, data in G.nodes(data=True):
+            norm_label = (
+                data.get("norm_label") or _strip_diacritics(data.get("label") or "")
+            ).lower()
+            for t in uncached:
+                if t in norm_label:
+                    df[t] += 1
+        for t in uncached:
+            cache[t] = math.log(1 + N / (1 + df[t]))
+    return {t: cache.get(t, math.log(1 + N)) for t in terms}
+
+
+def _trigrams(text: str) -> set[str]:
+    """Character trigrams of `text`; for <3-char text the whole string is the key."""
+    if len(text) < 3:
+        return {text} if text else set()
+    return {text[i:i + 3] for i in range(len(text) - 2)}
+
+
+def _node_search_text(data: dict, nid: str) -> str:
+    """Concatenate every field _score_nodes / _find_node match a query against."""
+    norm_label = data.get("norm_label") or _strip_diacritics(data.get("label") or "").lower()
+    label_tokens = " ".join(_search_tokens(data.get("label") or ""))
+    source = (data.get("source_file") or "").lower()
+    source_tokens = " ".join(_search_tokens(data.get("source_file") or ""))
+    return "\x00".join((norm_label, label_tokens, str(nid).lower(), source, source_tokens))
+
+
+def _get_trigram_index(G: nx.Graph) -> dict:
+    """Lazily build and cache a trigram -> node-position postings map on the graph."""
+    idx = G.graph.get("_trigram_index")
+    if idx is not None:
+        return idx
+    ids = list(G.nodes())
+    postings: dict[str, array] = {}
+    for i, nid in enumerate(ids):
+        for g in _trigrams(_node_search_text(G.nodes[nid], nid)):
+            bucket = postings.get(g)
+            if bucket is None:
+                bucket = array("i")
+                postings[g] = bucket
+            bucket.append(i)
+    idx = {"ids": ids, "postings": postings, "set_cache": {}}
+    G.graph["_trigram_index"] = idx
+    return idx
+
+
+def _trigram_candidates(G: nx.Graph, needles: list[str], *, guard_frac: float = 0.10) -> list[str] | None:
+    """Node IDs whose text could contain any `needle` as a substring, via the
+    trigram index — a *superset* the caller then re-scores with exact predicates.
+    """
+    idx = _get_trigram_index(G)
+    ids, postings, set_cache = idx["ids"], idx["postings"], idx["set_cache"]
+    n = len(ids)
+    if n == 0:
+        return []
+    needles = [s for s in needles if s]
+    thresh = int(n * guard_frac)
+    for s in needles:
+        tgs = _trigrams(s)
+        if not tgs or any(len(g) < 3 for g in tgs):
+            return None
+        present = [len(postings[g]) for g in tgs if g in postings]
+        if not present:
+            continue
+        if min(present) > thresh:
+            return None
+    cand: set[int] = set()
+    for s in needles:
+        sets: list[set] | None = []
+        for g in _trigrams(s):
+            bucket = postings.get(g)
+            if bucket is None:
+                sets = None
+                break
+            cached = set_cache.get(g)
+            if cached is None:
+                cached = set(bucket)
+                set_cache[g] = cached
+            sets.append(cached)
+        if not sets:
+            continue
+        sets.sort(key=len)
+        hit = set(sets[0])
+        for other in sets[1:]:
+            hit &= other
+            if not hit:
+                break
+        cand |= hit
+    return [ids[i] for i in sorted(cand)]
+
+
+_BM25_K1 = 1.2
+_BM25_B = 0.75
+
+
+def _get_bm25_corpus(G: nx.Graph) -> tuple[dict[str, list[str]], dict[str, int], float, int]:
+    """Tokenized label per node (BM25's "document"), term -> document-frequency
+    over the *whole* graph, average document length, and node count.
+
+    Whole-graph, not trigram-prefiltered — a term's rarity must be a
+    property of the corpus, not of whatever candidate subset a different
+    query happened to narrow down to. Each document also gets one extra
+    pseudo-token: the label's whole concatenated form, so a query typed as
+    one literal word ("foobarservice") can still match a label BM25
+    tokenizes into morphemes ("FooBarService" -> foo/bar/service).
+
+    Cached on G.graph like _idf_cache / _trigram_index.
+    """
+    cached = G.graph.get("_bm25_corpus")
+    if cached is not None:
+        return cached
+    docs: dict[str, list[str]] = {}
+    df: dict[str, int] = {}
+    for nid, data in G.nodes(data=True):
+        tokens = _search_tokens(data.get("label") or "")
+        whole = "".join(tokens)
+        if whole and whole not in tokens:
+            tokens = tokens + [whole]
+        docs[nid] = tokens
+        for t in set(tokens):
+            df[t] = df.get(t, 0) + 1
+    N = len(docs) or 1
+    avgdl = (sum(len(d) for d in docs.values()) / N) if docs else 1.0
+    result = (docs, df, avgdl, N)
+    G.graph["_bm25_corpus"] = result
+    return result
+
+
+def _bm25_idf(term: str, df: dict[str, int], N: int) -> float:
+    """Standard Okapi BM25 IDF (Robertson-Sparck Jones form), floored at a
+    small positive epsilon so it never goes negative and flips sign.
+    """
+    d = df.get(term, 0)
+    return max(0.01, math.log(1 + (N - d + 0.5) / (d + 0.5)))
+
+
+def _score_nodes(G: nx.Graph, terms: list[str]) -> list[tuple[float, str]]:
+    scored = []
+    norm_terms = [tok for t in terms for tok in _search_tokens(t)]
+    if not norm_terms:
+        return []
+    docs, df, avgdl, N = _get_bm25_corpus(G)
+    unique_terms = set(norm_terms)
+    term_idf = {t: _bm25_idf(t, df, N) for t in unique_terms}
+    joined = " ".join(norm_terms)
+    joined_w = max((term_idf.get(t, 1.0) for t in norm_terms), default=1.0)
+    candidate_ids = _trigram_candidates(G, norm_terms + ([joined] if joined else []))
+    node_iter = (
+        G.nodes(data=True) if candidate_ids is None
+        else ((nid, G.nodes[nid]) for nid in candidate_ids)
+    )
+    for nid, data in node_iter:
+        norm_label = data.get("norm_label") or _strip_diacritics(data.get("label") or "").lower()
+        bare_label = norm_label.rstrip("()")
+        label_token_list = docs.get(nid) or _search_tokens(data.get("label") or "")
+        label_tokens = " ".join(label_token_list)
+        source = (data.get("source_file") or "").lower()
+        score = 0.0
+        # Full-query tier — additive bonus on top of the BM25 sum below, so
+        # `path`/`query` resolve the same node `explain` does via _find_node.
+        if joined:
+            nid_lower = nid.lower()
+            if joined in (norm_label, bare_label, label_tokens, nid_lower):
+                score += _EXACT_MATCH_BONUS * 10 * joined_w
+            elif (
+                norm_label.startswith(joined)
+                or bare_label.startswith(joined)
+                or label_tokens.startswith(joined)
+            ):
+                score += _PREFIX_MATCH_BONUS * 10 * joined_w
+        # BM25 term-frequency sum: saturating term-frequency and document-
+        # length normalization, replacing the old discrete exact/prefix/
+        # substring tier system.
+        dl = len(label_token_list) or 1
+        b_norm = 1 - _BM25_B + _BM25_B * dl / avgdl
+        tf: dict[str, int] = {}
+        for tok in label_token_list:
+            tf[tok] = tf.get(tok, 0) + 1
+        for t in unique_terms:
+            f = tf.get(t, 0)
+            if f:
+                score += term_idf[t] * f * (_BM25_K1 + 1) / (f + _BM25_K1 * b_norm)
+            if t in source:
+                score += _SOURCE_MATCH_BONUS * term_idf[t]
+        if score > 0:
+            scored.append((score, nid))
+    scored.sort(key=lambda s: (-s[0], len(G.nodes[s[1]].get("label") or s[1]), s[1]))
+    return scored
+
+
+def _pick_seeds(
+    scored: list[tuple[float, str]],
+    max_k: int = 3,
+    gap_ratio: float = 0.8,
+    G: nx.Graph | None = None,
+    multi_term: bool = False,
+    max_communities: int = 5,
+    terms: list[str] | None = None,
+) -> list[str]:
+    """Select BFS seed nodes, stopping when score drops too far below the top.
+
+    `gap_ratio` default is 0.8, calibrated for BM25's smooth continuous score
+    curve (raised from 0.2, which was calibrated against the old discrete
+    tier system's huge multiplicative cliffs).
+
+    Multi-term queries can hit an opposite failure: one term's exact-match
+    bonus can crown a coincidental exact match over a node that
+    substring-matches several OTHER query terms but lives in a different
+    community. When `G`/`multi_term` are supplied, keep the best-scoring node
+    from each additional distinct community, up to `max_communities`. When
+    `terms` is also supplied, rank the fill candidates by IDF-weighted
+    coverage rather than raw term count, so a generic word contributes little
+    and a specific identifier contributes close to a full point.
+    """
+    if not scored:
+        return []
+    top_score = scored[0][0]
+    seeds = []
+    for score, nid in scored[:max_k]:
+        if seeds and score < top_score * gap_ratio:
+            break
+        seeds.append(nid)
+    if G is not None and multi_term:
+        seen_communities = {G.nodes[n].get("community") for n in seeds}
+        candidates = scored
+        if terms:
+            def _node_text(nid: str) -> str:
+                data = G.nodes[nid]
+                return f"{data.get('norm_label') or (data.get('label') or '').lower()} {(data.get('source_file') or '').lower()}"
+
+            doc_freq = {t: 0 for t in terms}
+            for _, nid in scored:
+                text = _node_text(nid)
+                for t in terms:
+                    if t in text:
+                        doc_freq[t] += 1
+            term_weight = {t: 1.0 / math.log2(2 + df) for t, df in doc_freq.items()}
+
+            def _coverage(nid: str) -> float:
+                text = _node_text(nid)
+                return sum(term_weight[t] for t in terms if t in text)
+
+            candidates = sorted(scored, key=lambda s: (-_coverage(s[1]), -s[0]))
+        for score, nid in candidates:
+            if len(seeds) >= max_communities:
+                break
+            comm = G.nodes[nid].get("community")
+            if comm in seen_communities:
+                continue
+            seen_communities.add(comm)
+            seeds.append(nid)
+    return seeds
+
+
+_CONTEXT_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("call", ("call", "calls", "called", "invoke", "invokes", "invoked")),
+    ("import", ("import", "imports", "imported", "module", "modules")),
+    ("field", ("field", "fields", "member", "members", "property", "properties")),
+    ("parameter_type", ("parameter", "parameters", "param", "params", "argument", "arguments")),
+    ("return_type", ("return", "returns", "returned")),
+    ("generic_arg", ("generic", "generics", "template", "templates")),
+)
+
+
+_CONTEXT_FILTER_ALIASES: dict[str, str] = {
+    "param": "parameter_type",
+    "params": "parameter_type",
+    "parameter": "parameter_type",
+    "parameters": "parameter_type",
+    "argument": "parameter_type",
+    "arguments": "parameter_type",
+    "arg": "parameter_type",
+    "args": "parameter_type",
+    "return": "return_type",
+    "returns": "return_type",
+    "returned": "return_type",
+    "generic": "generic_arg",
+    "generics": "generic_arg",
+    "template": "generic_arg",
+    "templates": "generic_arg",
+    "annotation": "attribute",
+    "annotations": "attribute",
+    "decorator": "attribute",
+    "decorators": "attribute",
+    "calls": "call",
+    "called": "call",
+    "invoke": "call",
+    "invocation": "call",
+    "fields": "field",
+    "property": "field",
+    "properties": "field",
+    "member": "field",
+    "members": "field",
+    "imports": "import",
+    "imported": "import",
+    "module": "import",
+    "modules": "import",
+    "exports": "export",
+    "exported": "export",
+}
+
+
+def _normalize_context_filters(filters: list[str] | None) -> list[str]:
+    if not filters:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in filters:
+        key = _strip_diacritics(str(value)).strip().lower()
+        if not key:
+            continue
+        key = _CONTEXT_FILTER_ALIASES.get(key, key)
+        if key not in seen:
+            seen.add(key)
+            normalized.append(key)
+    return normalized
+
+
+def _infer_context_filters(question: str) -> list[str]:
+    lowered = {
+        _strip_diacritics(token).lower()
+        for token in question.replace("?", " ").replace(",", " ").split()
+    }
+    inferred: list[str] = []
+    for context, hints in _CONTEXT_HINTS:
+        if any(hint in lowered for hint in hints):
+            inferred.append(context)
+    return inferred
+
+
+def _resolve_context_filters(question: str, explicit_filters: list[str] | None = None) -> tuple[list[str], str | None]:
+    normalized = _normalize_context_filters(explicit_filters)
+    if normalized:
+        return normalized, "explicit"
+    inferred = _infer_context_filters(question)
+    if inferred:
+        return inferred, "heuristic"
+    return [], None
+
+
+def _filter_graph_by_context(G: nx.Graph, context_filters: list[str] | None) -> nx.Graph:
+    filters = set(_normalize_context_filters(context_filters))
+    if not filters:
+        return G
+    H = G.__class__()
+    H.add_nodes_from(G.nodes(data=True))
+    if isinstance(G, (nx.MultiGraph, nx.MultiDiGraph)):
+        for u, v, key, data in G.edges(keys=True, data=True):
+            if data.get("context") in filters:
+                H.add_edge(u, v, key=key, **data)
+    else:
+        for u, v, data in G.edges(data=True):
+            if data.get("context") in filters:
+                H.add_edge(u, v, **data)
+    return H
+
+
+def _bfs(G: nx.Graph, start_nodes: list[str], depth: int) -> tuple[set[str], list[tuple]]:
+    # p99 of degree distribution, floored at 50, so hubs aren't expanded as transit.
+    degrees = [G.degree(n) for n in G.nodes()]
+    if degrees:
+        degrees_sorted = sorted(degrees)
+        p99_idx = int(len(degrees_sorted) * 0.99)
+        hub_threshold = max(50, degrees_sorted[p99_idx])
+    else:
+        hub_threshold = 50
+    seed_set = set(start_nodes)
+    visited: set[str] = set(start_nodes)
+    frontier = set(start_nodes)
+    edges_seen: list[tuple] = []
+    for _ in range(depth):
+        next_frontier: set[str] = set()
+        for n in frontier:
+            if n not in seed_set and G.degree(n) >= hub_threshold:
+                continue
+            for neighbor in G.neighbors(n):
+                if neighbor not in visited:
+                    next_frontier.add(neighbor)
+                    edges_seen.append((n, neighbor))
+        visited.update(next_frontier)
+        frontier = next_frontier
+    return visited, edges_seen
+
+
+def _dfs(G: nx.Graph, start_nodes: list[str], depth: int) -> tuple[set[str], list[tuple]]:
+    degrees = [G.degree(n) for n in G.nodes()]
+    if degrees:
+        degrees_sorted = sorted(degrees)
+        p99_idx = int(len(degrees_sorted) * 0.99)
+        hub_threshold = max(50, degrees_sorted[p99_idx])
+    else:
+        hub_threshold = 50
+    seed_set = set(start_nodes)
+    visited: set[str] = set()
+    edges_seen: list[tuple] = []
+    stack = [(n, 0) for n in reversed(start_nodes)]
+    while stack:
+        node, d = stack.pop()
+        if node in visited or d > depth:
+            continue
+        visited.add(node)
+        if node not in seed_set and G.degree(node) >= hub_threshold:
+            continue
+        for neighbor in G.neighbors(node):
+            if neighbor not in visited:
+                stack.append((neighbor, d + 1))
+                edges_seen.append((node, neighbor))
+    return visited, edges_seen
+
+
+def _blast_radius_hops(
+    G: nx.Graph, nid: str, max_hops: int, direction: str, node_cap: int = 200
+) -> tuple[list[list[str]], bool, int]:
+    """Walk outward from `nid` hop by hop, direction-aware (callers/callees/both).
+    Returns (hops, truncated, node_cap). node_cap stops runaway on a
+    highly-connected god-node; truncation trims the tail of the last hop
+    reached deterministically.
+    """
+    visited = {nid}
+    hops: list[list[str]] = []
+    frontier = [nid]
+    for _ in range(max_hops):
+        next_frontier: list[str] = []
+        for n in frontier:
+            neighbors: list[str] = []
+            if direction in ("callees", "both"):
+                neighbors += list(G.successors(n))
+            if direction in ("callers", "both"):
+                neighbors += list(G.predecessors(n))
+            for nb in neighbors:
+                if nb not in visited:
+                    visited.add(nb)
+                    next_frontier.append(nb)
+        if not next_frontier:
+            break
+        hops.append(next_frontier)
+        frontier = next_frontier
+        if len(visited) - 1 >= node_cap:
+            break
+
+    total = sum(len(h) for h in hops)
+    truncated = total > node_cap
+    if truncated:
+        keep = node_cap
+        trimmed: list[list[str]] = []
+        for h in hops:
+            if keep <= 0:
+                break
+            trimmed.append(h[:keep])
+            keep -= len(h)
+        hops = trimmed
+    return hops, truncated, node_cap
+
+
+def _subgraph_to_text(G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *, seeds: list[str] | None = None) -> str:
+    """Render subgraph as text, cutting at token_budget (approx 3 chars/token).
+
+    seeds: exact-match nodes rendered first before the degree-sorted expansion,
+    so the queried symbol always appears at the top of the output.
+    """
+    char_budget = token_budget * 3
+    lines = []
+    overlay = getattr(G, "graph", {}).get("_learning_overlay", {}) or {}
+    seed_set = set(seeds or [])
+    ordered = [n for n in (seeds or []) if n in nodes] + \
+              sorted(nodes - seed_set, key=lambda n: G.degree(n), reverse=True)
+    for nid in ordered:
+        d = G.nodes[nid]
+        # Every LLM-derived field passes through sanitize_label before being
+        # concatenated into MCP tool output (F-010): an attacker who controls
+        # a corpus document can otherwise inject ANSI escapes or markup into
+        # the model's context via source_file / source_location / community.
+        entry = overlay.get(str(nid))
+        learning_suffix = ""
+        if entry:
+            status = sanitize_label(str(entry.get("status", "")))
+            if status:
+                learning_suffix = f" learning={status}{':stale' if entry.get('stale') else ''}"
+        line = (
+            f"NODE {sanitize_label(d.get('label', nid))} "
+            f"[src={sanitize_label(str(d.get('source_file', '')))} "
+            f"loc={sanitize_label(str(d.get('source_location', '')))} "
+            f"community={sanitize_label(str(d.get('community_name') or d.get('community', '')))}"
+            f"{learning_suffix}]"
+        )
+        lines.append(line)
+    for u, v in edges:
+        if u in nodes and v in nodes:
+            raw = G[u][v]
+            d = next(iter(raw.values()), {}) if isinstance(G, (nx.MultiGraph, nx.MultiDiGraph)) else raw
+            context = d.get("context")
+            context_suffix = f" context={sanitize_label(str(context))}" if context else ""
+            line = (
+                f"EDGE {sanitize_label(G.nodes[u].get('label', u))} "
+                f"--{sanitize_label(str(d.get('relation', '')))} "
+                f"[{sanitize_label(str(d.get('confidence', '')))}{context_suffix}]--> "
+                f"{sanitize_label(G.nodes[v].get('label', v))}"
+            )
+            lines.append(line)
+    output = "\n".join(lines)
+    if len(output) > char_budget:
+        cut_at = output[:char_budget].rfind("\n")
+        cut_at = cut_at if cut_at > 0 else char_budget
+        total_nodes = sum(1 for l in lines if l.startswith("NODE "))
+        shown_nodes = output[:cut_at].count("\nNODE ") + (1 if output.startswith("NODE ") else 0)
+        cut_count = total_nodes - shown_nodes
+        output = (
+            output[:cut_at]
+            + f"\n... (truncated — {cut_count} more nodes cut by ~{token_budget}-token budget."
+            f" Narrow with context_filter=['call'] or use get_node for a specific symbol)"
+        )
+    return output
+
+
+def _query_graph_text(
+    G: nx.Graph,
+    question: str,
+    *,
+    mode: str = "bfs",
+    depth: int = 3,
+    token_budget: int = 2000,
+    context_filters: list[str] | None = None,
+) -> str:
+    terms = _query_terms(question)
+    scored = _score_nodes(G, terms)
+    start_nodes = _pick_seeds(scored, G=G, multi_term=len(set(terms)) > 1, terms=terms)
+    correction_note = ""
+    if not start_nodes:
+        corrected_terms, corrections = _apply_vocabulary_corrections(G, terms)
+        if corrections:
+            scored = _score_nodes(G, corrected_terms)
+            start_nodes = _pick_seeds(
+                scored, G=G, multi_term=len(set(corrected_terms)) > 1, terms=corrected_terms
+            )
+            if start_nodes:
+                pairs = ", ".join(f'"{o}" -> "{c}"' for o, c in corrections)
+                correction_note = f"Note: no exact match; corrected possible typo(s) {pairs}"
+    if not start_nodes:
+        # Last resort: approximate-substring (Bitap-style) match against
+        # whole labels, for typos of a compound span longer than the
+        # n-gram vocabulary's 3-token window.
+        start_nodes = _fuzzy_substring_seeds(G, terms)
+        if start_nodes:
+            correction_note = (
+                "Note: no exact or corrected match; showing closest approximate "
+                "matches (low confidence, verify before relying on this)"
+            )
+    if not start_nodes:
+        return "No matching nodes found."
+    resolved_filters, filter_source = _resolve_context_filters(question, context_filters)
+    traversal_graph = _filter_graph_by_context(G, resolved_filters)
+    nodes, edges = _dfs(traversal_graph, start_nodes, depth) if mode == "dfs" else _bfs(traversal_graph, start_nodes, depth)
+    header_parts = [
+        f"Traversal: {mode.upper()} depth={depth}",
+        f"Start: {[G.nodes[n].get('label', n) for n in start_nodes]}",
+    ]
+    if correction_note:
+        header_parts.append(correction_note)
+    if resolved_filters:
+        header_parts.append(f"Context: {', '.join(resolved_filters)} ({filter_source})")
+    header_parts.append(f"{len(nodes)} nodes found")
+    header = " | ".join(header_parts) + "\n\n"
+    return header + _subgraph_to_text(traversal_graph, nodes, edges, token_budget)
+
+
+def _find_node(G: nx.Graph, label: str) -> list[str]:
+    """_find_node_core, with one vocabulary-correction retry (P5) if the
+    label matches nothing verbatim.
+    """
+    result = _find_node_core(G, label)
+    if result:
+        return result
+    corrected_terms, corrections = _apply_vocabulary_corrections(G, _search_tokens(label))
+    if not corrections:
+        return result
+    return _find_node_core(G, " ".join(corrected_terms))
+
+
+def _find_node_core(G: nx.Graph, label: str) -> list[str]:
+    """Return node IDs whose label or ID matches the search term (diacritic-insensitive).
+
+    Results are ordered by precedence: exact source-file path match first, then
+    exact (label/ID) match, then prefix match, then substring match.
+    """
+    term = " ".join(_search_tokens(label))
+    if not term:
+        return []
+    source_exact: list[str] = []
+    exact: list[str] = []
+    prefix: list[str] = []
+    substring: list[str] = []
+    candidate_ids = _trigram_candidates(G, [term])
+    node_iter = (
+        G.nodes(data=True) if candidate_ids is None
+        else ((nid, G.nodes[nid]) for nid in candidate_ids)
+    )
+    for nid, d in node_iter:
+        norm_label = d.get("norm_label") or _strip_diacritics(d.get("label") or "").lower()
+        bare_label = norm_label.rstrip("()")
+        label_tokens = " ".join(_search_tokens(d.get("label") or ""))
+        source_tokens = " ".join(_search_tokens(d.get("source_file") or ""))
+        nid_lower = nid.lower()
+        if term == source_tokens:
+            source_exact.append(nid)
+        elif term == norm_label or term == bare_label or term == label_tokens or term == nid_lower:
+            exact.append(nid)
+        elif (
+            norm_label.startswith(term)
+            or bare_label.startswith(term)
+            or label_tokens.startswith(term)
+            or nid_lower.startswith(term)
+        ):
+            prefix.append(nid)
+        elif term in norm_label or term in label_tokens:
+            substring.append(nid)
+
+    if source_exact:
+        query_basename = _strip_diacritics(Path(label).name).lower()
+        preferred = [
+            nid
+            for nid in source_exact
+            if str(G.nodes[nid].get("source_location", "")) == "L1"
+            and _strip_diacritics(str(G.nodes[nid].get("label") or "")).lower()
+            == query_basename
+        ]
+        if len(preferred) == 1:
+            source_exact = preferred + [nid for nid in source_exact if nid != preferred[0]]
+
+    return source_exact + exact + prefix + substring
