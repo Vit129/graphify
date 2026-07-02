@@ -4,6 +4,8 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 ## Unreleased
 
+## 0.12.0 (2026-07-02)
+
 - Merged upstream through `safishamsi/graphify@v8`'s 0.9.5 (see that section below) into this fork's `main`. One real overlap with this fork's own P1/P9 query-pipeline work: upstream independently fixed the same "question words dominate BFS seeding" bug this fork's P1 reopen already addressed, with a broader stopword list (`why`/`when`/`where`/`has`/`have`/`work`/`works`/`working`/etc., not in this fork's own list) and a fallback-to-unfiltered behavior for all-stopword queries (`"how does it work"` now seeds on `how`/`does`/`work` instead of nothing) that this fork's `_query_terms` didn't have. Merged both stopword lists into one in `graphify/query.py`'s `_STOPWORDS` and ported the fallback logic in; this fork's version lives in `query.py` (not `serve.py`, where upstream's fix landed) since P1's session already relocated the whole query pipeline there — `serve.py`'s conflicting standalone copy of the pre-BM25 scoring logic was discarded in favor of this fork's BM25 rewrite, which already supersedes it.
 
 ## 0.11.1 (2026-07-02)
