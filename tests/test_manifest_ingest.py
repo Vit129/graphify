@@ -24,8 +24,9 @@ def test_manifests_classify_as_code_not_document(tmp_path):
         p = _write(tmp_path / name, "x")
         assert is_package_manifest_path(p)
         assert classify_file(p) is FileType.CODE, name
-    # a generic yaml stays a document
-    assert classify_file(_write(tmp_path / "config.yaml", "a: 1")) is FileType.DOCUMENT
+    # A generic (non-manifest) yaml is now also CODE: extract_yaml gives it
+    # real deterministic AST extraction (P2), not just recognized manifests.
+    assert classify_file(_write(tmp_path / "config.yaml", "a: 1")) is FileType.CODE
 
 
 # ── per-format parsing ───────────────────────────────────────────────────────
