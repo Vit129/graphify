@@ -801,7 +801,7 @@ Graph complete. Outputs in PATH_TO_DIR/graphify-out/
   wiki/                 - agent-crawlable wiki, start at wiki/index.md (only if --wiki was given)
 ```
 
-If graphify saved you time, consider supporting it: https://github.com/sponsors/safishamsi
+Documentation and source code: https://github.com/Vit129/graphify
 
 Replace PATH_TO_DIR with the actual absolute path of the directory that was processed.
 

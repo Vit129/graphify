@@ -47,9 +47,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/safishamsi/graphify"
-Repository = "https://github.com/safishamsi/graphify"
-Issues = "https://github.com/safishamsi/graphify/issues"
+Homepage = "https://github.com/Vit129/graphify"
+Repository = "https://github.com/Vit129/graphify"
+Issues = "https://github.com/Vit129/graphify/issues"
 
 [project.optional-dependencies]
 # starlette is pulled in transitively by mcp, but graphify/serve.py imports it
