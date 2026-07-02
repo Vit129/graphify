@@ -1,7 +1,7 @@
 # validate extraction JSON against the graphify schema before graph assembly
 from __future__ import annotations
 
-VALID_FILE_TYPES = {"code", "document", "paper", "image"}
+VALID_FILE_TYPES = {"code", "document", "paper", "image", "rationale", "concept"}
 VALID_CONFIDENCES = {"EXTRACTED", "INFERRED", "AMBIGUOUS"}
 REQUIRED_NODE_FIELDS = {"id", "label", "file_type", "source_file"}
 REQUIRED_EDGE_FIELDS = {"source", "target", "relation", "confidence", "source_file"}
@@ -17,6 +17,12 @@ def validate_extraction(data: dict) -> list[str]:
 
     errors: list[str] = []
 
+    # Collected during the node pass so the edge pass can reuse it. Only
+    # hashable ids land here; a non-hashable id (e.g. a list emitted by a
+    # malformed LLM extraction) is reported as an error rather than crashing
+    # the validator on set construction.
+    node_ids: set = set()
+
     # Nodes
     if "nodes" not in data:
         errors.append("Missing required key 'nodes'")
@@ -30,20 +36,29 @@ def validate_extraction(data: dict) -> list[str]:
             for field in REQUIRED_NODE_FIELDS:
                 if field not in node:
                     errors.append(f"Node {i} (id={node.get('id', '?')!r}) missing required field '{field}'")
+            if "id" in node:
+                try:
+                    hash(node["id"])
+                except TypeError:
+                    errors.append(
+                        f"Node {i} has non-hashable id {node['id']!r} - id must be a string"
+                    )
+                else:
+                    node_ids.add(node["id"])
             if "file_type" in node and node["file_type"] not in VALID_FILE_TYPES:
                 errors.append(
                     f"Node {i} (id={node.get('id', '?')!r}) has invalid file_type "
                     f"'{node['file_type']}' - must be one of {sorted(VALID_FILE_TYPES)}"
                 )
 
-    # Edges
-    if "edges" not in data:
+    # Edges - accept "links" (NetworkX <= 3.1) as fallback for "edges"
+    edge_list = data.get("edges") if "edges" in data else data.get("links")
+    if edge_list is None:
         errors.append("Missing required key 'edges'")
-    elif not isinstance(data["edges"], list):
+    elif not isinstance(edge_list, list):
         errors.append("'edges' must be a list")
     else:
-        node_ids = {n["id"] for n in data.get("nodes", []) if isinstance(n, dict) and "id" in n}
-        for i, edge in enumerate(data["edges"]):
+        for i, edge in enumerate(edge_list):
             if not isinstance(edge, dict):
                 errors.append(f"Edge {i} must be an object")
                 continue
@@ -55,10 +70,19 @@ def validate_extraction(data: dict) -> list[str]:
                     f"Edge {i} has invalid confidence '{edge['confidence']}' "
                     f"- must be one of {sorted(VALID_CONFIDENCES)}"
                 )
-            if "source" in edge and node_ids and edge["source"] not in node_ids:
-                errors.append(f"Edge {i} source '{edge['source']}' does not match any node id")
-            if "target" in edge and node_ids and edge["target"] not in node_ids:
-                errors.append(f"Edge {i} target '{edge['target']}' does not match any node id")
+            for endpoint in ("source", "target"):
+                if endpoint not in edge:
+                    continue
+                val = edge[endpoint]
+                try:
+                    unmatched = bool(node_ids) and val not in node_ids
+                except TypeError:
+                    errors.append(
+                        f"Edge {i} {endpoint} {val!r} is non-hashable - must be a string"
+                    )
+                    continue
+                if unmatched:
+                    errors.append(f"Edge {i} {endpoint} '{val}' does not match any node id")
 
     return errors
 

@@ -4,6 +4,108 @@ from datetime import date
 import networkx as nx
 
 
+def summarize(report: str, project_name: str) -> str:
+    """Condense a full GRAPH_REPORT.md into a ~50-line digest for auto-loading
+    into an AI assistant's context (e.g. via CLAUDE.md/AGENTS.md @-import).
+
+    Keeps only the sections useful for orientation before an edit: Summary,
+    Graph Freshness, God Nodes, Surprising Connections. Each section is capped
+    so one giant community/god-node list can't blow up the digest size.
+    """
+    SECTIONS = [
+        ("## Summary", 8),
+        ("## Graph Freshness", 6),
+        ("## God Nodes", 13),
+        ("## Surprising Connections", 12),
+    ]
+    lines = report.splitlines()
+
+    def _section(header_prefix: str, max_lines: int) -> list[str]:
+        out: list[str] = []
+        on = False
+        for line in lines:
+            if line.startswith(header_prefix):
+                on = True
+                out.append(line)
+                continue
+            if on and line.startswith("## ") and not line.startswith(header_prefix):
+                break
+            if on:
+                out.append(line)
+                if len(out) - 1 >= max_lines:
+                    break
+        return out
+
+    out = [
+        f"# Graph Summary — {project_name}",
+        "_Auto-generated from GRAPH_REPORT.md · do not edit manually_",
+        "_Regen: `graphify update .`_",
+        "",
+    ]
+    for header, cap in SECTIONS:
+        section_lines = _section(header, cap)
+        if section_lines:
+            out += section_lines + [""]
+    out.append("_Full map → GRAPH_REPORT.md · query: `graphify query \"...\"`_")
+    return "\n".join(out) + "\n"
+
+
+def load_learning_for_report(graph_path) -> dict | None:
+    """Assemble the report's work-memory inputs from sibling artifacts.
+
+    Reads the ``.graphify_learning.json`` overlay (preferred sources) next to
+    ``graph_path`` and re-aggregates the memory docs for the query-scoped
+    dead-ends. Best-effort: returns None if neither is available, so the report
+    simply omits the section. Never raises.
+    """
+    from pathlib import Path as _Path
+    try:
+        gp = _Path(graph_path)
+        from graphify.reflect import load_learning_overlay, load_memory_docs, aggregate_lessons
+        overlay = load_learning_overlay(gp)
+        dead_ends: list[dict] = []
+        mem = gp.parent / "memory"
+        if mem.is_dir():
+            agg = aggregate_lessons(load_memory_docs(mem))
+            dead_ends = agg.get("dead_ends", [])
+        if not overlay and not dead_ends:
+            return None
+        return {"overlay": overlay, "dead_ends": dead_ends}
+    except Exception:
+        return None
+
+
+def _learning_section(lines: list, learning: dict | None, top_n: int = 10) -> None:
+    """Append the ``## Work-memory lessons`` section, or nothing when empty."""
+    if not learning:
+        return
+    overlay = learning.get("overlay") or {}
+    dead_ends = learning.get("dead_ends") or []
+    preferred = [
+        (nid, e) for nid, e in overlay.items()
+        if isinstance(e, dict) and e.get("status") == "preferred"
+    ]
+    # Most-corroborated first (uses desc), then by score, then id for stability.
+    preferred.sort(key=lambda kv: (-kv[1].get("uses", 0),
+                                   -float(kv[1].get("score", 0) or 0), kv[0]))
+    if not preferred and not dead_ends:
+        return
+    lines += ["", "## Work-memory lessons"]
+    if preferred:
+        lines += ["", "**Preferred sources** — corroborated by past sessions; start here."]
+        for nid, e in preferred[:top_n]:
+            label = e.get("label") or nid
+            stale = " _(code changed — re-verify)_" if e.get("stale") else ""
+            lines.append(f"- `{label}` ({e.get('uses', 0)}× useful, "
+                         f"score={e.get('score', 0)}){stale}")
+    if dead_ends:
+        lines += ["", "**Known dead ends** — questions that led nowhere; don't re-derive."]
+        for d in dead_ends:
+            nodes = ", ".join(f"`{n}`" for n in d.get("nodes", []))
+            lines.append(f"- \"{d.get('question', '')}\""
+                         + (f" -> {nodes}" if nodes else ""))
+
+
 def generate(
     G: nx.Graph,
     communities: dict[int, list[str]],
@@ -15,8 +117,15 @@ def generate(
     token_cost: dict,
     root: str,
     suggested_questions: list[dict] | None = None,
+    min_community_size: int = 3,
+    built_at_commit: str | None = None,
+    learning: dict | None = None,
 ) -> str:
     today = date.today().isoformat()
+
+    # JSON deserialization produces string keys; normalize to int so .get(cid) works.
+    if community_labels:
+        community_labels = {int(k) if isinstance(k, str) else k: v for k, v in community_labels.items()}
 
     confidences = [d.get("confidence", "EXTRACTED") for _, _, d in G.edges(data=True)]
     total = len(confidences) or 1
@@ -41,18 +150,40 @@ def generate(
             "- Verdict: corpus is large enough that graph structure adds value.",
         ]
 
+    from .analyze import _is_file_node as _ifn
+    non_empty = {cid: nodes for cid, nodes in communities.items()
+                 if any(not _ifn(G, n) for n in nodes)}
+    thin_count_summary = sum(
+        1 for nodes in communities.values()
+        if 0 < sum(1 for n in nodes if not _ifn(G, n)) < min_community_size
+    )
+    shown_count = len(communities) - thin_count_summary
+
     lines += [
         "",
         "## Summary",
-        f"- {G.number_of_nodes()} nodes · {G.number_of_edges()} edges · {len(communities)} communities detected",
+        f"- {G.number_of_nodes()} nodes · {G.number_of_edges()} edges · {len(communities)} communities"
+        + (f" ({shown_count} shown, {thin_count_summary} thin omitted)" if thin_count_summary else ""),
         f"- Extraction: {ext_pct}% EXTRACTED · {inf_pct}% INFERRED · {amb_pct}% AMBIGUOUS"
         + (f" · INFERRED: {len(inf_edges)} edges (avg confidence: {inf_avg})" if inf_avg is not None else ""),
         f"- Token cost: {token_cost.get('input', 0):,} input · {token_cost.get('output', 0):,} output",
+    ]
+
+    if built_at_commit:
+        lines += [
+            "",
+            "## Graph Freshness",
+            f"- Built from commit: `{built_at_commit[:8]}`",
+            "- Run `git rev-parse HEAD` and compare to check if the graph is stale.",
+            "- Run `graphify update .` after code changes (no API cost).",
+        ]
+
+    lines += [
         "",
         "## God Nodes (most connected - your core abstractions)",
     ]
     for i, node in enumerate(god_node_list, 1):
-        lines.append(f"{i}. `{node['label']}` - {node['edges']} edges")
+        lines.append(f"{i}. `{node['label']}` - {node['degree']} edges")
 
     lines += ["", "## Surprising Connections (you probably didn't know these)"]
     if surprise_list:
@@ -74,6 +205,21 @@ def generate(
     else:
         lines.append("- None detected - all connections are within the same source files.")
 
+    # Circular imports surfaced from file-level dependency graph.
+    from .analyze import find_import_cycles
+    cycles = find_import_cycles(G)
+    lines += ["", "## Import Cycles"]
+    if cycles:
+        for c in cycles:
+            cycle = c.get("cycle", [])
+            length = c.get("length", len(cycle))
+            if not cycle:
+                continue
+            cycle_path = " -> ".join(cycle + [cycle[0]])
+            lines.append(f"- {length}-file cycle: `{cycle_path}`")
+    else:
+        lines.append("- None detected.")
+
     hyperedges = G.graph.get("hyperedges", [])
     if hyperedges:
         lines += ["", "## Hyperedges (group relationships)"]
@@ -84,19 +230,22 @@ def generate(
             conf_tag = f"{conf} {cscore:.2f}" if cscore is not None else conf
             lines.append(f"- **{h.get('label', h.get('id', ''))}** — {node_labels} [{conf_tag}]")
 
-    lines += ["", "## Communities"]
-    from .analyze import _is_file_node as _ifn
+    lines += ["", f"## Communities ({len(communities)} total, {thin_count_summary} thin omitted)"]
     for cid, nodes in communities.items():
         label = community_labels.get(cid, f"Community {cid}")
         score = cohesion_scores.get(cid, 0.0)
         # Filter method/function stubs from display - they're structural noise
         real_nodes = [n for n in nodes if not _ifn(G, n)]
+        if not real_nodes:
+            continue
+        if len(real_nodes) < min_community_size:
+            continue
         display = [G.nodes[n].get("label", n) for n in real_nodes[:8]]
         suffix = f" (+{len(real_nodes)-8} more)" if len(real_nodes) > 8 else ""
         lines += [
             "",
             f"### Community {cid} - \"{label}\"",
-            f"Cohesion: {score}",
+            f"Cohesion: {score:.2f}",
             f"Nodes ({len(real_nodes)}): {', '.join(display)}{suffix}",
         ]
 
@@ -112,16 +261,21 @@ def generate(
             ]
 
     # --- Gaps section ---
-    from .analyze import _is_file_node, _is_concept_node
+    from .analyze import _is_file_node, _is_concept_node, unreachable_functions
 
     isolated = [
         n for n in G.nodes()
-        if G.degree(n) <= 1 and not _is_file_node(G, n) and not _is_concept_node(G, n)
+        if G.degree(n) <= 1
+        and not _is_file_node(G, n)
+        and not _is_concept_node(G, n)
+        and G.nodes[n].get("file_type") != "rationale"
     ]
     thin_communities = {
-        cid: nodes for cid, nodes in communities.items() if len(nodes) < 3
+        cid: nodes for cid, nodes in communities.items()
+        if 0 < sum(1 for n in nodes if not _is_file_node(G, n)) < 3
     }
-    gap_count = len(isolated) + len(thin_communities)
+    dead_functions = unreachable_functions(G)
+    gap_count = len(isolated) + len(thin_communities) + len(dead_functions)
 
     if gap_count > 0 or amb_pct > 20:
         lines += ["", "## Knowledge Gaps"]
@@ -131,13 +285,21 @@ def generate(
             lines.append(f"- **{len(isolated)} isolated node(s):** {', '.join(f'`{l}`' for l in isolated_labels)}{suffix}")
             lines.append("  These have ≤1 connection - possible missing edges or undocumented components.")
         if thin_communities:
-            for cid, nodes in thin_communities.items():
-                label = community_labels.get(cid, f"Community {cid}")
-                node_labels = [G.nodes[n].get("label", n) for n in nodes]
-                lines.append(f"- **Thin community `{label}`** ({len(nodes)} nodes): {', '.join(f'`{l}`' for l in node_labels)}")
-                lines.append("  Too small to be a meaningful cluster - may be noise or needs more connections extracted.")
+            lines.append(f"- **{len(thin_communities)} thin communities (<{min_community_size} nodes) omitted from report** — run `graphify query` to explore isolated nodes.")
+        if dead_functions:
+            dead_labels = [d["label"] for d in dead_functions[:5]]
+            suffix = f" (+{len(dead_functions)-5} more)" if len(dead_functions) > 5 else ""
+            lines.append(f"- **{len(dead_functions)} possibly unreachable function(s):** {', '.join(f'`{l}`' for l in dead_labels)}{suffix}")
+            lines.append("  Not reached from any recognized entry point - could be dead code, or dynamically dispatched/decorator-registered.")
         if amb_pct > 20:
             lines.append(f"- **High ambiguity: {amb_pct}% of edges are AMBIGUOUS.** Review the Ambiguous Edges section above.")
+
+    # --- Work-memory lessons (derived overlay) ---
+    # Preferred sources come from the .graphify_learning.json sidecar; the
+    # query-scoped dead-ends come from the reflect aggregate. Section omitted
+    # entirely when neither is present, so a graph with no work-memory is
+    # byte-identical to the pre-feature report.
+    _learning_section(lines, learning)
 
     if suggested_questions:
         lines += ["", "## Suggested Questions"]

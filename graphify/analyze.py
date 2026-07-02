@@ -1,6 +1,50 @@
 """Graph analysis: god nodes (most connected), surprising connections (cross-community), suggested questions."""
 from __future__ import annotations
+from pathlib import Path
 import networkx as nx
+
+from graphify.build import edge_data
+
+# Builtin/mock names that can appear as annotation-derived nodes in pre-existing
+# graphs. Excluded from god-node ranking so they don't displace real abstractions
+# even if they weren't filtered at extraction time (#1147).
+_BUILTIN_NOISE_LABELS = frozenset({
+    "str", "int", "float", "bool", "bytes", "bytearray", "complex", "object",
+    "True", "False",
+    "MagicMock", "Mock", "AsyncMock", "NonCallableMock",
+    "NonCallableMagicMock", "PropertyMock", "patch", "sentinel",
+    # Python stdlib types commonly confused for project symbols
+    "Path", "Any", "Optional", "List", "Dict", "Set", "Tuple", "Union",
+    "Callable", "Type", "ClassVar", "Final", "Literal", "Protocol",
+    "Counter", "defaultdict", "OrderedDict", "datetime", "Enum",
+    "os", "sys", "re", "json", "io", "abc", "typing",
+})
+
+# Language families — extensions sharing a runtime can legitimately call each other
+_LANG_FAMILY: dict[str, str] = {
+    **{e: "python" for e in (".py", ".pyw")},
+    **{e: "js" for e in (".js", ".jsx", ".mjs", ".ejs", ".ts", ".tsx", ".vue", ".svelte")},
+    **{e: "go" for e in (".go",)},
+    **{e: "rust" for e in (".rs",)},
+    **{e: "jvm" for e in (".java", ".kt", ".kts", ".scala")},
+    **{e: "c" for e in (".c", ".h", ".cpp", ".cc", ".cxx", ".hpp")},
+    **{e: "ruby" for e in (".rb",)},
+    **{e: "swift" for e in (".swift",)},
+    **{e: "dotnet" for e in (".cs",)},
+    **{e: "php" for e in (".php",)},
+    **{e: "r" for e in (".r",)},
+}
+
+
+def _cross_language(src_a: str, src_b: str) -> bool:
+    """Return True if two source files belong to different language families."""
+    ext_a = Path(src_a).suffix.lower()
+    ext_b = Path(src_b).suffix.lower()
+    fam_a = _LANG_FAMILY.get(ext_a)
+    fam_b = _LANG_FAMILY.get(ext_b)
+    if fam_a is None or fam_b is None:
+        return False
+    return fam_a != fam_b
 
 
 def _node_community_map(communities: dict[int, list[str]]) -> dict[str, int]:
@@ -16,12 +60,16 @@ def _is_file_node(G: nx.Graph, node_id: str) -> bool:
     These are synthetic nodes created by the AST extractor and should be excluded
     from god nodes, surprising connections, and knowledge gap reporting.
     """
-    label = G.nodes[node_id].get("label", "")
+    attrs = G.nodes[node_id]
+    label = attrs.get("label", "")
     if not label:
         return False
-    # File-level hub: label is a filename with a code extension
-    if label.split(".")[-1] in ("py", "ts", "js", "go", "rs", "java", "rb", "cpp", "c", "h"):
-        return True
+    # File-level hub: label matches the actual source filename (not just any label ending in .py)
+    source_file = attrs.get("source_file", "")
+    if source_file:
+        from pathlib import Path as _Path
+        if label == _Path(source_file).name:
+            return True
     # Method stub: AST extractor labels methods as '.method_name()'
     if label.startswith(".") and label.endswith("()"):
         return True
@@ -32,23 +80,61 @@ def _is_file_node(G: nx.Graph, node_id: str) -> bool:
     return False
 
 
-def god_nodes(G: nx.Graph, top_n: int = 10) -> list[dict]:
+_JSON_NOISE_LABELS: frozenset[str] = frozenset({
+    "start", "end", "name", "id", "type", "properties",
+    "value", "key", "data", "items", "title", "description", "version",
+    "dependencies", "devdependencies", "peerdependencies",
+    "optionaldependencies", "bundleddependencies", "bundledependencies",
+})
+
+
+def _is_json_key_node(G: nx.Graph, node_id: str) -> bool:
+    attrs = G.nodes[node_id]
+    src = (attrs.get("source_file") or "").lower()
+    if not src.endswith(".json"):
+        return False
+    label = (attrs.get("label") or "").strip().lower()
+    return label in _JSON_NOISE_LABELS
+
+
+def god_nodes(G: nx.Graph, top_n: int = 10, by: str = "degree") -> list[dict]:
     """Return the top_n most-connected real entities - the core abstractions.
 
     File-level hub nodes are excluded: they accumulate import/contains edges
     mechanically and don't represent meaningful architectural abstractions.
+
+    by="degree" (default) ranks by raw edge count - fast, but a node wired to
+    many low-value neighbors can outrank one wired to a few high-value ones.
+    by="pagerank" ranks by nx.pagerank() instead, which weighs a neighbor's
+    own importance rather than just counting edges.
     """
-    degree = dict(G.degree())
-    sorted_nodes = sorted(degree.items(), key=lambda x: x[1], reverse=True)
+    if by == "pagerank":
+        try:
+            score = nx.pagerank(G)
+        except ImportError as exc:
+            raise ImportError(
+                "god_nodes(by='pagerank') requires scipy - install with "
+                "`pip install graphifyy[pagerank]` or `uv tool install --with scipy graphifyy`"
+            ) from exc
+    elif by == "degree":
+        score = dict(G.degree())
+    else:
+        raise ValueError(f"god_nodes: unknown by={by!r}, expected 'degree' or 'pagerank'")
+    sorted_nodes = sorted(score.items(), key=lambda x: x[1], reverse=True)
     result = []
-    for node_id, deg in sorted_nodes:
-        if _is_file_node(G, node_id) or _is_concept_node(G, node_id):
+    for node_id, node_score in sorted_nodes:
+        if _is_file_node(G, node_id) or _is_concept_node(G, node_id) or _is_json_key_node(G, node_id):
             continue
-        result.append({
+        if G.nodes[node_id].get("label", "") in _BUILTIN_NOISE_LABELS:
+            continue
+        entry = {
             "id": node_id,
             "label": G.nodes[node_id].get("label", node_id),
-            "edges": deg,
-        })
+        }
+        entry["degree"] = node_score if by == "degree" else G.degree(node_id)
+        if by == "pagerank":
+            entry["pagerank"] = node_score
+        result.append(entry)
         if len(result) >= top_n:
             break
     return result
@@ -105,19 +191,16 @@ def _is_concept_node(G: nx.Graph, node_id: str) -> bool:
     return False
 
 
-_CODE_EXTENSIONS = {"py", "ts", "tsx", "js", "go", "rs", "java", "rb", "cpp", "c", "h", "cs", "kt", "scala", "php"}
-_DOC_EXTENSIONS = {"md", "txt", "rst"}
-_PAPER_EXTENSIONS = {"pdf"}
-_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif", "svg"}
+from graphify.detect import CODE_EXTENSIONS, DOC_EXTENSIONS, PAPER_EXTENSIONS, IMAGE_EXTENSIONS
 
 
 def _file_category(path: str) -> str:
-    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
-    if ext in _CODE_EXTENSIONS:
+    ext = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
+    if ext in CODE_EXTENSIONS:
         return "code"
-    if ext in _PAPER_EXTENSIONS:
+    if ext in PAPER_EXTENSIONS:
         return "paper"
-    if ext in _IMAGE_EXTENSIONS:
+    if ext in IMAGE_EXTENSIONS:
         return "image"
     return "doc"
 
@@ -135,6 +218,7 @@ def _surprise_score(
     node_community: dict[str, int],
     u_source: str,
     v_source: str,
+    degrees: dict[str, int] | None = None,
 ) -> tuple[int, list[str]]:
     """Score how surprising a cross-file edge is. Returns (score, reasons)."""
     score = 0
@@ -142,27 +226,44 @@ def _surprise_score(
 
     # 1. Confidence weight - uncertain connections are more noteworthy
     conf = data.get("confidence", "EXTRACTED")
+    relation = data.get("relation", "")
     conf_bonus = {"AMBIGUOUS": 3, "INFERRED": 2, "EXTRACTED": 1}.get(conf, 1)
+
+    cat_u = _file_category(u_source)
+    cat_v = _file_category(v_source)
+
+    # Suppress all structural bonuses for INFERRED calls/uses that cross language
+    # boundaries or connect code to a doc file.  Both cases are resolver pollution:
+    # label-matching fires across language families in monorepos, and code→doc
+    # "calls" edges are extraction artefacts, not real architecture.
+    # Excludes `semantically_similar_to` (genuine cross-boundary insight) and all
+    # AMBIGUOUS/EXTRACTED edges (not from the resolver path).
+    _suppress_structural = (
+        conf == "INFERRED"
+        and relation in ("calls", "uses")
+        and (_cross_language(u_source, v_source) or {cat_u, cat_v} == {"code", "doc"})
+    )
+    if _suppress_structural:
+        conf_bonus = 0
+
     score += conf_bonus
     if conf in ("AMBIGUOUS", "INFERRED"):
         reasons.append(f"{conf.lower()} connection - not explicitly stated in source")
 
     # 2. Cross file-type bonus - code↔paper or code↔image is non-obvious
-    cat_u = _file_category(u_source)
-    cat_v = _file_category(v_source)
-    if cat_u != cat_v:
+    if cat_u != cat_v and not _suppress_structural:
         score += 2
         reasons.append(f"crosses file types ({cat_u} ↔ {cat_v})")
 
     # 3. Cross-repo bonus - different top-level directory
-    if _top_level_dir(u_source) != _top_level_dir(v_source):
+    if _top_level_dir(u_source) != _top_level_dir(v_source) and not _suppress_structural:
         score += 2
         reasons.append("connects across different repos/directories")
 
     # 4. Cross-community bonus - Leiden says these are structurally distant
     cid_u = node_community.get(u)
     cid_v = node_community.get(v)
-    if cid_u is not None and cid_v is not None and cid_u != cid_v:
+    if cid_u is not None and cid_v is not None and cid_u != cid_v and not _suppress_structural:
         score += 1
         reasons.append("bridges separate communities")
 
@@ -172,8 +273,8 @@ def _surprise_score(
         reasons.append("semantically similar concepts with no structural link")
 
     # 5. Peripheral→hub: a low-degree node connecting to a high-degree one
-    deg_u = G.degree(u)
-    deg_v = G.degree(v)
+    deg_u = degrees[u] if degrees is not None else G.degree(u)
+    deg_v = degrees[v] if degrees is not None else G.degree(v)
     if min(deg_u, deg_v) <= 2 and max(deg_u, deg_v) >= 5:
         score += 1
         peripheral = G.nodes[u].get("label", u) if deg_u <= 2 else G.nodes[v].get("label", v)
@@ -198,6 +299,7 @@ def _cross_file_surprises(G: nx.Graph, communities: dict[int, list[str]], top_n:
     Each result includes a 'why' field explaining what makes it non-obvious.
     """
     node_community = _node_community_map(communities)
+    degrees = dict(G.degree())
     candidates = []
 
     for u, v, data in G.edges(data=True):
@@ -215,9 +317,13 @@ def _cross_file_surprises(G: nx.Graph, communities: dict[int, list[str]], top_n:
         if not u_source or not v_source or u_source == v_source:
             continue
 
-        score, reasons = _surprise_score(G, u, v, data, node_community, u_source, v_source)
+        score, reasons = _surprise_score(G, u, v, data, node_community, u_source, v_source, degrees)
         src_id = data.get("_src", u)
+        if src_id not in G.nodes:
+            src_id = u
         tgt_id = data.get("_tgt", v)
+        if tgt_id not in G.nodes:
+            tgt_id = v
         candidates.append({
             "_score": score,
             "source": G.nodes[src_id].get("label", src_id),
@@ -257,11 +363,13 @@ def _cross_community_surprises(
         # No community info - use edge betweenness centrality
         if G.number_of_edges() == 0:
             return []
+        if G.number_of_nodes() > 5000:
+            return []
         betweenness = nx.edge_betweenness_centrality(G)
         top_edges = sorted(betweenness.items(), key=lambda x: x[1], reverse=True)[:top_n]
         result = []
         for (u, v), score in top_edges:
-            data = G.edges[u, v]
+            data = edge_data(G, u, v)
             result.append({
                 "source": G.nodes[u].get("label", u),
                 "target": G.nodes[v].get("label", v),
@@ -293,7 +401,11 @@ def _cross_community_surprises(
         # This edge crosses community boundaries - interesting
         confidence = data.get("confidence", "EXTRACTED")
         src_id = data.get("_src", u)
+        if src_id not in G.nodes:
+            src_id = u
         tgt_id = data.get("_tgt", v)
+        if tgt_id not in G.nodes:
+            tgt_id = v
         surprises.append({
             "source": G.nodes[src_id].get("label", src_id),
             "target": G.nodes[tgt_id].get("label", tgt_id),
@@ -323,6 +435,71 @@ def _cross_community_surprises(
     return deduped[:top_n]
 
 
+def unreachable_functions(G: nx.Graph, top_n: int = 15) -> list[dict]:
+    """Heuristic dead-code scan: function nodes unreachable from any recognized entry point.
+
+    Builds a directed calls-only graph from the `_src`/`_tgt` attrs already stashed
+    on `calls`/`indirect_call` edges (build.py), then flags function nodes that are
+    neither an entry point themselves nor reachable from one via nx.descendants().
+
+    A function counts as an entry point if it has in-degree 0 in the calls-digraph
+    AND its name doesn't start with `_` (assumed public/exported), or its name
+    matches main/__main__/test_*.
+
+    ponytail: name-based entry-point heuristic - misses dynamic dispatch,
+    decorator-registered callbacks, and framework-invoked entry points that don't
+    match this naming convention. Upgrade path: the per-language indirect_call
+    edges already captured during extraction partially cover dynamic dispatch -
+    could tighten the heuristic to trust those callees as reachable too.
+    """
+    calls = nx.DiGraph()
+    for u, v, data in G.edges(data=True):
+        if data.get("relation") not in ("calls", "indirect_call"):
+            continue
+        calls.add_edge(data.get("_src", u), data.get("_tgt", v))
+
+    def _is_function(node_id: str) -> bool:
+        return not (
+            _is_file_node(G, node_id)
+            or _is_concept_node(G, node_id)
+            or _is_json_key_node(G, node_id)
+        )
+
+    def _is_entry_name(node_id: str) -> bool:
+        label = G.nodes[node_id].get("label", "").strip(".()")
+        if label in ("main", "__main__"):
+            return True
+        if label.startswith("test_") or label.startswith("Test"):
+            return True
+        return not label.startswith("_")
+
+    def _in_degree(node_id: str) -> int:
+        return calls.in_degree(node_id) if node_id in calls else 0
+
+    function_nodes = {n for n in G.nodes() if _is_function(n)}
+    entry_points = {
+        n for n in function_nodes
+        if _in_degree(n) == 0 and _is_entry_name(n)
+    }
+
+    reachable: set[str] = set(entry_points)
+    for ep in entry_points:
+        if ep in calls:
+            reachable |= nx.descendants(calls, ep)
+
+    dead = [n for n in function_nodes if n not in reachable and n not in entry_points]
+    dead.sort(key=lambda n: G.nodes[n].get("label", n))
+
+    result = []
+    for n in dead[:top_n]:
+        result.append({
+            "id": n,
+            "label": G.nodes[n].get("label", n),
+            "source_file": G.nodes[n].get("source_file", ""),
+        })
+    return result
+
+
 def suggest_questions(
     G: nx.Graph,
     communities: dict[int, list[str]],
@@ -334,6 +511,9 @@ def suggest_questions(
     Based on: AMBIGUOUS edges, bridge nodes, underexplored god nodes, isolated nodes.
     Each question has a 'type', 'question', and 'why' field.
     """
+    if community_labels:
+        community_labels = {int(k) if isinstance(k, str) else k: v for k, v in community_labels.items()}
+
     questions = []
     node_community = _node_community_map(communities)
 
@@ -351,7 +531,8 @@ def suggest_questions(
 
     # 2. Bridge nodes (high betweenness) → cross-cutting concern questions
     if G.number_of_edges() > 0:
-        betweenness = nx.betweenness_centrality(G)
+        k = min(100, G.number_of_nodes()) if G.number_of_nodes() > 1000 else None
+        betweenness = nx.betweenness_centrality(G, k=k, seed=42)
         # Top bridge nodes that are NOT file-level hubs
         bridges = sorted(
             [(n, s) for n, s in betweenness.items()
@@ -391,7 +572,11 @@ def suggest_questions(
             others = []
             for u, v, d in inferred[:2]:
                 src_id = d.get("_src", u)
+                if src_id not in G.nodes:
+                    src_id = u
                 tgt_id = d.get("_tgt", v)
+                if tgt_id not in G.nodes:
+                    tgt_id = v
                 other_id = tgt_id if src_id == node_id else src_id
                 others.append(G.nodes[other_id].get("label", other_id))
             questions.append({
@@ -468,7 +653,9 @@ def graph_diff(G_old: nx.Graph, G_new: nx.Graph) -> dict:
     ]
 
     def edge_key(G: nx.Graph, u: str, v: str, data: dict) -> tuple:
-        return (u, v, data.get("relation", ""))
+        if G.is_directed():
+            return (u, v, data.get("relation", ""))
+        return (min(u, v), max(u, v), data.get("relation", ""))
 
     old_edge_keys = {
         edge_key(G_old, u, v, d)
@@ -520,3 +707,110 @@ def graph_diff(G_old: nx.Graph, G_new: nx.Graph) -> dict:
         "removed_edges": removed_edges_list,
         "summary": summary,
     }
+
+
+def find_import_cycles(
+    G: nx.Graph,
+    max_cycle_length: int = 5,
+    top_n: int = 20,
+) -> list[dict]:
+    """Detect circular import dependencies at the file level.
+
+    Collapses symbol-level nodes to their parent file (using source_file attr
+    or 'contains' edges), builds a directed file-level graph from imports_from
+    edges, then finds simple cycles.
+
+    Args:
+        G: The full knowledge graph (may be undirected or directed).
+        max_cycle_length: Only report cycles with at most this many files.
+        top_n: Maximum number of cycles to return (shortest first).
+
+    Returns:
+        List of cycle records with stable structure:
+        {
+          "cycle": ["a.ts", "b.ts"],
+          "length": 2,
+          "why": "circular dependency"
+        }
+    """
+    def _endpoint_source_file(node_id: str) -> str:
+        attrs = G.nodes.get(node_id, {})
+        src_file = attrs.get("source_file", "")
+        return src_file if isinstance(src_file, str) else ""
+
+    # Step 1: Build a directed file-level graph from import/re-export edges.
+    # IMPORTANT: resolve endpoints using source_file only; never infer from label/id.
+    file_graph = nx.DiGraph()
+
+    for u, v, data in G.edges(data=True):
+        rel = data.get("relation", "")
+        if rel not in ("imports_from", "re_exports"):
+            continue
+
+        src_file_attr = data.get("source_file", "")
+        if not isinstance(src_file_attr, str) or not src_file_attr:
+            continue
+
+        u_file = _endpoint_source_file(u)
+        v_file = _endpoint_source_file(v)
+
+        # Works for both DiGraph and Graph inputs:
+        # orient edge from edge.source_file endpoint to the opposite endpoint.
+        if u_file == src_file_attr:
+            tgt_file = v_file
+        elif v_file == src_file_attr:
+            tgt_file = u_file
+        else:
+            # Fallback: if source endpoint cannot be matched exactly,
+            # still treat edge.source_file as source and pick the opposite endpoint
+            # only if one endpoint has a real source_file.
+            tgt_file = v_file if v_file and v_file != src_file_attr else u_file
+
+        if not tgt_file:
+            continue
+
+        file_graph.add_edge(src_file_attr, tgt_file)
+
+    if not file_graph.edges():
+        return []
+
+    # Step 2: Find simple cycles, bounded by length.
+    # Pass length_bound so networkx prunes during enumeration rather than
+    # enumerating all elementary cycles and post-filtering — avoids exponential
+    # blowup on dense graphs with many long cycles (#1196).
+    cycles: list[list[str]] = []
+    for cycle in nx.simple_cycles(file_graph, length_bound=max_cycle_length):
+        if len(cycle) <= max_cycle_length:
+            cycles.append(cycle)
+        if len(cycles) >= top_n * 10:
+            # Stop early to avoid combinatorial explosion
+            break
+
+    # Step 3: Sort by length (shortest = tightest coupling), then deduplicate.
+    cycles.sort(key=len)
+
+    # Deduplicate rotations: normalize each cycle by starting from the
+    # lexicographically smallest element.
+    seen: set[tuple[str, ...]] = set()
+    unique_cycles: list[list[str]] = []
+    for cycle in cycles:
+        core = list(cycle)
+        if not core:
+            continue
+        min_idx = core.index(min(core))
+        normalized = tuple(core[min_idx:] + core[:min_idx])
+        if normalized not in seen:
+            seen.add(normalized)
+            unique_cycles.append(list(normalized))
+            if len(unique_cycles) >= top_n:
+                break
+
+    result: list[dict] = []
+    for cycle in unique_cycles:
+        result.append({
+            "cycle": cycle,
+            "length": len(cycle),
+            "why": "circular dependency",
+        })
+
+    return result

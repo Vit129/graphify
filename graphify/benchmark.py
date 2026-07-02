@@ -1,12 +1,36 @@
 """Token-reduction benchmark - measures how much context graphify saves vs naive full-corpus approach."""
 from __future__ import annotations
 import json
+import sys
 from pathlib import Path
 import networkx as nx
 from networkx.readwrite import json_graph
 
+from graphify.build import edge_data
+from graphify.serve import _query_terms
+from graphify.paths import default_graph_json as _default_graph_json
+
 
 _CHARS_PER_TOKEN = 4  # standard approximation
+
+
+def _safe(unicode_char: str, ascii_fallback: str) -> str:
+    """Return unicode_char if stdout can encode it, else ascii_fallback.
+
+    Windows consoles often default to cp1252 which cannot encode box-drawing
+    or arrow glyphs; printing them raises UnicodeEncodeError mid-output.
+    """
+    encoding = getattr(sys.stdout, "encoding", None) or ""
+    try:
+        unicode_char.encode(encoding)
+        return unicode_char
+    except (UnicodeEncodeError, LookupError):
+        return ascii_fallback
+
+
+def _hr(width: int = 50) -> str:
+    """Horizontal rule that survives non-UTF-8 stdout (e.g. Windows cp1252 console)."""
+    return _safe("─", "-") * width
 
 
 def _estimate_tokens(text: str) -> int:
@@ -15,7 +39,7 @@ def _estimate_tokens(text: str) -> int:
 
 def _query_subgraph_tokens(G: nx.Graph, question: str, depth: int = 3) -> int:
     """Run BFS from best-matching nodes and return estimated tokens in the subgraph context."""
-    terms = [t.lower() for t in question.split() if len(t) > 2]
+    terms = _query_terms(question)
     scored = []
     for nid, data in G.nodes(data=True):
         label = data.get("label", "").lower()
@@ -46,7 +70,7 @@ def _query_subgraph_tokens(G: nx.Graph, question: str, depth: int = 3) -> int:
         lines.append(f"NODE {d.get('label', nid)} src={d.get('source_file', '')} loc={d.get('source_location', '')}")
     for u, v in edges_seen:
         if u in visited and v in visited:
-            d = G.edges[u, v]
+            d = edge_data(G, u, v)
             lines.append(f"EDGE {G.nodes[u].get('label', u)} --{d.get('relation', '')}--> {G.nodes[v].get('label', v)}")
 
     return _estimate_tokens("\n".join(lines))
@@ -62,7 +86,7 @@ _SAMPLE_QUESTIONS = [
 
 
 def run_benchmark(
-    graph_path: str = "graphify-out/graph.json",
+    graph_path: str | None = None,
     corpus_words: int | None = None,
     questions: list[str] | None = None,
 ) -> dict:
@@ -75,8 +99,14 @@ def run_benchmark(
 
     Returns dict with: corpus_tokens, avg_query_tokens, reduction_ratio, per_question
     """
-    data = json.loads(Path(graph_path).read_text())
-    G = json_graph.node_link_graph(data, edges="links")
+    graph_path = graph_path or _default_graph_json()
+    from graphify.security import check_graph_file_size_cap
+    check_graph_file_size_cap(Path(graph_path))
+    data = json.loads(Path(graph_path).read_text(encoding="utf-8"))
+    try:
+        G = json_graph.node_link_graph(data, edges="links")
+    except TypeError:
+        G = json_graph.node_link_graph(data)
 
     if corpus_words is None:
         # Rough estimate: each node label is ~3 words, plus source context
@@ -115,8 +145,9 @@ def print_benchmark(result: dict) -> None:
         return
 
     print(f"\ngraphify token reduction benchmark")
-    print(f"{'─' * 50}")
-    print(f"  Corpus:          {result['corpus_words']:,} words → ~{result['corpus_tokens']:,} tokens (naive)")
+    print(_hr(50))
+    arrow = _safe("→", "->")
+    print(f"  Corpus:          {result['corpus_words']:,} words {arrow} ~{result['corpus_tokens']:,} tokens (naive)")
     print(f"  Graph:           {result['nodes']:,} nodes, {result['edges']:,} edges")
     print(f"  Avg query cost:  ~{result['avg_query_tokens']:,} tokens")
     print(f"  Reduction:       {result['reduction_ratio']}x fewer tokens per query")

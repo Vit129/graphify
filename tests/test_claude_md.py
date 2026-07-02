@@ -22,7 +22,7 @@ def test_install_contains_expected_rules(tmp_path):
     content = (tmp_path / "CLAUDE.md").read_text()
     assert "GRAPH_REPORT.md" in content
     assert "wiki/index.md" in content
-    assert "_rebuild_code" in content
+    assert "graphify update" in content
 
 
 def test_install_appends_to_existing_claude_md(tmp_path):
@@ -95,3 +95,42 @@ def test_uninstall_no_op_when_no_file(tmp_path, capsys):
     claude_uninstall(tmp_path)
     out = capsys.readouterr().out
     assert "No CLAUDE.md" in out or "nothing to do" in out
+
+
+# ---------------------------------------------------------------------------
+# settings.json PreToolUse hook
+# ---------------------------------------------------------------------------
+
+def test_install_creates_settings_json(tmp_path):
+    """claude_install also writes .claude/settings.json with PreToolUse hook."""
+    import json
+    claude_install(tmp_path)
+    settings_path = tmp_path / ".claude" / "settings.json"
+    assert settings_path.exists()
+    settings = json.loads(settings_path.read_text())
+    hooks = settings.get("hooks", {}).get("PreToolUse", [])
+    assert any(h.get("matcher") == "Bash" for h in hooks)
+
+
+def test_install_settings_json_idempotent(tmp_path):
+    """Running claude_install twice does not duplicate the PreToolUse hook."""
+    import json
+    claude_install(tmp_path)
+    claude_install(tmp_path)
+    settings_path = tmp_path / ".claude" / "settings.json"
+    settings = json.loads(settings_path.read_text())
+    hooks = settings.get("hooks", {}).get("PreToolUse", [])
+    bash_hooks = [h for h in hooks if h.get("matcher") == "Bash" and "graphify" in str(h)]
+    assert len(bash_hooks) == 1
+
+
+def test_uninstall_removes_settings_hook(tmp_path):
+    """claude_uninstall removes the PreToolUse hook from settings.json."""
+    import json
+    claude_install(tmp_path)
+    claude_uninstall(tmp_path)
+    settings_path = tmp_path / ".claude" / "settings.json"
+    if settings_path.exists():
+        settings = json.loads(settings_path.read_text())
+        hooks = settings.get("hooks", {}).get("PreToolUse", [])
+        assert not any(h.get("matcher") == "Bash" and "graphify" in str(h) for h in hooks)
