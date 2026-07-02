@@ -2247,6 +2247,13 @@ def main() -> None:
         for skill_dst in {_platform_skill_destination(name) for name in _PLATFORM_CONFIG}:
             _check_skill_version(skill_dst)
 
+    # Also skip -v/--version/-h/--help: those must stay instant, and the 24h
+    # cache means the PyPI round-trip only ever lands on some other command.
+    _skip_update_check_cmds = _silent_cmds | {"-v", "--version", "version", "-h", "--help", "-?"}
+    if not any(arg in _skip_update_check_cmds for arg in sys.argv):
+        from graphify.update_check import check_for_update
+        check_for_update(__version__)
+
     if len(sys.argv) >= 2 and sys.argv[1] in ("-v", "--version", "version"):
         print(f"graphify {__version__}")
         return
