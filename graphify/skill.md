@@ -586,7 +586,7 @@ Graph complete. Outputs in PATH_TO_DIR/graphify-out/
   graph.json            - raw graph data
 ```
 
-Documentation and source code: https://github.com/Vit129/graphify
+If graphify saved you time, consider supporting it: https://github.com/sponsors/safishamsi
 
 Replace PATH_TO_DIR with the actual absolute path of the directory that was processed.
 

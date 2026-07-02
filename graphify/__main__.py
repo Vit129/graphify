@@ -2228,6 +2228,27 @@ def _clone_repo(
     return dest
 
 
+def _auto_open_browser(html_path: Path) -> None:
+    import webbrowser
+    try:
+        webbrowser.open(html_path.absolute().as_uri())
+        print(f"Opening graph in browser: {html_path}")
+    except Exception:
+        pass
+
+
+def _trigger_live_reload(html_path: Path) -> None:
+    import subprocess
+    import sys
+    if sys.platform == "darwin":  # macOS only
+        # Reload Google Chrome and Safari tabs containing the target HTML file
+        uri_part = html_path.name
+        chrome_cmd = f'tell application "Google Chrome" to reload (tabs of windows whose URL contains "{uri_part}")'
+        subprocess.run(["osascript", "-e", chrome_cmd], capture_output=True)
+        safari_cmd = f'tell application "Safari" to reload (tabs of windows whose URL contains "{uri_part}")'
+        subprocess.run(["osascript", "-e", safari_cmd], capture_output=True)
+
+
 def main() -> None:
     for _stream in (sys.stdout, sys.stderr):
         if _stream is not None and hasattr(_stream, "reconfigure"):
@@ -3426,6 +3447,7 @@ def main() -> None:
         # the optional positional path can appear in any order (#724).
         no_viz = "--no-viz" in sys.argv
         no_label = "--no-label" in sys.argv
+        no_open = "--no-open" in sys.argv
         missing_only = "--missing-only" in sys.argv
         co_timing = "--timing" in sys.argv
         _backend_arg = next((a for a in sys.argv if a.startswith("--backend=")), None)
@@ -3470,7 +3492,7 @@ def main() -> None:
                 label_batch_size = int(args[i_arg + 1]); i_arg += 2
             elif a.startswith("--batch-size="):
                 label_batch_size = int(a.split("=", 1)[1]); i_arg += 1
-            elif a in ("--no-viz", "--missing-only") or a.startswith("--min-community-size="):
+            elif a in ("--no-viz", "--missing-only", "--no-open") or a.startswith("--min-community-size="):
                 i_arg += 1
             elif a.startswith("--"):
                 i_arg += 1
@@ -3691,6 +3713,9 @@ def main() -> None:
                         node_limit=_node_limit)
                 stages.mark("export"); stages.total()
                 print(f"Done - {len(communities)} communities. GRAPH_REPORT.md, graph.json and graph.html updated.")
+                _trigger_live_reload(html_target)
+                if not no_open:
+                    _auto_open_browser(html_target)
             except ValueError as viz_err:
                 if html_target.exists():
                     html_target.unlink()
@@ -3701,6 +3726,7 @@ def main() -> None:
     elif cmd == "update":
         force = os.environ.get("GRAPHIFY_FORCE", "").lower() in ("1", "true", "yes")
         no_cluster = False
+        no_open = False
         rank_by = os.environ.get("GRAPHIFY_RANK_BY", "degree")
         args = sys.argv[2:]
         watch_arg: str | None = None
@@ -3713,6 +3739,10 @@ def main() -> None:
                 continue
             if a == "--no-cluster":
                 no_cluster = True
+                i_arg += 1
+                continue
+            if a == "--no-open":
+                no_open = True
                 i_arg += 1
                 continue
             if a == "--rank-by" and i_arg + 1 < len(args):
@@ -3757,6 +3787,11 @@ def main() -> None:
         ok = _rebuild_code(watch_path, force=force, no_cluster=no_cluster, block_on_lock=True, rank_by=rank_by)
         if ok:
             print("Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.")
+            html_path = watch_path / "graphify-out" / "graph.html"
+            if html_path.exists():
+                _trigger_live_reload(html_path)
+                if not no_open:
+                    _auto_open_browser(html_path)
             if not (
                 os.environ.get("GEMINI_API_KEY")
                 or os.environ.get("GOOGLE_API_KEY")

@@ -873,7 +873,7 @@ def _rebuild_code(
         html_written = False
         if not no_change:
             try:
-                to_html(G, communities, str(out / "graph.html"), community_labels=labels or None)
+                to_html(G, communities, str(out / "graph.html"), community_labels=labels or None, node_limit=5000)
                 html_written = True
             except ValueError as viz_err:
                 print(f"[graphify watch] Skipped graph.html: {viz_err}")

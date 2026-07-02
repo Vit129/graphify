@@ -236,6 +236,16 @@ def _html_styles() -> str:
   .legend-cb:checked::after, #select-all-cb:checked::after { content: ''; position: absolute; left: 3.5px; top: 1px; width: 4px; height: 7px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
   #select-all-cb:indeterminate { background: #4E79A7; border-color: #4E79A7; }
   #select-all-cb:indeterminate::after { content: ''; position: absolute; left: 2px; top: 5px; width: 8px; height: 2px; background: #fff; border: none; transform: none; }
+  .collapsible-section h3 { font-size: 13px; color: #aaa; padding: 12px; border-bottom: 1px solid #2a2a4e; cursor: pointer; display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; letter-spacing: 0.05em; user-select: none; }
+  .collapsible-section h3:hover { background: #2a2a4e; color: #fff; }
+  .slider-group { margin-bottom: 12px; }
+  .slider-group label { display: block; font-size: 11px; color: #aaa; margin-bottom: 4px; }
+  .slider-group label span { float: right; color: #fff; font-weight: bold; }
+  .slider-group input[type="range"] { width: 100%; height: 4px; background: #3a3a5e; border-radius: 2px; outline: none; -webkit-appearance: none; cursor: pointer; }
+  .slider-group input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #4E79A7; transition: transform 0.1s; }
+  .slider-group input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  .checkbox-group { margin-top: 8px; font-size: 11px; color: #aaa; }
+  .checkbox-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 </style>"""
 
 
@@ -510,6 +520,94 @@ function loadScript(url, callback) {{
   document.head.appendChild(script);
 }}
 
+function toggleSection(id) {{
+  var el = document.getElementById(id);
+  var arrow = document.getElementById('settings-arrow');
+  if (el.style.display === 'none') {{
+    el.style.display = 'block';
+    arrow.textContent = '▼';
+  }} else {{
+    el.style.display = 'none';
+    arrow.textContent = '▶';
+  }}
+}}
+
+function updatePhysics2D() {{
+  const rep = parseInt(document.getElementById('slide-repulsion').value);
+  const dist = parseInt(document.getElementById('slide-distance').value);
+  document.getElementById('val-repulsion').textContent = rep;
+  document.getElementById('val-distance').textContent = dist;
+  network.setOptions({{
+    physics: {{
+      forceAtlas2Based: {{
+        gravitationalConstant: rep,
+        springLength: dist
+      }}
+    }}
+  }});
+}}
+
+function updateDisplay2D() {{
+  const sizeMult = parseFloat(document.getElementById('slide-size').value);
+  const thickMult = parseFloat(document.getElementById('slide-thickness').value);
+  const showLabels = document.getElementById('check-labels').checked;
+  document.getElementById('val-size').textContent = sizeMult.toFixed(1);
+  document.getElementById('val-thickness').textContent = thickMult.toFixed(1);
+
+  network.setOptions({{
+    nodes: {{
+      scaling: {{
+        customScalingFunction: (min, max, total, value) => value * sizeMult
+      }}
+    }},
+    edges: {{
+      width: thickMult
+    }}
+  }});
+  
+  const updatedNodes = RAW_NODES.map(n => {{
+    const maxDeg = Math.max(...RAW_NODES.map(x => x.degree || 1));
+    let fontSz = 0;
+    if (showLabels) {{
+      fontSz = (n.degree >= maxDeg * 0.15) ? 12 : 0;
+    }}
+    return {{
+      id: n.id,
+      size: n.size * sizeMult,
+      font: {{ size: fontSz }}
+    }};
+  }});
+  nodesDS.update(updatedNodes);
+}}
+
+function updatePhysics3D() {{
+  if (!graph3DInstance) return;
+  const rep = parseInt(document.getElementById('slide-repulsion-3d').value);
+  const dist = parseInt(document.getElementById('slide-distance-3d').value);
+  document.getElementById('val-repulsion-3d').textContent = rep;
+  document.getElementById('val-distance-3d').textContent = dist;
+  
+  graph3DInstance.d3Force('charge').strength(rep);
+  graph3DInstance.d3Force('link').distance(dist);
+  graph3DInstance.numDimensions(3); 
+}}
+
+function updateDisplay3D() {{
+  if (!graph3DInstance) return;
+  const sizeMult = parseFloat(document.getElementById('slide-size-3d').value);
+  const particles = parseInt(document.getElementById('slide-particles-3d').value);
+  const speed = parseFloat(document.getElementById('slide-speed-3d').value);
+  
+  document.getElementById('val-size-3d').textContent = sizeMult.toFixed(1);
+  document.getElementById('val-particles-3d').textContent = particles;
+  document.getElementById('val-speed-3d').textContent = speed.toFixed(1);
+  
+  graph3DInstance
+    .nodeVal(node => node.val * sizeMult)
+    .linkDirectionalParticles(particles)
+    .linkDirectionalParticleSpeed(particles > 0 ? speed * 0.005 : 0);
+}}
+
 function switchMode(mode) {{
   const graph2d = document.getElementById('graph');
   const graph3d = document.getElementById('graph-3d');
@@ -521,6 +619,8 @@ function switchMode(mode) {{
     graph2d.style.display = 'block';
     btn3d.classList.remove('active');
     btn2d.classList.add('active');
+    document.getElementById('settings-2d').style.display = 'block';
+    document.getElementById('settings-3d').style.display = 'none';
   }} else if (mode === '3d') {{
     btn2d.classList.remove('active');
     btn3d.classList.add('active');
@@ -535,11 +635,15 @@ function switchMode(mode) {{
         btn3d.disabled = false;
         graph2d.style.display = 'none';
         graph3d.style.display = 'block';
+        document.getElementById('settings-2d').style.display = 'none';
+        document.getElementById('settings-3d').style.display = 'block';
         init3DGraph();
       }});
     }} else {{
       graph2d.style.display = 'none';
       graph3d.style.display = 'block';
+      document.getElementById('settings-2d').style.display = 'none';
+      document.getElementById('settings-3d').style.display = 'block';
       if (graph3DInstance) {{
         graph3DInstance.resumeAnimation();
       }}
@@ -576,17 +680,25 @@ function init3DGraph() {{
     }}))
   }};
 
+  const sizeMult = parseFloat(document.getElementById('slide-size-3d').value);
+  const rep = parseInt(document.getElementById('slide-repulsion-3d').value);
+  const dist = parseInt(document.getElementById('slide-distance-3d').value);
+  const particles = parseInt(document.getElementById('slide-particles-3d').value);
+  const speed = parseFloat(document.getElementById('slide-speed-3d').value);
+
   graph3DInstance = ForceGraph3D({{ controlType: 'orbit' }})(container)
     .backgroundColor('#0f0f1a')
     .graphData(gData)
     .nodeLabel(node => `<div style="padding: 6px; background: rgba(26,26,46,0.9); border: 1px solid #3a3a5e; border-radius: 4px; color: #fff; font-family: sans-serif; font-size: 12px;"><b>${{esc(node.label)}}</b><br/>Type: ${{esc(node.file_type || 'unknown')}}<br/>Community: ${{esc(node.community_name)}}</div>`)
     .nodeColor(node => node.color)
-    .nodeVal(node => node.val)
+    .nodeVal(node => node.val * sizeMult)
     .linkWidth(link => link.width)
     .linkColor(link => link.color)
     .linkOpacity(0.4)
     .linkDirectionalArrowLength(3.5)
     .linkDirectionalArrowRelPos(1)
+    .linkDirectionalParticles(particles)
+    .linkDirectionalParticleSpeed(particles > 0 ? speed * 0.005 : 0)
     .onNodeClick(node => {{
       const distance = 80;
       const distRatio = 1 + distance/Math.hypot(node.x, node.y, node.z);
@@ -597,6 +709,10 @@ function init3DGraph() {{
       );
       showInfo(node.id);
     }});
+
+  // Apply physics slider settings on first init
+  graph3DInstance.d3Force('charge').strength(rep);
+  graph3DInstance.d3Force('link').distance(dist);
 }}
 
 function update3DGraphData() {{
@@ -1028,6 +1144,56 @@ def to_html(
   <div id="info-panel">
     <h3>Node Info</h3>
     <div id="info-content"><span class="empty">Click a node to inspect it</span></div>
+  </div>
+  <div id="settings-wrap" class="collapsible-section">
+    <h3 onclick="toggleSection('settings-content')">⚙️ Settings <span id="settings-arrow">▶</span></h3>
+    <div id="settings-content" style="display: none; padding: 12px; border-bottom: 1px solid #2a2a4e; overflow-y: auto; max-height: 250px;">
+      <!-- 2D settings group -->
+      <div id="settings-2d">
+        <div class="slider-group">
+          <label>Node Repulsion: <span id="val-repulsion">-60</span></label>
+          <input type="range" id="slide-repulsion" min="-300" max="-10" value="-60" oninput="updatePhysics2D()">
+        </div>
+        <div class="slider-group">
+          <label>Link Distance: <span id="val-distance">120</span></label>
+          <input type="range" id="slide-distance" min="30" max="300" value="120" oninput="updatePhysics2D()">
+        </div>
+        <div class="slider-group">
+          <label>Node Size Mult: <span id="val-size">1.0</span></label>
+          <input type="range" id="slide-size" min="0.2" max="3.0" step="0.1" value="1.0" oninput="updateDisplay2D()">
+        </div>
+        <div class="slider-group">
+          <label>Link Thickness: <span id="val-thickness">1.0</span></label>
+          <input type="range" id="slide-thickness" min="0.2" max="3.0" step="0.1" value="1.0" oninput="updateDisplay2D()">
+        </div>
+        <div class="checkbox-group">
+          <label><input type="checkbox" id="check-labels" checked onchange="updateDisplay2D()"> Show Labels</label>
+        </div>
+      </div>
+      <!-- 3D settings group -->
+      <div id="settings-3d" style="display: none;">
+        <div class="slider-group">
+          <label>Node Scale: <span id="val-size-3d">1.0</span></label>
+          <input type="range" id="slide-size-3d" min="0.2" max="3.0" step="0.1" value="1.0" oninput="updateDisplay3D()">
+        </div>
+        <div class="slider-group">
+          <label>Repulsion (3D): <span id="val-repulsion-3d">-150</span></label>
+          <input type="range" id="slide-repulsion-3d" min="-1000" max="-10" value="-150" oninput="updatePhysics3D()">
+        </div>
+        <div class="slider-group">
+          <label>Link Distance (3D): <span id="val-distance-3d">50</span></label>
+          <input type="range" id="slide-distance-3d" min="10" max="250" value="50" oninput="updatePhysics3D()">
+        </div>
+        <div class="slider-group">
+          <label>Particles Count: <span id="val-particles-3d">0</span></label>
+          <input type="range" id="slide-particles-3d" min="0" max="6" value="0" oninput="updateDisplay3D()">
+        </div>
+        <div class="slider-group">
+          <label>Particle Speed: <span id="val-speed-3d">1.0</span></label>
+          <input type="range" id="slide-speed-3d" min="0.1" max="3.0" step="0.1" value="1.0" oninput="updateDisplay3D()">
+        </div>
+      </div>
+    </div>
   </div>
   <div id="legend-wrap">
     <h3>Communities</h3>
