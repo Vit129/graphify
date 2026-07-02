@@ -12,3 +12,7 @@
 | [p4-spec-test-block-extraction.md](p4-spec-test-block-extraction.md) | P4 — test()/describe() Block Extraction (spec.ts) | Done |
 | [p5-fuzzy-fallback-cascade.md](p5-fuzzy-fallback-cascade.md) | P5 — Typo/Abbreviation Cascade Fallback | Done |
 | [p7-additional-language-coverage.md](p7-additional-language-coverage.md) | P7 — Additional Language Coverage (CSS, HTML, .resource, .gs) | Done |
+| [p8-scss-cross-file-and-gherkin.md](p8-scss-cross-file-and-gherkin.md) | P8 — SCSS + Gherkin Extraction, Robot Cross-File Resolution | Done |
+| [p9-query-synonym-expansion.md](p9-query-synonym-expansion.md) | P9 — Lightweight Query Synonym Expansion (semantic-search alternative) | Done |
+| [p10-toml-and-fish-extraction.md](p10-toml-and-fish-extraction.md) | P10 — TOML + Fish Extraction, Real-Project Validation | Done |
+| [p11-personal-project-coverage-sweep.md](p11-personal-project-coverage-sweep.md) | P11 — Personal-Project Coverage Sweep (.hook free win + full validation) | Done |

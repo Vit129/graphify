@@ -27,13 +27,27 @@ markup/config format.
 
 ## Non-goals
 
-- Resource file (`.resource`) cross-file keyword resolution — a test suite
-  commonly imports keywords from a separate `.resource` file via `Resource`
-  settings; this plan only resolves calls to keywords defined *in the same
-  file*, matching the scope every other extractor in this codebase uses for
-  its first pass (same-file resolution first, cross-file as a documented
-  follow-up if a real query gap demands it — same reasoning P4 used for
-  nesting hierarchy).
+- ~~Resource file (`.resource`) cross-file keyword resolution~~ — **reopened
+  and closed 2026-07-02.** `extract_robot` now walks `*** Settings ***` for
+  `Resource` statements and emits a real `imports_from` edge to the resolved
+  target file (same convention as every path-based import in `extract.py`).
+  Keyword calls not defined in the current file are no longer dropped —
+  they're deferred as `raw_calls` entries and picked up by the shared
+  cross-file `calls` resolver in `extract()`, the same mechanism every other
+  language extractor uses (no bespoke resolver written). Also added
+  `.robot`/`.resource` to `_CASE_INSENSITIVE_EXTS` (#1581's fold mechanism),
+  since Robot Framework keyword names are case-insensitive by spec — a
+  `log message` invocation now resolves to a `Log Message` definition in
+  another file. Validated on harness-terminal's real suite: 9 `imports_from`
+  edges (one per suite importing `harness.resource`), 53 real cross-file
+  `calls` edges into `harness.resource`'s shared keywords that were
+  previously invisible (0 before this fix — the graph simply had no
+  representation of "this test uses that shared keyword").
+- `Library` setting imports — left unresolved (most name an installed
+  package like `SeleniumLibrary`, not a project-relative file); a local `.py`
+  keyword library is a Python file already covered by `extract_python`'s own
+  node, and the cross-file `raw_calls` deferral resolves calls into it by
+  name without needing an explicit import edge.
 - `*** Test Templates ***` / `[Template]` / `[Setup]` / `[Teardown]`
   keyword-reference resolution — real Robot Framework feature, out of scope
   for a first pass; the test case's `[Documentation]` and step-level

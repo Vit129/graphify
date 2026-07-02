@@ -3,6 +3,7 @@ had no extractor at all — entire QA test suites were invisible to the graph
 (confirmed: 12 real .robot files in harness-terminal's actual test suite,
 0 nodes before this). See agent-memory/plans/p6-robot-framework-extraction.md.
 """
+from graphify.extractors.base import _make_id
 from graphify.extractors.robot import extract_robot
 
 
@@ -134,3 +135,69 @@ def test_extract_resource_file_shares_the_robot_extractor(tmp_path):
     result = extract([str(f)])
     labels = [n["label"] for n in result["nodes"]]
     assert "Split Right" in labels
+
+
+def test_extract_robot_resource_setting_produces_imports_from_edge(tmp_path):
+    """`Resource    common.resource` is the RF mechanism for pulling in
+    keywords defined elsewhere — must surface as a real imports_from edge
+    (not silently dropped) so cross-file call resolution has evidence."""
+    f = tmp_path / "suite.robot"
+    f.write_text(
+        "*** Settings ***\n"
+        "Resource    common.resource\n"
+        "\n"
+        "*** Test Cases ***\n"
+        "A Test\n"
+        "    No Operation\n"
+    )
+    result = extract_robot(f)
+    imports = [e for e in result["edges"] if e["relation"] == "imports_from"]
+    assert len(imports) == 1
+    assert imports[0]["source"] == result["nodes"][0]["id"]
+    expected_target = _make_id(str(tmp_path / "common.resource"))
+    assert imports[0]["target"] == expected_target
+
+
+def test_extract_robot_unresolved_call_deferred_as_raw_call(tmp_path):
+    """A call to a keyword not defined in this file (imported from a
+    .resource) must be deferred to the shared cross-file resolver instead
+    of silently dropped — this is what P6's original same-file-only scope
+    was missing."""
+    f = tmp_path / "suite.robot"
+    f.write_text(
+        "*** Test Cases ***\n"
+        "A Test\n"
+        "    Custom Login\n"
+    )
+    result = extract_robot(f)
+    raw_calls = result.get("raw_calls", [])
+    assert any(rc["callee"] == "Custom Login" for rc in raw_calls)
+    assert all(rc["source_file"] == str(f) for rc in raw_calls)
+
+
+def test_extract_robot_cross_file_call_resolves_case_insensitively(tmp_path):
+    """End-to-end via extract(): a .robot suite importing a .resource file
+    and invoking one of its keywords in different case must resolve to a
+    real `calls` edge — Robot Framework keyword names are case-insensitive
+    by spec, matching the #1581 case-insensitive-language fold mechanism."""
+    from graphify.extract import extract
+
+    resource = tmp_path / "common.resource"
+    resource.write_text(
+        "*** Keywords ***\n"
+        "Log Message\n"
+        "    Log    hello\n"
+    )
+    suite = tmp_path / "suite.robot"
+    suite.write_text(
+        "*** Settings ***\n"
+        "Resource    common.resource\n"
+        "\n"
+        "*** Test Cases ***\n"
+        "A Test\n"
+        "    log message\n"
+    )
+    result = extract([resource, suite], cache_root=tmp_path, parallel=False)
+    calls = [e for e in result["edges"] if e["relation"] == "calls"]
+    assert len(calls) == 1
+    assert calls[0]["confidence"] == "EXTRACTED"

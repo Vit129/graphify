@@ -29,7 +29,10 @@ from graphify.extractors.base import (  # noqa: F401
     _read_text,
 )
 from graphify.extractors.blade import extract_blade  # noqa: F401
-from graphify.extractors.css import extract_css  # noqa: F401
+from graphify.extractors.css import extract_css, extract_scss  # noqa: F401
+from graphify.extractors.fish import extract_fish  # noqa: F401
+from graphify.extractors.gherkin import extract_gherkin  # noqa: F401
+from graphify.extractors.toml_ import extract_toml  # noqa: F401
 from graphify.extractors.csharp import (
     _resolve_cross_file_csharp_imports,
     _resolve_csharp_type_references,
@@ -9072,6 +9075,7 @@ _CASE_INSENSITIVE_EXTS = frozenset({
     ".php", ".phtml", ".php3", ".php4", ".php5", ".php7", ".phps",  # PHP fns/classes
     ".sql",                                                          # SQL identifiers
     ".nim", ".nims", ".nimble",                                      # Nim (style-insensitive)
+    ".robot", ".resource",                                           # Robot Framework keyword names
 })
 
 
@@ -14042,7 +14046,7 @@ def _is_config_json(path: Path, obj_node, source: bytes) -> bool:
         return True
     # Common compound config names: *.eslintrc.json, *.prettierrc.json, etc.
     if name.endswith((".eslintrc.json", ".prettierrc.json", ".babelrc.json",
-                      "tsconfig.json", "jsconfig.json")):
+                      "tsconfig.json", "jsconfig.json", ".kiro.hook")):
         return True
     # Top-level key probe: scan the root object's immediate keys (no deep walk).
     for top_key in obj_node.children:
@@ -14963,7 +14967,12 @@ _DISPATCH: dict[str, Any] = {
     ".svh": extract_verilog,
     ".sql": extract_sql,
     ".css": extract_css,
+    ".scss": extract_scss,
     ".html": extract_html,
+    ".feature": extract_gherkin,
+    ".toml": extract_toml,
+    ".fish": extract_fish,
+    ".hook": extract_json,
     ".htm": extract_html,
     ".md": extract_markdown,
     ".mdx": extract_markdown,

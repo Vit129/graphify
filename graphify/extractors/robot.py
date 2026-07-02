@@ -49,6 +49,44 @@ def extract_robot(path: Path) -> dict:
     file_nid = _make_id(str(path))
     add_node(file_nid, path.name, 1)
 
+    def _resource_imports(settings_node) -> list[tuple[str, int]]:
+        """`Resource    path/to/common.resource` settings — the RF mechanism
+        for importing keywords defined in another file. `Library` settings
+        are skipped: most name an installed package (SeleniumLibrary), not a
+        project-relative file, and any that IS a local Python keyword library
+        is a .py file already covered by extract_python's own file node."""
+        found: list[tuple[str, int]] = []
+        for stmt in settings_node.children:
+            if stmt.type != "setting_statement":
+                continue
+            name_child = next((c for c in stmt.children if c.type == "setting_name"), None)
+            if name_child is None or _read_text(name_child, source).strip().lower() != "resource":
+                continue
+            args_child = next((c for c in stmt.children if c.type == "arguments"), None)
+            if args_child is None:
+                continue
+            raw = _read_text(args_child, source).strip()
+            if raw:
+                found.append((raw, stmt.start_point[0] + 1))
+        return found
+
+    def _walk_settings(node) -> None:
+        if node.type == "settings_section":
+            resource_imports.extend(_resource_imports(node))
+            return
+        for child in node.children:
+            _walk_settings(child)
+
+    resource_imports: list[tuple[str, int]] = []
+    _walk_settings(root)
+    for raw, line in resource_imports:
+        tgt_nid = _make_id(str((path.parent / raw)))
+        edges.append({
+            "source": file_nid, "target": tgt_nid, "relation": "imports_from",
+            "context": "import", "confidence": "EXTRACTED", "source_file": str_path,
+            "source_location": f"L{line}", "weight": 1.0,
+        })
+
     def _name_text(def_node) -> str:
         """A test_case_definition / keyword_definition's `name` child holds
         the human-readable name across one or more `name_chunk` pieces —
@@ -115,15 +153,31 @@ def extract_robot(path: Path) -> dict:
     walk(root)
 
     # Pass 2: resolve calls now that every locally-defined keyword has a nid.
-    # Calls to built-in/library keywords (no matching local definition) are
-    # dropped rather than fabricating a phantom node — same convention as
-    # every other extractor's cross-file call resolution.
+    # Calls to a keyword not defined in this file (imported via `Resource`/
+    # `Library`, e.g. from a .resource file) are deferred to the shared
+    # cross-file `raw_calls` resolver in extract() rather than dropped — the
+    # same mechanism every other language extractor uses. That resolver
+    # matches by exact label first, falling back to a case-fold match only
+    # for extensions in `_CASE_INSENSITIVE_EXTS` (.robot/.resource included,
+    # since Robot Framework keyword names are case-insensitive by spec).
+    raw_calls: list[dict] = []
     for caller_nid, invocations in pending_calls:
         seen_pairs: set[str] = set()
         for callee_name, line in invocations:
             tgt_nid = keyword_nid_by_name.get(callee_name.lower())
-            if tgt_nid and tgt_nid != caller_nid and tgt_nid not in seen_pairs:
-                seen_pairs.add(tgt_nid)
-                add_edge(caller_nid, tgt_nid, "calls", line)
+            if tgt_nid:
+                if tgt_nid != caller_nid and tgt_nid not in seen_pairs:
+                    seen_pairs.add(tgt_nid)
+                    add_edge(caller_nid, tgt_nid, "calls", line)
+                continue
+            raw_calls.append({
+                "caller_nid": caller_nid,
+                "callee": callee_name,
+                "is_member_call": False,
+                "indirect": False,
+                "context": "call",
+                "source_file": str_path,
+                "source_location": f"L{line}",
+            })
 
-    return {"nodes": nodes, "edges": edges}
+    return {"nodes": nodes, "edges": edges, "raw_calls": raw_calls}

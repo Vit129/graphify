@@ -1,10 +1,19 @@
-"""CSS extractor (tree-sitter). New — .css files previously had no
-extractor at all. Structural extraction: each rule set becomes a node
+"""CSS/SCSS extractor (tree-sitter). New — .css/.scss files previously had
+no extractor at all. Structural extraction: each rule set becomes a node
 labeled by its selector text (e.g. `.btn-primary`, `#header .nav-item`),
 so a query for a class/id name finds the rule that defines it. Rules
 nested inside `@media`/`@supports` blocks are connected through that
 block's own node, so a media-query-scoped override is still distinguishable
 from the base rule with the same selector.
+
+SCSS uses a separate grammar (`tree-sitter-scss`, not `tree-sitter-css`) —
+verified empirically that tree-sitter-css produces ERROR nodes on SCSS
+variables/nesting/`&`-selectors, so plain CSS syntax can't just be
+reparsed with looser rules. The two grammars happen to share the same
+`rule_set`/`selectors`/`block`/`media_statement` node shape, so one walker
+(`_walk_stylesheet`) serves both; `extract_scss` additionally treats
+`mixin_statement` (`@mixin`) as a container node, which plain CSS has no
+equivalent of.
 """
 from __future__ import annotations
 
@@ -13,17 +22,31 @@ from pathlib import Path
 from graphify.extractors.base import _file_stem, _make_id, _read_text
 
 _AT_RULE_TYPES = ("media_statement", "supports_statement", "keyframes_statement")
+_SCSS_AT_RULE_TYPES = _AT_RULE_TYPES + ("mixin_statement",)
 
 
 def extract_css(path: Path) -> dict:
     try:
         import tree_sitter_css as tscss
-        from tree_sitter import Language, Parser
+        from tree_sitter import Language
     except ImportError:
         return {"nodes": [], "edges": [], "error": "tree_sitter_css not installed"}
+    return _extract_stylesheet(path, Language(tscss.language()), _AT_RULE_TYPES)
+
+
+def extract_scss(path: Path) -> dict:
+    try:
+        import tree_sitter_scss as tsscss
+        from tree_sitter import Language
+    except ImportError:
+        return {"nodes": [], "edges": [], "error": "tree_sitter_scss not installed"}
+    return _extract_stylesheet(path, Language(tsscss.language()), _SCSS_AT_RULE_TYPES)
+
+
+def _extract_stylesheet(path: Path, language, at_rule_types: tuple[str, ...]) -> dict:
+    from tree_sitter import Parser
 
     try:
-        language = Language(tscss.language())
         parser = Parser(language)
         source = path.read_bytes()
         tree = parser.parse(source)
@@ -78,7 +101,7 @@ def extract_css(path: Path) -> dict:
                 for child in block.children:
                     walk(child, nid)
             return
-        if t in _AT_RULE_TYPES:
+        if t in at_rule_types:
             name_node = next((c for c in node.children if c.type.startswith("@")), None)
             at_name = _read_text(name_node, source) if name_node else "@rule"
             prelude = "".join(

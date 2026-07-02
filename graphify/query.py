@@ -72,6 +72,70 @@ _STOPWORDS = frozenset({
 })
 
 
+# Lightweight query expansion: a query and the code it's about can use
+# different words for the same concept ("log the user in" vs. `authenticate`)
+# with zero literal terms in common, which BM25 can never bridge no matter
+# how good the ranking is. Evaluated full embedding search for this same gap
+# and rejected it (infra cost, network/API-key dependency for a local
+# CLI/MCP tool — see agent-memory/knowledge/architecture/feature-provenance.md)
+# in favor of this: a small curated synonym map riding the existing BM25
+# pipeline as ordinary extra terms. Ceiling: only helps pairs actually in the
+# map below, not open-ended concept similarity — a real embedding-search gap
+# would need the heavier approach this deliberately avoids.
+_SYNONYM_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"login", "signin", "logon", "authenticate", "auth"}),
+    frozenset({"logout", "signout"}),
+    frozenset({"register", "signup"}),
+    frozenset({"delete", "remove", "erase"}),
+    frozenset({"fetch", "retrieve", "get"}),
+    frozenset({"create", "add", "new"}),
+    frozenset({"update", "edit", "modify"}),
+    frozenset({"start", "begin", "launch", "init", "initialize"}),
+    frozenset({"stop", "halt", "terminate", "kill"}),
+    frozenset({"config", "configuration", "settings", "options"}),
+    frozenset({"error", "exception", "fail", "failure"}),
+    frozenset({"test", "spec", "check", "verify", "validate"}),
+    frozenset({"click", "tap", "press"}),
+    frozenset({"send", "submit", "dispatch"}),
+    frozenset({"show", "display", "render"}),
+    frozenset({"hide", "dismiss"}),
+)
+# Separable phrasal-verb patterns ("log the user IN", "sign them UP") for
+# concepts single-token expansion can't reach: the particle ("in"/"up") is a
+# filtered stopword, and the verb ("log") is too ambiguous with logging to
+# put in a synonym group on its own. Matched with a small bounded word-gap
+# against the raw (unfiltered) question so "log in" and "log the user in"
+# both hit but an unrelated "the log rotates later in production" doesn't.
+_PHRASE_SYNONYMS: tuple[tuple["re.Pattern[str]", frozenset[str]], ...] = (
+    (re.compile(r"\blog\b(?:\s+\w+){0,3}\s+\bin\b"), frozenset({"login", "authenticate"})),
+    (re.compile(r"\blog\b(?:\s+\w+){0,3}\s+\bon\b"), frozenset({"login", "logon", "authenticate"})),
+    (re.compile(r"\bsign\b(?:\s+\w+){0,3}\s+\bin\b"), frozenset({"login", "signin", "authenticate"})),
+    (re.compile(r"\blog\b(?:\s+\w+){0,3}\s+\bout\b"), frozenset({"logout"})),
+    (re.compile(r"\bsign\b(?:\s+\w+){0,3}\s+\bout\b"), frozenset({"logout", "signout"})),
+    (re.compile(r"\bsign\b(?:\s+\w+){0,3}\s+\bup\b"), frozenset({"register", "signup"})),
+)
+
+
+def _expand_synonyms(terms: list[str], raw_question: str) -> list[str]:
+    expanded = list(terms)
+    seen = set(terms)
+    for term in terms:
+        for group in _SYNONYM_GROUPS:
+            if term in group:
+                for syn in group:
+                    if syn not in seen:
+                        seen.add(syn)
+                        expanded.append(syn)
+    lower_q = raw_question.lower()
+    for pattern, extra_terms in _PHRASE_SYNONYMS:
+        if pattern.search(lower_q):
+            for syn in extra_terms:
+                if syn not in seen:
+                    seen.add(syn)
+                    expanded.append(syn)
+    return expanded
+
+
 def _query_terms(question: str) -> list[str]:
     """Split a query into searchable terms, segmenting Chinese text."""
     terms: list[str] = []
@@ -85,7 +149,7 @@ def _query_terms(question: str) -> list[str]:
             for tok in re.findall(r"\w+", raw.lower()):
                 if _is_searchable(tok) and tok not in _STOPWORDS:
                     terms.append(tok)
-    return terms
+    return _expand_synonyms(terms, question)
 
 
 # --- P5: typo/abbreviation cascade fallback ---
