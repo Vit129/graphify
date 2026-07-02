@@ -198,7 +198,12 @@ def _html_styles() -> str:
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0f0f1a; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; height: 100vh; overflow: hidden; }
   #graph { flex: 1; }
+  #graph-3d { flex: 1; display: none; }
   #sidebar { width: 280px; background: #1a1a2e; border-left: 1px solid #2a2a4e; display: flex; flex-direction: column; overflow: hidden; }
+  #mode-toggle-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; display: flex; gap: 8px; }
+  .toggle-btn { flex: 1; background: #0f0f1a; border: 1px solid #3a3a5e; color: #aaa; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s ease; outline: none; font-weight: 500; text-align: center; }
+  .toggle-btn:hover { border-color: #4E79A7; color: #fff; }
+  .toggle-btn.active { background: #4E79A7; border-color: #4E79A7; color: #fff; box-shadow: 0 0 8px rgba(78, 121, 167, 0.4); }
   #search-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; }
   #search { width: 100%; background: #0f0f1a; border: 1px solid #3a3a5e; color: #e0e0e0; padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; }
   #search:focus { border-color: #4E79A7; }
@@ -356,8 +361,22 @@ function showInfo(nodeId) {{
 }}
 
 function focusNode(nodeId) {{
-  network.focus(nodeId, {{ scale: 1.4, animation: true }});
-  network.selectNodes([nodeId]);
+  const is3D = document.getElementById('graph-3d').style.display !== 'none';
+  if (is3D && graph3DInstance) {{
+    const node3d = graph3DInstance.graphData().nodes.find(n => n.id === nodeId);
+    if (node3d) {{
+      const distance = 80;
+      const distRatio = 1 + distance/Math.hypot(node3d.x || 0, node3d.y || 0, node3d.z || 0);
+      graph3DInstance.cameraPosition(
+        {{ x: (node3d.x || 0) * distRatio, y: (node3d.y || 0) * distRatio, z: (node3d.z || 0) * distRatio }},
+        node3d,
+        1000
+      );
+    }}
+  }} else {{
+    network.focus(nodeId, {{ scale: 1.4, animation: true }});
+    network.selectNodes([nodeId]);
+  }}
   showInfo(nodeId);
 }}
 
@@ -401,9 +420,7 @@ searchInput.addEventListener('input', () => {{
     el.style.borderLeft = `3px solid ${{n.color.background}}`;
     el.style.paddingLeft = '8px';
     el.onclick = () => {{
-      network.focus(n.id, {{ scale: 1.5, animation: true }});
-      network.selectNodes([n.id]);
-      showInfo(n.id);
+      focusNode(n.id);
       searchResults.style.display = 'none';
       searchInput.value = '';
     }};
@@ -439,6 +456,7 @@ function toggleAllCommunities(hide) {{
   const updates = RAW_NODES.map(n => ({{ id: n.id, hidden: hide }}));
   nodesDS.update(updates);
   updateSelectAllState();
+  update3DGraphData();
 }}
 
 const legendEl = document.getElementById('legend');
@@ -463,6 +481,7 @@ LEGEND.forEach(c => {{
       .map(n => ({{ id: n.id, hidden: !cb.checked }}));
     nodesDS.update(updates);
     updateSelectAllState();
+    update3DGraphData();
   }});
   item.innerHTML = `<div class="legend-dot" style="background:${{c.color}}"></div>
     <span class="legend-label">${{c.label}}</span>
@@ -475,6 +494,141 @@ LEGEND.forEach(c => {{
   }};
   legendEl.appendChild(item);
 }});
+
+let graph3DInstance = null;
+let scriptLoaded = false;
+
+function loadScript(url, callback) {{
+  const script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src = url;
+  script.onload = callback;
+  script.onerror = () => {{
+    alert('Failed to load 3D Force Graph library from CDN.');
+    switchMode('2d');
+  }};
+  document.head.appendChild(script);
+}}
+
+function switchMode(mode) {{
+  const graph2d = document.getElementById('graph');
+  const graph3d = document.getElementById('graph-3d');
+  const btn2d = document.getElementById('btn-2d');
+  const btn3d = document.getElementById('btn-3d');
+  
+  if (mode === '2d') {{
+    graph3d.style.display = 'none';
+    graph2d.style.display = 'block';
+    btn3d.classList.remove('active');
+    btn2d.classList.add('active');
+  }} else if (mode === '3d') {{
+    btn2d.classList.remove('active');
+    btn3d.classList.add('active');
+    
+    if (!scriptLoaded) {{
+      const originalText = btn3d.textContent;
+      btn3d.textContent = 'Loading 3D...';
+      btn3d.disabled = true;
+      loadScript('https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js', () => {{
+        scriptLoaded = true;
+        btn3d.textContent = originalText;
+        btn3d.disabled = false;
+        graph2d.style.display = 'none';
+        graph3d.style.display = 'block';
+        init3DGraph();
+      }});
+    }} else {{
+      graph2d.style.display = 'none';
+      graph3d.style.display = 'block';
+      if (graph3DInstance) {{
+        graph3DInstance.resumeAnimation();
+      }}
+    }}
+  }}
+}}
+
+function init3DGraph() {{
+  const container = document.getElementById('graph-3d');
+  const activeNodes = RAW_NODES.filter(n => !hiddenCommunities.has(n.community));
+  const activeNodeIds = new Set(activeNodes.map(n => n.id));
+  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to));
+  
+  const gData = {{
+    nodes: activeNodes.map(n => ({{
+      id: n.id,
+      label: n.label,
+      color: n.color.background,
+      val: n.size,
+      community: n.community,
+      community_name: n.community_name,
+      source_file: n.source_file,
+      file_type: n.file_type,
+      degree: n.degree
+    }})),
+    links: activeEdges.map((e, idx) => ({{
+      id: idx,
+      source: e.from,
+      target: e.to,
+      label: e.label,
+      title: e.title,
+      color: e.color ? `rgba(255,255,255,${{e.color.opacity || 0.4}})` : 'rgba(255,255,255,0.4)',
+      width: e.width || 1
+    }}))
+  }};
+
+  graph3DInstance = ForceGraph3D({{ controlType: 'orbit' }})(container)
+    .backgroundColor('#0f0f1a')
+    .graphData(gData)
+    .nodeLabel(node => `<div style="padding: 6px; background: rgba(26,26,46,0.9); border: 1px solid #3a3a5e; border-radius: 4px; color: #fff; font-family: sans-serif; font-size: 12px;"><b>${{esc(node.label)}}</b><br/>Type: ${{esc(node.file_type || 'unknown')}}<br/>Community: ${{esc(node.community_name)}}</div>`)
+    .nodeColor(node => node.color)
+    .nodeVal(node => node.val)
+    .linkWidth(link => link.width)
+    .linkColor(link => link.color)
+    .linkOpacity(0.4)
+    .linkDirectionalArrowLength(3.5)
+    .linkDirectionalArrowRelPos(1)
+    .onNodeClick(node => {{
+      const distance = 80;
+      const distRatio = 1 + distance/Math.hypot(node.x, node.y, node.z);
+      graph3DInstance.cameraPosition(
+        {{ x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }},
+        node,
+        1000
+      );
+      showInfo(node.id);
+    }});
+}}
+
+function update3DGraphData() {{
+  if (!graph3DInstance) return;
+  const activeNodes = RAW_NODES.filter(n => !hiddenCommunities.has(n.community));
+  const activeNodeIds = new Set(activeNodes.map(n => n.id));
+  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to));
+  
+  graph3DInstance.graphData({{
+    nodes: activeNodes.map(n => ({{
+      id: n.id,
+      label: n.label,
+      color: n.color.background,
+      val: n.size,
+      community: n.community,
+      community_name: n.community_name,
+      source_file: n.source_file,
+      file_type: n.file_type,
+      degree: n.degree
+    }})),
+    links: activeEdges.map((e, idx) => ({{
+      id: idx,
+      source: e.from,
+      target: e.to,
+      label: e.label,
+      title: e.title,
+      color: e.color ? `rgba(255,255,255,${{e.color.opacity || 0.4}})` : 'rgba(255,255,255,0.4)',
+      width: e.width || 1
+    }}))
+  }});
+}}
+
 </script>"""
 
 
@@ -861,7 +1015,12 @@ def to_html(
 </head>
 <body>
 <div id="graph"></div>
+<div id="graph-3d"></div>
 <div id="sidebar">
+  <div id="mode-toggle-wrap">
+    <button id="btn-2d" class="toggle-btn active" onclick="switchMode('2d')">2D View</button>
+    <button id="btn-3d" class="toggle-btn" onclick="switchMode('3d')">3D View</button>
+  </div>
   <div id="search-wrap">
     <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
     <div id="search-results"></div>

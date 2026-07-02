@@ -17,3 +17,5 @@
 | [p10-toml-and-fish-extraction.md](p10-toml-and-fish-extraction.md) | P10 — TOML + Fish Extraction, Real-Project Validation | Done |
 | [p11-personal-project-coverage-sweep.md](p11-personal-project-coverage-sweep.md) | P11 — Personal-Project Coverage Sweep (.hook free win + full validation) | Done |
 | [p12-code-extensions-classifier-gap.md](p12-code-extensions-classifier-gap.md) | P12 — CODE_EXTENSIONS Classifier Gap (critical: real CLI never saw the new languages) | Done |
+| [p13-3d-force-graph-lazy-view.md](p13-3d-force-graph-lazy-view.md) | P13 — Lazy-Loaded 3D Force Graph Option (Additive, Opt-In) | In Progress |
+
