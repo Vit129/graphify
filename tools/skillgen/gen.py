@@ -110,6 +110,48 @@ ALWAYS_ON_SANCTIONED_EDITS: dict[str, tuple[tuple[str, str], ...]] = {
             "When the user types `/graphify`, use the installed graphify skill or instructions "
             "before doing anything else.",
         ),
+        (
+            'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts.',
+            'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<ClassName/FileName>"` for a known symbol/file (name match, not free-form concept search - use `query` for that).',
+        ),
+    ),
+    # Dogfooding across 4 real projects found `explain "<concept>"` overpromises
+    # free-form semantic search when the underlying match is name-based
+    # (exact/prefix/substring against a label or file path, see
+    # _find_node_core) - two independent agents were misled by this wording.
+    "_CLAUDE_MD_SECTION": (
+        (
+            'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts.',
+            'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<ClassName/FileName>"` for a known symbol/file (name match, not free-form concept search - use `query` for that).',
+        ),
+    ),
+    "_GEMINI_MD_SECTION": (
+        (
+            'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts.',
+            'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<ClassName/FileName>"` for a known symbol/file (name match, not free-form concept search - use `query` for that).',
+        ),
+    ),
+    "_VSCODE_INSTRUCTIONS_SECTION": (
+        (
+            'Use `graphify path "<A>" "<B>"` for relationship questions and `graphify explain "<concept>"`\n'
+            "for focused-concept questions. These return a scoped subgraph, usually much smaller than the full\n"
+            "report or raw grep output.",
+            'Use `graphify path "<A>" "<B>"` for relationship questions and `graphify explain "<ClassName/FileName>"`\n'
+            "for a known symbol/file - name match, not free-form concept search (use `query` for that). These\n"
+            "return a scoped subgraph, usually much smaller than the full report or raw grep output.",
+        ),
+    ),
+    "_ANTIGRAVITY_RULES": (
+        (
+            'Use `graphify path "<A>" "<B>"` / `shortest_path` for relationships and `graphify explain "<concept>"` / `get_node` for focused concepts.',
+            'Use `graphify path "<A>" "<B>"` / `shortest_path` for relationships and `graphify explain "<ClassName/FileName>"` / `get_node` for a known symbol/file (name match, not free-form concept search - use `query` for that).',
+        ),
+    ),
+    "_KIRO_STEERING": (
+        (
+            'first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`).',
+            'first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<ClassName/FileName>"` for a known symbol/file - name match, not free-form concept search).',
+        ),
     ),
 }
 

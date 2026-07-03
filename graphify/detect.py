@@ -689,13 +689,22 @@ _SKIP_FILES = {
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
     "Cargo.lock", "poetry.lock", "Gemfile.lock",
     "composer.lock", "go.sum", "go.work.sum",
-    # graphify's own generated report filenames (#524's "never treat own output
-    # as source input" extended to loose copies outside a graphify-out/ dir -
-    # e.g. a demo corpus directory with just the report copied out). Without
-    # this, a report heading like "Communities (141 total, 52 thin omitted)"
-    # gets re-ingested as if it were real project documentation.
-    "GRAPH_REPORT.md", "GRAPH_SUMMARY.md",
 }
+
+# graphify's own generated report filenames (#524's "never treat own output as
+# source input" extended to loose copies outside a graphify-out/ dir - e.g. a
+# demo corpus directory with just the report copied out, or a hand-made backup
+# like GRAPH_REPORT_BACKUP.md). Prefix match, not exact-name, so any backup/
+# copy variant is caught too. Without this, a report heading like "## Suggested
+# Questions" or "Communities (141 total, 52 thin omitted)" gets re-ingested as
+# if it were real project documentation.
+_SKIP_FILE_PREFIXES = ("GRAPH_REPORT", "GRAPH_SUMMARY")
+
+
+def _is_skipped_file(fname: str) -> bool:
+    if fname in _SKIP_FILES:
+        return True
+    return fname.startswith(_SKIP_FILE_PREFIXES) and fname.endswith(".md")
 
 def _is_noise_dir(part: str, parent: "Path | None" = None) -> bool:
     """Return True if this directory name looks like a venv, cache, or dep dir."""
@@ -1085,7 +1094,7 @@ def detect(root: Path, *, follow_symlinks: bool | None = None, google_workspace:
                     and not _is_ignored(dp / d, root, ignore_patterns, _cache=ignore_cache)
                 ]
             for fname in filenames:
-                if fname in _SKIP_FILES:
+                if _is_skipped_file(fname):
                     continue
                 p = dp / fname
                 if p not in seen:

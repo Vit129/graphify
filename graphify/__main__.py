@@ -1232,7 +1232,7 @@ This project has a graphify knowledge graph at graphify-out/.
 **MANDATORY: Before using Read, Grep, Glob, or Bash to explore the codebase, you MUST run graphify first:**
 - `graphify query "<question>"` — scoped subgraph for any codebase or architecture question
 - `graphify path "<A>" "<B>"` — dependency path between two symbols
-- `graphify explain "<concept>"` — all nodes related to a concept
+- `graphify explain "<ClassName/FileName>"` — all nodes related to a known symbol/file (name match, not free-form concept search - use `query` for that)
 
 This applies to YOU and to every subagent you spawn. Include this rule explicitly in every subagent prompt that involves code exploration. Do not skip graphify because files are "already known" or because you are executing a plan — the graph surfaces cross-file dependencies and INFERRED edges that grep and Read cannot find.
 
@@ -1282,7 +1282,7 @@ _DEVIN_RULES = """\
 This project has a graphify knowledge graph at graphify-out/.
 
 Rules:
-- For codebase or architecture questions, when `graphify-out/graph.json` exists, first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`). These return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output.
+- For codebase or architecture questions, when `graphify-out/graph.json` exists, first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<ClassName/FileName>"` for a known symbol/file - name match, not free-form concept search). These return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output.
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
@@ -3156,30 +3156,63 @@ def main() -> None:
         if not tgt_scored:
             print(f"No node matching '{target_label}' found.", file=sys.stderr)
             sys.exit(1)
-        src_nid, tgt_nid = src_scored[0][1], tgt_scored[0][1]
-        # Ambiguity guard: when both queries resolve to the same node, the
-        # shortest path is trivially zero hops, which is almost never what the
-        # caller wanted (see bug #828).
-        if src_nid == tgt_nid:
+        def _near_tied_candidates(scored: list) -> list:
+            """All nodes within 10% of the top score, not just the top pick -
+            a duplicate-named node (e.g. the same section title repeated
+            across several files) can tie or near-tie, and the arbitrary
+            top-of-tie choice may happen to be disconnected from the other
+            side while a different tied candidate would have connected."""
+            if not scored:
+                return []
+            top = scored[0][0]
+            if top <= 0:
+                return [scored[0][1]]
+            return [nid for score, nid in scored if (top - score) / top < 0.10]
+
+        src_candidates = _near_tied_candidates(src_scored)
+        tgt_candidates = _near_tied_candidates(tgt_scored)
+        # Ambiguity guard: when EVERY candidate on both sides is the same single
+        # node, the shortest path is trivially zero hops, which is almost never
+        # what the caller wanted (see bug #828).
+        if src_candidates == tgt_candidates and len(src_candidates) == 1:
             print(
                 f"'{source_label}' and '{target_label}' both resolved to the same "
-                f"node '{src_nid}'. Use a more specific label or the exact node ID.",
+                f"node '{src_candidates[0]}'. Use a more specific label or the exact node ID.",
                 file=sys.stderr,
             )
             sys.exit(1)
-        for _name, _scored in (("source", src_scored), ("target", tgt_scored)):
-            if len(_scored) >= 2:
-                _top, _runner = _scored[0][0], _scored[1][0]
-                if _top > 0 and (_top - _runner) / _top < 0.10:
-                    print(
-                        f"warning: {_name} match was ambiguous "
-                        f"(top score {_top:g}, runner-up {_runner:g})",
-                        file=sys.stderr,
-                    )
-        try:
-            path_nodes = _nx.shortest_path(G.to_undirected(as_view=True), src_nid, tgt_nid)
-        except (_nx.NetworkXNoPath, _nx.NodeNotFound):
-            print(f"No path found between '{source_label}' and '{target_label}'.")
+        for _name, _candidates in (("source", src_candidates), ("target", tgt_candidates)):
+            if len(_candidates) >= 2:
+                print(
+                    f"warning: {_name} match was ambiguous - {len(_candidates)} equally-plausible "
+                    f"nodes ({', '.join(_candidates[:5])}{', ...' if len(_candidates) > 5 else ''}), "
+                    "trying each before giving up",
+                    file=sys.stderr,
+                )
+        path_nodes = None
+        src_nid = src_candidates[0]
+        tgt_nid = tgt_candidates[0]
+        G_undirected = G.to_undirected(as_view=True)
+        # Best-combo-first: try same-rank pairs before crossing into worse-ranked
+        # candidates on either side, skipping any pair that resolves to one node.
+        pairs = sorted(
+            ((si, ti) for si in range(len(src_candidates)) for ti in range(len(tgt_candidates))),
+            key=lambda p: p[0] + p[1],
+        )
+        for si, ti in pairs:
+            s, t = src_candidates[si], tgt_candidates[ti]
+            if s == t:
+                continue
+            try:
+                path_nodes = _nx.shortest_path(G_undirected, s, t)
+                src_nid, tgt_nid = s, t
+                break
+            except (_nx.NetworkXNoPath, _nx.NodeNotFound):
+                continue
+        if path_nodes is None:
+            tried = len(pairs)
+            suffix = f" (tried {tried} candidate pair{'s' if tried != 1 else ''})" if tried > 1 else ""
+            print(f"No path found between '{source_label}' and '{target_label}'.{suffix}")
             sys.exit(0)
         hops = len(path_nodes) - 1
         segments = []

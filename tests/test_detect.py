@@ -470,6 +470,20 @@ def test_detect_skips_own_generated_report_files(tmp_path):
     assert any("app.py" in f for f in all_files)
 
 
+def test_detect_skips_backup_variants_of_own_report_files(tmp_path):
+    """A hand-made backup like GRAPH_REPORT_BACKUP.md must also be excluded -
+    found via a real repo where a manual backup of the report got re-ingested
+    and its own "## Suggested Questions" heading became a competing node."""
+    (tmp_path / "GRAPH_REPORT_BACKUP.md").write_text("## Suggested Questions\n- foo?")
+    (tmp_path / "GRAPH_SUMMARY_OLD.md").write_text("## God Nodes\n1. `Foo`")
+    (tmp_path / "app.py").write_text("def main(): pass")
+    result = detect(tmp_path)
+    all_files = [f for files in result["files"].values() for f in files]
+    assert not any("GRAPH_REPORT_BACKUP.md" in f for f in all_files)
+    assert not any("GRAPH_SUMMARY_OLD.md" in f for f in all_files)
+    assert any("app.py" in f for f in all_files)
+
+
 def test_detect_skips_storybook_static_dir(tmp_path):
     """storybook-static/ is a build artefact — must be excluded."""
     sb = tmp_path / "storybook-static"
