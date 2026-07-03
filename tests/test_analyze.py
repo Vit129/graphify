@@ -509,6 +509,8 @@ def test_is_json_key_node_non_json_file():
     "peerDependencies",
     "optionalDependencies",
     "bundledDependencies",
+    "scripts",
+    "workspaces",
 ])
 def test_god_nodes_excludes_npm_dep_block_keys(dep_key: str) -> None:
     """npm package.json dep-block keys must be filtered from god_nodes output.

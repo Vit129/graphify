@@ -1,0 +1,8 @@
+# graphify's own project graph
+
+# Demo/test corpora — outputs from running graphify against OTHER repos
+# (httpx, karpathy-repos, etc.) for manual testing. Their generated
+# GRAPH_REPORT.md/GRAPH_SUMMARY.md files were getting re-ingested as if
+# they were this project's own documentation, polluting the god-node list
+# with report-generated text ("Communities (141 total, 52 thin omitted)").
+worked/

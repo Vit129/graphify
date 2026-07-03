@@ -94,6 +94,10 @@ _JSON_NOISE_LABELS: frozenset[str] = frozenset({
     "value", "key", "data", "items", "title", "description", "version",
     "dependencies", "devdependencies", "peerdependencies",
     "optionaldependencies", "bundleddependencies", "bundledependencies",
+    # package.json boilerplate keys as common as the dependency blocks above -
+    # every npm project has them, none represent a project abstraction.
+    "scripts", "main", "bin", "engines", "keywords", "author", "license",
+    "repository", "private", "workspaces",
 })
 
 

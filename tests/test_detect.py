@@ -454,6 +454,22 @@ def test_detect_skips_snapshots_dir(tmp_path):
     assert any("app.ts" in f for f in all_files)
 
 
+def test_detect_skips_own_generated_report_files(tmp_path):
+    """A loose GRAPH_REPORT.md/GRAPH_SUMMARY.md outside a graphify-out/ dir must
+    still be excluded — a demo/reference corpus copied out of another project's
+    graphify-out shouldn't get re-ingested as if it were real documentation."""
+    demo = tmp_path / "worked" / "some-other-repo"
+    demo.mkdir(parents=True)
+    (demo / "GRAPH_REPORT.md").write_text("## Communities (141 total, 52 thin omitted)")
+    (demo / "GRAPH_SUMMARY.md").write_text("## God Nodes\n1. `Foo` - 10 edges")
+    (tmp_path / "app.py").write_text("def main(): pass")
+    result = detect(tmp_path)
+    all_files = [f for files in result["files"].values() for f in files]
+    assert not any("GRAPH_REPORT.md" in f for f in all_files)
+    assert not any("GRAPH_SUMMARY.md" in f for f in all_files)
+    assert any("app.py" in f for f in all_files)
+
+
 def test_detect_skips_storybook_static_dir(tmp_path):
     """storybook-static/ is a build artefact — must be excluded."""
     sb = tmp_path / "storybook-static"

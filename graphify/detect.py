@@ -689,6 +689,12 @@ _SKIP_FILES = {
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
     "Cargo.lock", "poetry.lock", "Gemfile.lock",
     "composer.lock", "go.sum", "go.work.sum",
+    # graphify's own generated report filenames (#524's "never treat own output
+    # as source input" extended to loose copies outside a graphify-out/ dir -
+    # e.g. a demo corpus directory with just the report copied out). Without
+    # this, a report heading like "Communities (141 total, 52 thin omitted)"
+    # gets re-ingested as if it were real project documentation.
+    "GRAPH_REPORT.md", "GRAPH_SUMMARY.md",
 }
 
 def _is_noise_dir(part: str, parent: "Path | None" = None) -> bool:
