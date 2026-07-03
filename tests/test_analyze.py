@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 from graphify.build import build_from_json
 from graphify.cluster import cluster
-from graphify.analyze import god_nodes, surprising_connections, _is_concept_node, graph_diff, _surprise_score, _file_category, _is_json_key_node, find_import_cycles, unreachable_functions
+from graphify.analyze import god_nodes, surprising_connections, _is_concept_node, graph_diff, _surprise_score, _file_category, _is_json_key_node, find_import_cycles, unreachable_functions, cross_cutting_nodes
 from graphify.extract import _make_id
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -125,6 +125,34 @@ def test_surprising_connections_ambiguous_scores_higher_than_extracted():
     score_amb, _ = _surprise_score(G, "a", "b", G.edges["a", "b"], nc, "repo1/model.py", "repo2/train.py")
     score_ext, _ = _surprise_score(G, "c", "d", G.edges["c", "d"], nc, "repo1/data.py", "repo2/eval.py")
     assert score_amb > score_ext
+
+
+def test_surprise_score_documents_bug_in_outranks_extracted_of_same_shape():
+    """documents_bug_in must score higher than a plain EXTRACTED edge with the
+    same cross-file/cross-community shape, so a known-issue-to-code link isn't
+    crowded out of the top_n surprises by generic AMBIGUOUS/INFERRED edges (G2)."""
+    G = nx.Graph()
+    for nid, label, src in [
+        ("case_001", "CASE-001: modal isVisible() bug", "agent-memory/PLAYBOOK.md"),
+        ("confirm_order", ".confirmOrder()", "tests/pages/orderConfirmPage.ts"),
+        ("gamma", "Gamma", "repo1/data.py"),
+        ("delta", "Delta", "repo2/eval.py"),
+    ]:
+        G.add_node(nid, label=label, source_file=src, file_type="document" if nid == "case_001" else "code")
+    G.add_edge("case_001", "confirm_order", relation="documents_bug_in", confidence="EXTRACTED",
+               weight=1.0, source_file="agent-memory/PLAYBOOK.md")
+    G.add_edge("gamma", "delta", relation="calls", confidence="EXTRACTED", weight=1.0, source_file="repo1/data.py")
+    nc = {"case_001": 0, "confirm_order": 1, "gamma": 0, "delta": 1}
+
+    score_bug, reasons_bug = _surprise_score(
+        G, "case_001", "confirm_order", G.edges["case_001", "confirm_order"], nc,
+        "agent-memory/PLAYBOOK.md", "tests/pages/orderConfirmPage.ts",
+    )
+    score_plain, _ = _surprise_score(
+        G, "gamma", "delta", G.edges["gamma", "delta"], nc, "repo1/data.py", "repo2/eval.py",
+    )
+    assert score_bug > score_plain
+    assert any("root cause/fix" in r for r in reasons_bug)
 
 
 def test_surprise_score_accepts_precomputed_degrees():
@@ -823,4 +851,89 @@ def test_unreachable_functions_respects_top_n():
         nid, attrs = _make_fn_node(f"_dead{i}")
         G.add_node(nid, **attrs)
     result = unreachable_functions(G, top_n=2)
+    assert len(result) == 2
+
+
+# --- cross_cutting_nodes (#2) --------------------------------------------------
+
+def test_cross_cutting_nodes_ranks_bridge_over_utility_sink():
+    """A node imported 200x from ONE community (a utility sink like a color
+    helper) must rank below a node with far fewer neighbors that are spread
+    across many DIFFERENT communities (a genuine cross-cutting coupler) - the
+    exact withOpacity()/COLORS vs. real-architecture distinction god_nodes()
+    (degree-only) can't make."""
+    G = nx.Graph()
+    G.add_node("util", label="withOpacity", source_file="src/colors.js")
+    G.add_node("coupler", label="SessionCoordinator", source_file="src/session.py")
+    communities = {0: ["util"], 1: ["coupler"]}
+    # util: 30 neighbors total, but nearly all in ITS OWN community (a utility
+    # sink) - only 2 stray neighbors land in other communities.
+    for i in range(30):
+        n = f"ui{i}"
+        G.add_node(n, label=f"Component{i}", source_file=f"src/ui/c{i}.jsx")
+        G.add_edge("util", n)
+        if i < 2:
+            communities[100 + i] = [n]
+        else:
+            communities[0].append(n)
+    # coupler: only 4 neighbors, but each in its OWN distinct community - more
+    # DISTINCT communities bridged than util despite far lower raw degree.
+    for i in range(4):
+        n = f"area{i}"
+        G.add_node(n, label=f"Area{i}", source_file=f"src/area{i}/mod.py")
+        G.add_edge("coupler", n)
+        communities[2 + i] = [n]
+    result = cross_cutting_nodes(G, communities, top_n=10)
+    labels = [r["label"] for r in result]
+    assert labels.index("SessionCoordinator") < labels.index("withOpacity")
+
+
+def test_cross_cutting_nodes_excludes_noise():
+    """Same noise exclusions as god_nodes(): builtin primitives, file-level
+    hubs, JSON boilerplate keys never appear even if they bridge communities."""
+    G = nx.Graph()
+    G.add_node("real", label="AuthService", source_file="src/auth.py")
+    G.add_node("noise", label="Int", source_file="src/mouse.swift")
+    communities = {0: ["real"], 1: ["noise"]}
+    for i in range(3):
+        n = f"area{i}"
+        G.add_node(n, label=f"Area{i}", source_file=f"src/area{i}.py")
+        G.add_edge("real", n)
+        G.add_edge("noise", n)
+        communities[2 + i] = [n]
+    result = cross_cutting_nodes(G, communities, top_n=10)
+    labels = [r["label"] for r in result]
+    assert "Int" not in labels
+    assert "AuthService" in labels
+
+
+def test_cross_cutting_nodes_excludes_nodes_with_no_cross_community_neighbors():
+    """A node whose neighbors are all in its own community bridges nothing and
+    must not appear, regardless of degree."""
+    G = nx.Graph()
+    G.add_node("hub", label="Helper", source_file="src/helper.py")
+    communities = {0: ["hub"]}
+    for i in range(10):
+        n = f"peer{i}"
+        G.add_node(n, label=f"Peer{i}", source_file=f"src/peer{i}.py")
+        G.add_edge("hub", n)
+        communities[0].append(n)
+    result = cross_cutting_nodes(G, communities, top_n=10)
+    assert result == []
+
+
+def test_cross_cutting_nodes_respects_top_n():
+    G = nx.Graph()
+    communities: dict[int, list[str]] = {}
+    for i in range(5):
+        nid = f"bridge{i}"
+        G.add_node(nid, label=f"Bridge{i}", source_file=f"src/b{i}.py")
+        communities[i] = [nid]
+        for j in range(2):
+            n = f"b{i}_area{j}"
+            other_cid = i * 10 + j + 100
+            G.add_node(n, label=f"X{i}_{j}", source_file=f"src/x{i}_{j}.py")
+            G.add_edge(nid, n)
+            communities[other_cid] = [n]
+    result = cross_cutting_nodes(G, communities, top_n=2)
     assert len(result) == 2

@@ -3532,6 +3532,7 @@ def main() -> None:
         from graphify.cluster import cluster, score_all, remap_communities_to_previous
         from graphify.analyze import (
             god_nodes,
+            cross_cutting_nodes,
             surprising_connections,
             suggest_questions,
         )
@@ -3581,6 +3582,7 @@ def main() -> None:
         stages.mark("cluster")
         cohesion = score_all(G, communities)
         gods = god_nodes(G)
+        cross_cutting = cross_cutting_nodes(G, communities)
         surprises = surprising_connections(G, communities)
         stages.mark("analyze")
         out = watch_path / _GRAPHIFY_OUT
@@ -3697,7 +3699,7 @@ def main() -> None:
                           {"warning": "cluster-only mode — file stats not available"},
                           tokens, str(watch_path), suggested_questions=questions,
                           min_community_size=min_community_size, built_at_commit=_commit,
-                          learning=_llfr(out / "graph.json"))
+                          learning=_llfr(out / "graph.json"), cross_cutting_list=cross_cutting)
         (out / "GRAPH_REPORT.md").write_text(report, encoding="utf-8")
         from graphify.report import summarize as _summarize
         (out / "GRAPH_SUMMARY.md").write_text(_summarize(report, out.parent.resolve().name), encoding="utf-8")
@@ -5180,7 +5182,7 @@ def main() -> None:
         )
         from graphify.cluster import cluster as _cluster, score_all as _score_all
         from graphify.export import to_json as _to_json
-        from graphify.analyze import god_nodes as _god_nodes, surprising_connections as _surprising
+        from graphify.analyze import god_nodes as _god_nodes, cross_cutting_nodes as _cross_cutting, surprising_connections as _surprising
         dedup_backend = backend if dedup_llm else None
         if incremental_mode:
             G = _build_merge(
@@ -5210,6 +5212,10 @@ def main() -> None:
             gods = _god_nodes(G)
         except Exception:
             gods = []
+        try:
+            cross_cutting = _cross_cutting(G, communities)
+        except Exception:
+            cross_cutting = []
         try:
             surprises = _surprising(G, communities)
         except Exception:
@@ -5301,7 +5307,8 @@ def main() -> None:
                     {"files": files_by_type, "total_files": len(code_files) + len(semantic_files), "total_words": total_words},
                     {"input": merged["input_tokens"], "output": merged["output_tokens"]},
                     report_root, suggested_questions=questions,
-                    built_at_commit=_git_head(), learning=_llfr(str(graph_json_path))
+                    built_at_commit=_git_head(), learning=_llfr(str(graph_json_path)),
+                    cross_cutting_list=cross_cutting,
                 )
                 (graphify_out / "GRAPH_REPORT.md").write_text(report, encoding="utf-8")
                 (graphify_out / "GRAPH_SUMMARY.md").write_text(_summarize(report, target.name), encoding="utf-8")

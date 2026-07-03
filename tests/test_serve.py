@@ -26,6 +26,8 @@ from graphify.serve import (
     _load_graph,
     _community_header,
     _blast_radius_hops,
+    _hop_distances,
+    _embedding_seed_fallback,
 )
 
 
@@ -497,6 +499,178 @@ def test_subgraph_to_text_includes_edge_context():
     assert "context=call" in text
 
 
+# --- relevance-ranked ordering (#1) -------------------------------------------
+
+def _make_graph_with_god_node():
+    """A hub with many low-value edges that would win a pure degree-sort, plus
+    a lower-degree node one hop closer to the seed and directly BM25-relevant
+    to a query about it — the real-world pattern found in the roadmap (a
+    generic hub outranking the actually-relevant symbol)."""
+    G = nx.Graph()
+    G.add_node("seed", label="getBm25Corpus", source_file="query.py")
+    G.add_node("relevant", label="bm25CorpusBuilder", source_file="query.py")
+    G.add_node("hub", label="Graph", source_file="fixtures/sample.rs")
+    G.add_edge("seed", "relevant", relation="calls", confidence="EXTRACTED")
+    G.add_edge("seed", "hub", relation="references", confidence="EXTRACTED")
+    # Give the hub much higher raw degree than "relevant" - a pure degree-sort
+    # must rank it first without the fix.
+    for i in range(10):
+        peer = f"hub_peer_{i}"
+        G.add_node(peer, label=f"peer{i}", source_file="x.py")
+        G.add_edge("hub", peer, relation="references", confidence="EXTRACTED")
+    return G
+
+
+def test_subgraph_to_text_default_ordering_is_degree_only_unchanged():
+    """Omitting hop_distances/relevance_scores preserves the exact old
+    degree-sort behavior - the hub (degree 11) outranks 'relevant' (degree 1)."""
+    G = _make_graph_with_god_node()
+    nodes = {"seed", "relevant", "hub"}
+    text = _subgraph_to_text(G, nodes, [("seed", "relevant"), ("seed", "hub")], seeds=["seed"])
+    lines = [l for l in text.splitlines() if l.startswith("NODE ")]
+    order = [l.split()[1] for l in lines]
+    assert order.index("Graph") < order.index("bm25CorpusBuilder")
+
+
+def test_subgraph_to_text_ranks_relevant_node_over_higher_degree_hub():
+    """With hop_distances/relevance_scores supplied, a node one hop closer to
+    the seed and with real BM25 relevance ranks ahead of a same-hop hub with
+    far higher degree (#1 - the fix the roadmap measured against a live query)."""
+    G = _make_graph_with_god_node()
+    nodes = {"seed", "relevant", "hub"}
+    edges = [("seed", "relevant"), ("seed", "hub")]
+    hop_distances = _hop_distances(nodes, edges, seeds=["seed"])
+    relevance_scores = {"relevant": 12.0, "hub": 0.0}
+    text = _subgraph_to_text(
+        G, nodes, edges, seeds=["seed"],
+        hop_distances=hop_distances, relevance_scores=relevance_scores,
+    )
+    lines = [l for l in text.splitlines() if l.startswith("NODE ")]
+    order = [l.split()[1] for l in lines]
+    assert order.index("bm25CorpusBuilder") < order.index("Graph")
+
+
+def test_subgraph_to_text_anchors_concept_node_to_neighbor_file():
+    """A concept node (no source_file/location of its own) gets an
+    anchor=<neighbor file> hint from its highest-degree neighbor that has a
+    real file, so it points somewhere instead of being a dead end (#4)."""
+    G = nx.Graph()
+    G.add_node("concept", label="Authentication Flow", source_file="", source_location="")
+    G.add_node("symbol", label="AuthService", source_file="src/auth.py", source_location="L10")
+    G.add_edge("concept", "symbol", relation="conceptually_related_to", confidence="INFERRED")
+    text = _subgraph_to_text(G, {"concept", "symbol"}, [("concept", "symbol")])
+    lines = {l.split()[1]: l for l in text.splitlines() if l.startswith("NODE ")}
+    assert "anchor=src/auth.py]" in lines["Authentication"] or "anchor=src/auth.py" in lines.get("Authentication", "")
+
+
+def test_subgraph_to_text_no_anchor_when_node_has_own_location():
+    """A node with its own source_location never gets an anchor suffix, even
+    if it has neighbors with files - the anchor is only a fallback for nodes
+    with nowhere else to point."""
+    G = nx.Graph()
+    G.add_node("symbol", label="AuthService", source_file="src/auth.py", source_location="L10")
+    G.add_node("peer", label="Other", source_file="src/other.py", source_location="L1")
+    G.add_edge("symbol", "peer", relation="calls", confidence="EXTRACTED")
+    text = _subgraph_to_text(G, {"symbol", "peer"}, [("symbol", "peer")])
+    assert "anchor=" not in text
+
+
+def test_subgraph_to_text_no_anchor_when_no_neighbor_has_a_file():
+    """A fully isolated concept node (no neighbor has a real file) gets no
+    anchor suffix - nothing fabricated when there's genuinely nothing to point to."""
+    G = nx.Graph()
+    G.add_node("concept_a", label="Idea A", source_file="", source_location="")
+    G.add_node("concept_b", label="Idea B", source_file="", source_location="")
+    G.add_edge("concept_a", "concept_b", relation="conceptually_related_to", confidence="INFERRED")
+    text = _subgraph_to_text(G, {"concept_a", "concept_b"}, [("concept_a", "concept_b")])
+    assert "anchor=" not in text
+
+
+def test_hop_distances_from_seed():
+    nodes = {"seed", "a", "b", "c"}
+    edges = [("seed", "a"), ("a", "b"), ("b", "c")]
+    dist = _hop_distances(nodes, edges, seeds=["seed"])
+    assert dist == {"seed": 0, "a": 1, "b": 2, "c": 3}
+
+
+def test_hop_distances_undirected_regardless_of_edge_tuple_order():
+    """Edge direction in the (u, v) tuple must not affect hop distance - a
+    caller and callee are equally 'close' for ranking purposes."""
+    nodes = {"seed", "a"}
+    edges = [("a", "seed")]  # seed is the second element, not the first
+    dist = _hop_distances(nodes, edges, seeds=["seed"])
+    assert dist["a"] == 1
+
+
+def test_query_graph_text_char_budget_uses_4_chars_per_token():
+    """token_budget * 4 (matching llm.py's _CHARS_PER_TOKEN), not the old * 3 -
+    a caller asking for a 2000-token budget should get ~2000 tokens' worth of
+    output, not ~1500 (#6)."""
+    G = _make_graph()
+    long_nodes = {f"n{i}" for i in range(20)}
+    for n in long_nodes:
+        G.add_node(n, label=f"averagelylongsymbolname{n}", source_file="f.py")
+    text = _subgraph_to_text(G, long_nodes, [], token_budget=50)
+    assert len(text) <= 50 * 4 + 200  # + slack for the truncation hint suffix
+
+
+# --- local dense-retrieval seed fallback (#5) ---------------------------------
+# sentence-transformers is NOT installed in this test env (it's the optional
+# `embeddings` extra) - these tests mock the model/index directly, so they
+# verify the wiring/fallback logic without needing real model weights.
+
+def test_embedding_seed_fallback_empty_when_dependency_missing():
+    """With the optional extra genuinely absent, the fallback is a silent
+    no-op - never raises, just returns []."""
+    G = _make_graph()
+    assert _embedding_seed_fallback(G, "some question with zero overlap") == []
+
+
+def test_embedding_seed_fallback_ranks_by_cosine_similarity(monkeypatch):
+    """Given a mocked embedding index, the fallback returns node ids ranked
+    by dot product with the (normalized) query vector - the top_k closest."""
+    import numpy as np
+    G = _make_graph()
+    node_ids = ["n1", "n2", "n3"]
+    # n2's embedding is closest (highest dot product) to the query vector below.
+    embeddings = np.array([
+        [1.0, 0.0, 0.0],   # n1
+        [0.0, 1.0, 0.0],   # n2
+        [0.7, 0.7, 0.0],   # n3
+    ])
+    monkeypatch.setattr("graphify.query._get_embedding_index", lambda G: (node_ids, embeddings))
+
+    class _FakeModel:
+        def encode(self, texts, normalize_embeddings=True):
+            return np.array([[0.0, 1.0, 0.0]])  # matches n2 exactly
+
+    monkeypatch.setattr("graphify.query._get_embedding_model", lambda: _FakeModel())
+    result = _embedding_seed_fallback(G, "query", top_k=2)
+    assert result[0] == "n2"
+    assert len(result) == 2
+
+
+def test_query_graph_text_uses_embedding_fallback_as_true_last_resort(monkeypatch):
+    """When BM25/typo/fuzzy all find nothing, _query_graph_text falls through
+    to the embedding fallback and surfaces its low-confidence note instead of
+    'No matching nodes found.'"""
+    G = _make_graph()
+    monkeypatch.setattr("graphify.query._embedding_seed_fallback", lambda G, q, top_k=3: ["n1"])
+    text = _query_graph_text(G, "zzz_totally_unrelated_query_xyz")
+    assert "No matching nodes found." not in text
+    assert "embedding-based fallback" in text
+    assert "extract" in text  # n1's label from _make_graph()
+
+
+def test_query_graph_text_still_reports_no_match_when_embedding_fallback_also_empty(monkeypatch):
+    """The embedding fallback returning [] (dependency absent, or genuinely no
+    match) must fall through to the original 'No matching nodes found.'"""
+    G = _make_graph()
+    monkeypatch.setattr("graphify.query._embedding_seed_fallback", lambda G, q, top_k=3: [])
+    text = _query_graph_text(G, "zzz_totally_unrelated_query_xyz")
+    assert text == "No matching nodes found."
+
+
 # --- work-memory overlay annotation on NODE lines -----------------------------
 
 def test_subgraph_to_text_annotates_node_with_learning_status():
@@ -759,6 +933,38 @@ def test_pick_seeds_respects_max_k():
     scored = [(10.0, f"n{i}") for i in range(10)]
     seeds = _pick_seeds(scored, max_k=3)
     assert len(seeds) == 3
+
+
+# --- concept-node seed down-weighting (#4) ------------------------------------
+
+def test_pick_seeds_prefers_ast_node_over_near_tied_concept_node():
+    """A concept node (empty source_file - nowhere to open) must lose the top
+    seed slot to a near-tied AST symbol (has a real file), so the query
+    resolves to something with a line, not a dead end."""
+    G = nx.Graph()
+    G.add_node("concept", label="Authentication Flow", source_file="")
+    G.add_node("symbol", label="AuthService", source_file="src/auth.py")
+    scored = [(10.0, "concept"), (9.0, "symbol")]  # concept scores higher raw
+    seeds = _pick_seeds(scored, max_k=1, G=G)
+    assert seeds == ["symbol"]
+
+
+def test_pick_seeds_concept_node_still_wins_when_genuinely_dominant():
+    """The penalty is a tiebreak, not a ban - a concept node that's the clear
+    best match still wins over a barely-relevant AST node."""
+    G = nx.Graph()
+    G.add_node("concept", label="Authentication Flow", source_file="")
+    G.add_node("symbol", label="unrelatedHelper", source_file="src/misc.py")
+    scored = [(10.0, "concept"), (1.0, "symbol")]
+    seeds = _pick_seeds(scored, max_k=1, G=G)
+    assert seeds == ["concept"]
+
+
+def test_pick_seeds_no_graph_preserves_old_behavior():
+    """Omitting G (as pre-existing callers may) must skip the penalty
+    entirely - identical to calling with a graph with no concept nodes."""
+    scored = [(10.0, "a"), (9.0, "b")]
+    assert _pick_seeds(scored, max_k=2) == ["a", "b"]
 
 
 def test_pick_seeds_multi_term_diversifies_across_communities():

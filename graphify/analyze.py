@@ -160,6 +160,48 @@ def god_nodes(G: nx.Graph, top_n: int = 10, by: str = "degree") -> list[dict]:
     return result
 
 
+def cross_cutting_nodes(
+    G: nx.Graph, communities: dict[int, list[str]], top_n: int = 10
+) -> list[dict]:
+    """Return the top_n nodes whose neighbors span the most DISTINCT
+    communities - a second axis for "core abstraction" that degree/pagerank
+    can't provide (#2).
+
+    god_nodes() ranks by fan-in count alone, which can't distinguish a
+    cross-cutting architectural coupler from a widely-used utility/config
+    sink (e.g. a color-utility function imported by 200 UI components, all
+    in the same community) - both have high degree, but only the former
+    genuinely couples different areas of the codebase. This ranks by how many
+    different communities a node's neighbors belong to, independent of how
+    many neighbors it has in any single one of them, so a utility sink scores
+    low here even though it tops the degree-based god_nodes() list.
+    """
+    node_community = _node_community_map(communities)
+    result = []
+    for node_id in G.nodes():
+        if _is_file_node(G, node_id) or _is_concept_node(G, node_id) or _is_json_key_node(G, node_id):
+            continue
+        if G.nodes[node_id].get("label", "") in _BUILTIN_NOISE_LABELS:
+            continue
+        if G.nodes[node_id].get("type") in ("module", "namespace"):
+            continue
+        own_cid = node_community.get(node_id)
+        neighbor_comms = {
+            node_community.get(nb) for nb in G.neighbors(node_id)
+            if node_community.get(nb) is not None and node_community.get(nb) != own_cid
+        }
+        if not neighbor_comms:
+            continue
+        result.append({
+            "id": node_id,
+            "label": G.nodes[node_id].get("label", node_id),
+            "communities_bridged": len(neighbor_comms),
+            "degree": G.degree(node_id),
+        })
+    result.sort(key=lambda e: (-e["communities_bridged"], -e["degree"]))
+    return result[:top_n]
+
+
 def surprising_connections(
     G: nx.Graph,
     communities: dict[int, list[str]] | None = None,
@@ -291,6 +333,14 @@ def _surprise_score(
     if data.get("relation") == "semantically_similar_to":
         score = int(score * 1.5)
         reasons.append("semantically similar concepts with no structural link")
+
+    # 4c. Known-bug-to-code bonus - a doc naming the exact symbol it broke/fixed
+    # is high-value regardless of how "surprising" it scores on generic cross-file
+    # heuristics (it's usually EXTRACTED confidence, which otherwise loses out to
+    # AMBIGUOUS/INFERRED edges competing for the same top_n slots).
+    if data.get("relation") == "documents_bug_in":
+        score += 4
+        reasons.append("known-issue doc names this exact symbol as the root cause/fix")
 
     # 5. Peripheral→hub: a low-degree node connecting to a high-degree one
     deg_u = degrees[u] if degrees is not None else G.degree(u)

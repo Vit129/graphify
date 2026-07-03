@@ -530,7 +530,7 @@ def _rebuild_code(
         from graphify.detect import detect
         from graphify.build import build_from_json, _norm_source_file as _nsf
         from graphify.cluster import cluster, remap_communities_to_previous, score_all
-        from graphify.analyze import god_nodes, surprising_connections, suggest_questions
+        from graphify.analyze import god_nodes, cross_cutting_nodes, surprising_connections, suggest_questions
         from graphify.report import generate
         from graphify.export import to_json, to_html
         from graphify.security import check_graph_file_size_cap
@@ -830,6 +830,7 @@ def _rebuild_code(
             communities = remap_communities_to_previous(communities, previous_node_community)
         cohesion = score_all(G, communities)
         gods = god_nodes(G, by=rank_by)
+        cross_cutting = cross_cutting_nodes(G, communities)
         surprises = surprising_connections(G, communities)
         labels_file = out / ".graphify_labels.json"
         try:
@@ -848,7 +849,8 @@ def _rebuild_code(
         from graphify.report import load_learning_for_report as _llfr
         report = generate(G, communities, cohesion, labels, gods, surprises, detection,
                           {"input": 0, "output": 0}, report_root, suggested_questions=questions,
-                          built_at_commit=commit, learning=_llfr(out / "graph.json"))
+                          built_at_commit=commit, learning=_llfr(out / "graph.json"),
+                          cross_cutting_list=cross_cutting)
         report_path = out / "GRAPH_REPORT.md"
         labels_json = json.dumps({str(k): v for k, v in sorted(labels.items())}, ensure_ascii=False, indent=2) + "\n"
         graph_tmp = out / ".graph.tmp.json"

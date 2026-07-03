@@ -362,6 +362,86 @@ def _fuzzy_substring_seeds(
     return seeds
 
 
+# Opt-in, local-only dense-retrieval seed fallback (#5) - see the
+# _SYNONYM_GROUPS comment above for why a hosted embedding API was rejected
+# for this CLI/MCP tool. A LOCAL model has no network/API-key dependency, so
+# that objection doesn't apply here; this is gated behind the `embeddings`
+# extra and has zero effect on the default install (returns [] silently when
+# the dependency isn't present - it never raises to a caller).
+_EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+_embedding_model_cache: list = []
+
+
+def _get_embedding_model():
+    """Lazily load and cache the local sentence-transformers model for the
+    process lifetime. Raises ImportError with install instructions (matching
+    god_nodes(by="pagerank")'s pattern) if the optional dependency is missing -
+    callers that want the "no effect if absent" behavior should catch this."""
+    if _embedding_model_cache:
+        return _embedding_model_cache[0]
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise ImportError(
+            "embedding-based seed fallback requires sentence-transformers - "
+            "install with `pip install graphifyy[embeddings]` or "
+            "`uv tool install --with sentence-transformers graphifyy`"
+        ) from exc
+    model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
+    _embedding_model_cache.append(model)
+    return _embedding_model_cache[0]
+
+
+def _get_embedding_index(G: nx.Graph) -> "tuple[list[str], object] | None":
+    """Build (and cache on G.graph, mirroring _get_bm25_corpus) a matrix of
+    per-node label+source_file embeddings. Returns None (never raises) when
+    the model can't be loaded, so callers get a clean no-op."""
+    cached = G.graph.get("_embedding_index")
+    if cached is not None:
+        return cached
+    try:
+        model = _get_embedding_model()
+    except ImportError:
+        return None
+    node_ids: list[str] = []
+    texts: list[str] = []
+    for nid, data in G.nodes(data=True):
+        label = data.get("label") or ""
+        if not label:
+            continue
+        source = data.get("source_file") or ""
+        texts.append(f"{label} {source}".strip())
+        node_ids.append(nid)
+    if not texts:
+        return None
+    embeddings = model.encode(texts, normalize_embeddings=True)
+    index = (node_ids, embeddings)
+    G.graph["_embedding_index"] = index
+    return index
+
+
+def _embedding_seed_fallback(G: nx.Graph, question: str, top_k: int = 3) -> list[str]:
+    """Last-resort seed selection via local dense-retrieval, tried only after
+    BM25 + typo correction + fuzzy-substring matching all found nothing - the
+    deliberate recall gap for a query and its target sharing zero literal or
+    synonym-map terms (#5). Returns [] (never raises) whenever the optional
+    dependency isn't installed or the index can't be built.
+    """
+    index = _get_embedding_index(G)
+    if index is None:
+        return []
+    node_ids, embeddings = index
+    try:
+        model = _get_embedding_model()
+    except ImportError:
+        return []
+    import numpy as np
+    query_vec = model.encode([question], normalize_embeddings=True)[0]
+    scores = embeddings @ query_vec
+    top_indices = np.argsort(-scores)[:top_k]
+    return [node_ids[i] for i in top_indices]
+
+
 _EXACT_MATCH_BONUS = 1000.0
 _PREFIX_MATCH_BONUS = 100.0
 _SOURCE_MATCH_BONUS = 0.5
@@ -469,6 +549,11 @@ def _trigram_candidates(G: nx.Graph, needles: list[str], *, guard_frac: float = 
 _BM25_K1 = 1.2
 _BM25_B = 0.75
 
+# Was 3 here vs. llm.py's _CHARS_PER_TOKEN = 4 for the extraction side (#6) —
+# the mismatch meant a "2000-token budget" only ever filled ~1500 real tokens
+# of query output, silently wasting ~25% of what the caller said it could read.
+_CHARS_PER_TOKEN = 4
+
 
 def _get_bm25_corpus(G: nx.Graph) -> tuple[dict[str, list[str]], dict[str, int], float, int]:
     """Tokenized label per node (BM25's "document"), term -> document-frequency
@@ -565,6 +650,16 @@ def _score_nodes(G: nx.Graph, terms: list[str]) -> list[tuple[float, str]]:
     return scored
 
 
+_CONCEPT_SEED_PENALTY = 0.85
+
+
+def _is_concept_node_for_seeding(G: nx.Graph, nid: str) -> bool:
+    source = G.nodes[nid].get("source_file", "") or ""
+    if not source:
+        return True
+    return "." not in source.rsplit("/", 1)[-1]
+
+
 def _pick_seeds(
     scored: list[tuple[float, str]],
     max_k: int = 3,
@@ -588,9 +683,23 @@ def _pick_seeds(
     `terms` is also supplied, rank the fill candidates by IDF-weighted
     coverage rather than raw term count, so a generic word contributes little
     and a specific identifier contributes close to a full point.
+
+    When `G` is supplied, concept nodes (no source_file, or a source_file with
+    no extension - never a real, openable file) are scored down by
+    `_CONCEPT_SEED_PENALTY` for THIS selection only (the original `scored`
+    list passed by the caller is untouched). A concept only wins the top seed
+    slot over a near-tied AST symbol if it's genuinely the better match (#4) -
+    a query should resolve to the symbol with a line to open, not an
+    equally-plausible abstract label with nowhere to point.
     """
     if not scored:
         return []
+    if G is not None:
+        scored = [
+            (score * _CONCEPT_SEED_PENALTY if _is_concept_node_for_seeding(G, nid) else score, nid)
+            for score, nid in scored
+        ]
+        scored.sort(key=lambda s: (-s[0], len(G.nodes[s[1]].get("label") or s[1]), s[1]))
     top_score = scored[0][0]
     seeds = []
     for score, nid in scored[:max_k]:
@@ -829,18 +938,83 @@ def _blast_radius_hops(
     return hops, truncated, node_cap
 
 
-def _subgraph_to_text(G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *, seeds: list[str] | None = None) -> str:
-    """Render subgraph as text, cutting at token_budget (approx 3 chars/token).
+def _hop_distances(nodes: set[str], edges: list[tuple], seeds: list[str]) -> dict[str, int]:
+    """BFS distance in hops from the nearest seed, over the edges actually
+    discovered during traversal. Undirected: a caller and a callee are equally
+    'close' for ranking purposes regardless of which direction the traversal
+    walked the edge. Used to rank query output by proximity to the answer
+    instead of by raw degree, which favours god-nodes over relevant nodes (#1)."""
+    from collections import deque
+    adj: dict[str, set[str]] = {}
+    for u, v in edges:
+        adj.setdefault(u, set()).add(v)
+        adj.setdefault(v, set()).add(u)
+    dist: dict[str, int] = {s: 0 for s in seeds if s in nodes}
+    q = deque(dist.keys())
+    while q:
+        cur = q.popleft()
+        for nb in adj.get(cur, ()):
+            if nb not in dist:
+                dist[nb] = dist[cur] + 1
+                q.append(nb)
+    return dist
 
-    seeds: exact-match nodes rendered first before the degree-sorted expansion,
-    so the queried symbol always appears at the top of the output.
+
+def _best_anchor_neighbor(G: nx.Graph, nid: str) -> str:
+    """Best-effort file anchor for a concept node that has neither a
+    source_file nor a source_location of its own - the source_file of its
+    highest-degree neighbor that has one, so a query resolving to a pure
+    concept node still points somewhere readable instead of a dead end (#4)."""
+    best_file = ""
+    best_degree = -1
+    if G.is_directed():
+        neighbors = set(G.successors(nid)) | set(G.predecessors(nid))
+    else:
+        neighbors = set(G.neighbors(nid))
+    for nb in neighbors:
+        nb_file = G.nodes[nb].get("source_file") or ""
+        if nb_file and "." in nb_file.rsplit("/", 1)[-1]:
+            deg = G.degree(nb)
+            if deg > best_degree:
+                best_degree = deg
+                best_file = nb_file
+    return best_file
+
+
+def _subgraph_to_text(
+    G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *,
+    seeds: list[str] | None = None,
+    hop_distances: dict[str, int] | None = None,
+    relevance_scores: dict[str, float] | None = None,
+) -> str:
+    """Render subgraph as text, cutting at token_budget (~4 chars/token, matching
+    llm.py's extraction-side estimate).
+
+    seeds: exact-match nodes rendered first before the ranked expansion, so the
+    queried symbol always appears at the top of the output.
+
+    hop_distances/relevance_scores: when given, the non-seed nodes are ranked
+    by (hop distance from nearest seed asc, BM25 relevance desc, degree desc)
+    instead of raw degree — a query's token budget should fill with nodes near
+    and relevant to the answer, not with whichever hubs happen to have the most
+    edges (#1). Omitting both preserves the old degree-only ordering exactly,
+    so callers that render a subgraph with no query context are unaffected.
     """
-    char_budget = token_budget * 3
+    char_budget = token_budget * _CHARS_PER_TOKEN
     lines = []
     overlay = getattr(G, "graph", {}).get("_learning_overlay", {}) or {}
     seed_set = set(seeds or [])
-    ordered = [n for n in (seeds or []) if n in nodes] + \
-              sorted(nodes - seed_set, key=lambda n: G.degree(n), reverse=True)
+    rest = nodes - seed_set
+    if hop_distances is not None or relevance_scores is not None:
+        _hops = hop_distances or {}
+        _rel = relevance_scores or {}
+        rest_sorted = sorted(
+            rest,
+            key=lambda n: (_hops.get(n, 10**6), -_rel.get(n, 0.0), -G.degree(n)),
+        )
+    else:
+        rest_sorted = sorted(rest, key=lambda n: G.degree(n), reverse=True)
+    ordered = [n for n in (seeds or []) if n in nodes] + rest_sorted
     for nid in ordered:
         d = G.nodes[nid]
         # Every LLM-derived field passes through sanitize_label before being
@@ -853,12 +1027,19 @@ def _subgraph_to_text(G: nx.Graph, nodes: set[str], edges: list[tuple], token_bu
             status = sanitize_label(str(entry.get("status", "")))
             if status:
                 learning_suffix = f" learning={status}{':stale' if entry.get('stale') else ''}"
+        source_file = str(d.get("source_file", ""))
+        source_location = str(d.get("source_location", ""))
+        anchor_suffix = ""
+        if not source_file and not source_location:
+            anchor = _best_anchor_neighbor(G, nid)
+            if anchor:
+                anchor_suffix = f" anchor={sanitize_label(anchor)}"
         line = (
             f"NODE {sanitize_label(d.get('label', nid))} "
-            f"[src={sanitize_label(str(d.get('source_file', '')))} "
-            f"loc={sanitize_label(str(d.get('source_location', '')))} "
+            f"[src={sanitize_label(source_file)} "
+            f"loc={sanitize_label(source_location)} "
             f"community={sanitize_label(str(d.get('community_name') or d.get('community', '')))}"
-            f"{learning_suffix}]"
+            f"{anchor_suffix}{learning_suffix}]"
         )
         lines.append(line)
     for u, v in edges:
@@ -923,6 +1104,18 @@ def _query_graph_text(
                 "matches (low confidence, verify before relying on this)"
             )
     if not start_nodes:
+        # Final fallback (#5): a query and its target can share zero literal
+        # or synonym-map terms (e.g. "log the user in" vs. a codebase that
+        # only ever says "authenticate" with none of _SYNONYM_GROUPS' words
+        # nearby). Silently a no-op unless the optional `embeddings` extra is
+        # installed - see _embedding_seed_fallback's docstring.
+        start_nodes = _embedding_seed_fallback(G, question)
+        if start_nodes:
+            correction_note = (
+                "Note: no lexical/typo/substring match; used local embedding-based "
+                "fallback (graphifyy[embeddings]) - low confidence, verify before relying on this"
+            )
+    if not start_nodes:
         return "No matching nodes found."
     resolved_filters, filter_source = _resolve_context_filters(question, context_filters)
     traversal_graph = _filter_graph_by_context(G, resolved_filters)
@@ -937,7 +1130,12 @@ def _query_graph_text(
         header_parts.append(f"Context: {', '.join(resolved_filters)} ({filter_source})")
     header_parts.append(f"{len(nodes)} nodes found")
     header = " | ".join(header_parts) + "\n\n"
-    return header + _subgraph_to_text(traversal_graph, nodes, edges, token_budget)
+    hop_distances = _hop_distances(nodes, edges, start_nodes)
+    relevance_scores = {nid: score for score, nid in scored}
+    return header + _subgraph_to_text(
+        traversal_graph, nodes, edges, token_budget,
+        seeds=start_nodes, hop_distances=hop_distances, relevance_scores=relevance_scores,
+    )
 
 
 def _find_node(G: nx.Graph, label: str) -> list[str]:

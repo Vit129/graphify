@@ -16,6 +16,7 @@ def summarize(report: str, project_name: str) -> str:
         ("## Summary", 8),
         ("## Graph Freshness", 6),
         ("## God Nodes", 13),
+        ("## Cross-Cutting Nodes", 13),
         ("## Surprising Connections", 12),
     ]
     lines = report.splitlines()
@@ -120,6 +121,7 @@ def generate(
     min_community_size: int = 3,
     built_at_commit: str | None = None,
     learning: dict | None = None,
+    cross_cutting_list: list[dict] | None = None,
 ) -> str:
     today = date.today().isoformat()
 
@@ -184,6 +186,21 @@ def generate(
     ]
     for i, node in enumerate(god_node_list, 1):
         lines.append(f"{i}. `{node['label']}` - {node['degree']} edges")
+
+    if cross_cutting_list:
+        lines += [
+            "",
+            "## Cross-Cutting Nodes (span the most distinct areas of the codebase)",
+            "A high-degree node isn't always architecturally central - a widely-used",
+            "utility/config file can rack up more edges than a real coupler while only",
+            "ever touching one area. This ranks by how many DIFFERENT communities a",
+            "node's neighbors span, not by raw edge count.",
+        ]
+        for i, node in enumerate(cross_cutting_list, 1):
+            lines.append(
+                f"{i}. `{node['label']}` - bridges {node['communities_bridged']} areas "
+                f"({node['degree']} edges)"
+            )
 
     lines += ["", "## Surprising Connections (you probably didn't know these)"]
     if surprise_list:
