@@ -2289,6 +2289,7 @@ def main() -> None:
         print("  path \"A\" \"B\"            shortest path between two nodes in graph.json")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  explain \"X\"             plain-language explanation of a node and its neighbors")
+        print("    --context C             explicit edge-context filter (repeatable)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  diagnose multigraph    report same-endpoint edge collapse risk in graph.json")
         print("    --graph <path>          path to graph/extraction JSON")
@@ -3212,17 +3213,30 @@ def main() -> None:
 
     elif cmd == "explain":
         if len(sys.argv) < 3:
-            print('Usage: graphify explain "<node>" [--graph path]', file=sys.stderr)
+            print('Usage: graphify explain "<node>" [--context C] [--graph path]', file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _find_node
+        from graphify.query import _normalize_context_filters
         from networkx.readwrite import json_graph
 
         label = sys.argv[2]
         graph_path = _default_graph_path()
+        context_filters: list[str] = []
         args = sys.argv[3:]
-        for i, a in enumerate(args):
-            if a == "--graph" and i + 1 < len(args):
+        i = 0
+        while i < len(args):
+            if args[i] == "--graph" and i + 1 < len(args):
                 graph_path = args[i + 1]
+                i += 2
+            elif args[i] == "--context" and i + 1 < len(args):
+                context_filters.append(args[i + 1])
+                i += 2
+            elif args[i].startswith("--context="):
+                context_filters.append(args[i].split("=", 1)[1])
+                i += 1
+            else:
+                i += 1
+        context_filters = _normalize_context_filters(context_filters)
         gp = Path(graph_path).resolve()
         if not gp.exists():
             print(f"error: graph file not found: {gp}", file=sys.stderr)
@@ -3281,6 +3295,8 @@ def main() -> None:
             connections.append(("out", nb, edge_data(G, nid, nb)))
         for nb in G.predecessors(nid):
             connections.append(("in", nb, edge_data(G, nb, nid)))
+        if context_filters:
+            connections = [c for c in connections if c[2].get("context") in context_filters]
         if connections:
             print(f"\nConnections ({len(connections)}):")
             connections.sort(key=lambda c: G.degree(c[1]), reverse=True)

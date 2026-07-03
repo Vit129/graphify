@@ -622,6 +622,25 @@ def test_god_nodes_excludes_module_anchor_nodes():
     assert "SessionCoordinator" in labels
 
 
+def test_god_nodes_excludes_cross_language_primitive_types():
+    """god_nodes must not return capitalized scalar primitives like Swift's `Int`
+    or `UInt32` (#G4) — these accumulate one edge per file declaring that field
+    type and mechanically outrank real abstractions, same failure mode as #1327's
+    module anchors but for languages whose builtins aren't lowercase Python names."""
+    G = nx.Graph()
+    G.add_node("real", label="SessionCoordinator", source_file="src/session.swift")
+    G.add_node("int_node", label="Int", source_file="src/mouse.swift")
+    for i in range(20):
+        n = f"file{i}"
+        G.add_node(n, label=f"File{i}", source_file=f"src/file{i}.swift")
+        G.add_edge("int_node", n)
+        G.add_edge("real", n)
+    result = god_nodes(G, top_n=10)
+    labels = [r["label"] for r in result]
+    assert "Int" not in labels
+    assert "SessionCoordinator" in labels
+
+
 def test_god_nodes_filter_is_case_insensitive():
     """JSON-key filter must match regardless of label casing."""
     G = nx.Graph()

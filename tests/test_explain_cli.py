@@ -123,3 +123,41 @@ def test_explain_no_lesson_line_for_unannotated_node(monkeypatch, tmp_path, caps
     p = _write_graph(tmp_path)
     out = _run(monkeypatch, p, "validateSanitySession", capsys)
     assert "Lesson:" not in out
+
+
+def _write_context_graph(tmp_path):
+    graph_data = {
+        "directed": False, "multigraph": False, "graph": {},
+        "nodes": [
+            {"id": "validate", "label": "validateSanitySession()",
+             "source_file": "server/sanity-validate-session.ts", "community": 0},
+            {"id": "create_patch", "label": "createPatchHandler()",
+             "source_file": "server/create-patch-handler.ts", "community": 0},
+            {"id": "config_module", "label": "configModule",
+             "source_file": "server/config.ts", "community": 0},
+        ],
+        "links": [
+            {"source": "create_patch", "target": "validate",
+             "relation": "calls", "confidence": "EXTRACTED", "context": "calls"},
+            {"source": "validate", "target": "config_module",
+             "relation": "imports", "confidence": "EXTRACTED", "context": "import"},
+        ],
+    }
+    p = tmp_path / "graph.json"
+    p.write_text(json.dumps(graph_data))
+    return p
+
+
+def test_explain_context_filter_narrows_connections(monkeypatch, tmp_path, capsys):
+    p = _write_context_graph(tmp_path)
+    out_unfiltered = _run(monkeypatch, p, "validateSanitySession", capsys)
+    assert "createPatchHandler()" in out_unfiltered
+    assert "configModule" in out_unfiltered
+
+    monkeypatch.setattr(mainmod.sys, "argv",
+        ["graphify", "explain", "validateSanitySession", "--graph", str(p),
+         "--context", "import"])
+    mainmod.main()
+    out_filtered = capsys.readouterr().out
+    assert "configModule" in out_filtered
+    assert "createPatchHandler()" not in out_filtered

@@ -198,6 +198,7 @@ def generate(
             else:
                 conf_tag = conf
             sem_tag = " [semantically similar]" if relation == "semantically_similar_to" else ""
+            sem_tag = " [documents known bug]" if relation == "documents_bug_in" else sem_tag
             lines += [
                 f"- `{s['source']}` --{relation}--> `{s['target']}`  [{conf_tag}]{sem_tag}",
                 f"  {files[0]} → {files[1]}" + (f"  _{note}_" if note else ""),

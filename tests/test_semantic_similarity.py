@@ -192,3 +192,36 @@ def test_report_no_semantic_tag_for_other_relations():
     tokens = {"input": 50, "output": 25}
     report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, "./project")
     assert "[semantically similar]" not in report
+
+
+def test_report_renders_documents_bug_in_tag():
+    """report renders [documents known bug] for a bug-doc -> file edge (G2/item 2)."""
+    G = nx.Graph()
+    for nid, label, src in [
+        ("case_060", "CASE-060 preview color mismatch", "agent-memory/knowledge/cases/misc.md"),
+        ("cell_color_resolver", "CellColorResolver", "Sources/CellColorResolver.swift"),
+    ]:
+        G.add_node(nid, label=label, source_file=src, file_type="document")
+    G.add_edge("case_060", "cell_color_resolver", relation="documents_bug_in",
+               confidence="EXTRACTED", confidence_score=1.0,
+               source_file="agent-memory/knowledge/cases/misc.md", weight=1.0)
+
+    communities = {0: ["case_060", "cell_color_resolver"]}
+    cohesion = {0: 0.5}
+    labels = {0: "Rendering"}
+    gods = []
+    surprises = [
+        {
+            "source": "CASE-060 preview color mismatch",
+            "target": "CellColorResolver",
+            "relation": "documents_bug_in",
+            "confidence": "EXTRACTED",
+            "source_files": ["agent-memory/knowledge/cases/misc.md", "Sources/CellColorResolver.swift"],
+            "why": "known-issue doc names this exact class as the root cause",
+        }
+    ]
+    detection = {"total_files": 2, "total_words": 200, "needs_graph": True, "warning": None}
+    tokens = {"input": 50, "output": 25}
+    report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, "./project")
+    assert "[documents known bug]" in report
+    assert "[semantically similar]" not in report

@@ -18,6 +18,15 @@ _BUILTIN_NOISE_LABELS = frozenset({
     "Callable", "Type", "ClassVar", "Final", "Literal", "Protocol",
     "Counter", "defaultdict", "OrderedDict", "datetime", "Enum",
     "os", "sys", "re", "json", "io", "abc", "typing",
+    # Capitalized scalar primitives from Swift/Kotlin/C#/Rust/Go/Java (#G4):
+    # referenced from every file that declares a field of that type, so they
+    # mechanically outrank real abstractions without representing any behavior.
+    "Int", "Int8", "Int16", "Int32", "Int64",
+    "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
+    "Float", "Float32", "Float64", "Double", "Character", "Void",
+    "String", "Bool", "AnyObject",
+    "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+    "f32", "f64", "rune", "byte",
 })
 
 # Language families — extensions sharing a runtime can legitimately call each other
