@@ -19,4 +19,6 @@
 | [p12-code-extensions-classifier-gap.md](p12-code-extensions-classifier-gap.md) | P12 — CODE_EXTENSIONS Classifier Gap (critical: real CLI never saw the new languages) | Done |
 | [p13-3d-force-graph-lazy-view.md](p13-3d-force-graph-lazy-view.md) | P13 — Lazy-Loaded 3D Force Graph Option (Additive, Opt-In) | Done |
 | [p14-obsidian-like-graph-control.md](p14-obsidian-like-graph-control.md) | P14 — Obsidian-like Graph Control & Automation | In Progress |
+| [p15-config-value-coupling.md](p15-config-value-coupling.md) | P15 — Opt-In Config Value-Coupling Edges (`shares_value`) | Planned — Phase 0 validation gate first |
+| [p16-qualified-node-resolution.md](p16-qualified-node-resolution.md) | P16 — Qualified Node Resolution for `path`/`explain` (duplicate-name root cause) | Planned — Phase 1 is low-risk, start here |
 
