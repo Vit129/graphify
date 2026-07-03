@@ -629,23 +629,39 @@ def test_always_on_roundtrip_is_byte_faithful():
         'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<ClassName/FileName>"` '
         "for a known symbol/file (name match, not free-form concept search - use `query` for that)."
     )
-    # The sanctioned-edit registry holds exactly these two old->new substitutions.
+    old_saveresult = (
+        "- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost)."
+    )
+    new_saveresult = (
+        "- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).\n"
+        '- After judging a query/path/explain result useful, a dead end, or wrong, run `graphify save-result '
+        '--question "Q" --answer "A" --outcome useful|dead_end|corrected --nodes N1 N2` - this accumulates '
+        "across sessions so the same dead end or vocabulary mismatch isn't re-derived every time. At the start "
+        "of a session, check `graphify-out/reflections/LESSONS.md` if it exists (built via `graphify reflect`) "
+        "for preferred sources, known dead ends, and past corrections."
+    )
+    # The sanctioned-edit registry holds exactly these three old->new substitutions.
     assert gen.ALWAYS_ON_SANCTIONED_EDITS["_AGENTS_MD_SECTION"] == (
         (old_instruction, new_instruction),
         (old_explain, new_explain),
+        (old_saveresult, new_saveresult),
     )
     baseline_agents = gen._always_on_constants(gen.ALWAYS_ON_BASELINE_REF)["_AGENTS_MD_SECTION"]
-    # The ONLY divergences from the frozen baseline are the two sanctioned edits —
+    # The ONLY divergences from the frozen baseline are the three sanctioned edits —
     # any other byte drift would have surfaced as a problem above.
     assert old_instruction in baseline_agents
     assert old_explain in baseline_agents
+    assert old_saveresult in baseline_agents
     assert (
-        baseline_agents.replace(old_instruction, new_instruction).replace(old_explain, new_explain)
+        baseline_agents.replace(old_instruction, new_instruction)
+        .replace(old_explain, new_explain)
+        .replace(old_saveresult, new_saveresult)
         == rendered_agents
     )
     assert "`skill` tool" not in rendered_agents
     assert 'skill: "graphify"' not in rendered_agents
     assert 'explain "<concept>"' not in rendered_agents
+    assert "graphify save-result" in rendered_agents
 
 
 def test_extracted_constants_equal_the_packaged_always_on_files():

@@ -114,6 +114,11 @@ ALWAYS_ON_SANCTIONED_EDITS: dict[str, tuple[tuple[str, str], ...]] = {
             'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts.',
             'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<ClassName/FileName>"` for a known symbol/file (name match, not free-form concept search - use `query` for that).',
         ),
+        (
+            "- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).",
+            "- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).\n"
+            '- After judging a query/path/explain result useful, a dead end, or wrong, run `graphify save-result --question "Q" --answer "A" --outcome useful|dead_end|corrected --nodes N1 N2` - this accumulates across sessions so the same dead end or vocabulary mismatch isn\'t re-derived every time. At the start of a session, check `graphify-out/reflections/LESSONS.md` if it exists (built via `graphify reflect`) for preferred sources, known dead ends, and past corrections.',
+        ),
     ),
     # Dogfooding across 4 real projects found `explain "<concept>"` overpromises
     # free-form semantic search when the underlying match is name-based
@@ -124,11 +129,21 @@ ALWAYS_ON_SANCTIONED_EDITS: dict[str, tuple[tuple[str, str], ...]] = {
             'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts.',
             'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<ClassName/FileName>"` for a known symbol/file (name match, not free-form concept search - use `query` for that).',
         ),
+        (
+            "- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).",
+            "- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).\n"
+            '- After judging a query/path/explain result useful, a dead end, or wrong, run `graphify save-result --question "Q" --answer "A" --outcome useful|dead_end|corrected --nodes N1 N2` - this accumulates across sessions so the same dead end or vocabulary mismatch isn\'t re-derived every time. At the start of a session, check `graphify-out/reflections/LESSONS.md` if it exists (built via `graphify reflect`) for preferred sources, known dead ends, and past corrections.',
+        ),
     ),
     "_GEMINI_MD_SECTION": (
         (
             'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts.',
             'Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<ClassName/FileName>"` for a known symbol/file (name match, not free-form concept search - use `query` for that).',
+        ),
+        (
+            "- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).",
+            "- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).\n"
+            '- After judging a query/path/explain result useful, a dead end, or wrong, run `graphify save-result --question "Q" --answer "A" --outcome useful|dead_end|corrected --nodes N1 N2` - this accumulates across sessions so the same dead end or vocabulary mismatch isn\'t re-derived every time. At the start of a session, check `graphify-out/reflections/LESSONS.md` if it exists (built via `graphify reflect`) for preferred sources, known dead ends, and past corrections.',
         ),
     ),
     "_VSCODE_INSTRUCTIONS_SECTION": (
@@ -140,17 +155,35 @@ ALWAYS_ON_SANCTIONED_EDITS: dict[str, tuple[tuple[str, str], ...]] = {
             "for a known symbol/file - name match, not free-form concept search (use `query` for that). These\n"
             "return a scoped subgraph, usually much smaller than the full report or raw grep output.",
         ),
+        (
+            "(c) the graph is missing or stale.\n\nType `/graphify` in Copilot Chat to build or update the graph.",
+            "(c) the graph is missing or stale.\n\n"
+            'After judging a result useful, a dead end, or wrong, run `graphify save-result --question "Q" --answer "A"\n'
+            "--outcome useful|dead_end|corrected --nodes N1 N2` so future sessions don't re-derive the same dead end;\n"
+            "check `graphify-out/reflections/LESSONS.md` (via `graphify reflect`) at session start for accumulated lessons.\n\n"
+            "Type `/graphify` in Copilot Chat to build or update the graph.",
+        ),
     ),
     "_ANTIGRAVITY_RULES": (
         (
             'Use `graphify path "<A>" "<B>"` / `shortest_path` for relationships and `graphify explain "<concept>"` / `get_node` for focused concepts.',
             'Use `graphify path "<A>" "<B>"` / `shortest_path` for relationships and `graphify explain "<ClassName/FileName>"` / `get_node` for a known symbol/file (name match, not free-form concept search - use `query` for that).',
         ),
+        (
+            "- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)",
+            "- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)\n"
+            '- After judging a query/path/explain result useful, a dead end, or wrong, run `graphify save-result --question "Q" --answer "A" --outcome useful|dead_end|corrected --nodes N1 N2` - this accumulates across sessions so the same dead end or vocabulary mismatch isn\'t re-derived every time. At the start of a session, check `graphify-out/reflections/LESSONS.md` if it exists (built via `graphify reflect`) for preferred sources, known dead ends, and past corrections.',
+        ),
     ),
     "_KIRO_STEERING": (
         (
             'first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`).',
             'first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<ClassName/FileName>"` for a known symbol/file - name match, not free-form concept search).',
+        ),
+        (
+            "Read `GRAPH_REPORT.md` only for broad architecture review or when those commands do not surface enough context.",
+            "Read `GRAPH_REPORT.md` only for broad architecture review or when those commands do not surface enough context. "
+            'After judging a result useful, a dead end, or wrong, run `graphify save-result --question "Q" --answer "A" --outcome useful|dead_end|corrected --nodes N1 N2` so future sessions don\'t re-derive the same dead end; check `graphify-out/reflections/LESSONS.md` (via `graphify reflect`) at session start for accumulated lessons.',
         ),
     ),
 }

@@ -14,4 +14,8 @@ only for broad architecture review or when query/path/explain do not surface eno
 source files when (a) modifying/debugging specific code, (b) the graph lacks the needed detail, or
 (c) the graph is missing or stale.
 
+After judging a result useful, a dead end, or wrong, run `graphify save-result --question "Q" --answer "A"
+--outcome useful|dead_end|corrected --nodes N1 N2` so future sessions don't re-derive the same dead end;
+check `graphify-out/reflections/LESSONS.md` (via `graphify reflect`) at session start for accumulated lessons.
+
 Type `/graphify` in Copilot Chat to build or update the graph.

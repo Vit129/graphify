@@ -12,3 +12,4 @@ Rules:
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+- After judging a query/path/explain result useful, a dead end, or wrong, run `graphify save-result --question "Q" --answer "A" --outcome useful|dead_end|corrected --nodes N1 N2` - this accumulates across sessions so the same dead end or vocabulary mismatch isn't re-derived every time. At the start of a session, check `graphify-out/reflections/LESSONS.md` if it exists (built via `graphify reflect`) for preferred sources, known dead ends, and past corrections.
