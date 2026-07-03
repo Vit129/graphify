@@ -1331,3 +1331,49 @@ def test_blast_radius_hops_respects_node_cap():
     hops, truncated, cap = _blast_radius_hops(G, "root", 3, "callees", node_cap=200)
     assert sum(len(h) for h in hops) == 200
     assert truncated is True
+
+
+# --- query path scoping (--path / --exclude-path) --------------------------
+
+def _make_path_scope_graph() -> nx.Graph:
+    """Two nodes sharing the label "concentration" - one real code, one a
+    research doc - the exact shape found dogfooding My-Investment-Port,
+    where kb/ research notes outranked the real business-logic function for
+    a query neither could disambiguate from vocabulary alone."""
+    G = nx.Graph()
+    G.add_node("code_fn", label="calculateConcentration()", source_file="src/utils.js", source_location="L10")
+    G.add_node("doc_note", label="Sector Concentration", source_file="kb/research/note.md", source_location="L5")
+    return G
+
+
+def test_query_graph_text_exclude_path_drops_matching_node():
+    G = _make_path_scope_graph()
+    text = _query_graph_text(G, "concentration", exclude_paths=["kb/"])
+    assert "calculateConcentration" in text
+    assert "Sector Concentration" not in text
+
+
+def test_query_graph_text_include_path_restricts_to_prefix():
+    G = _make_path_scope_graph()
+    text = _query_graph_text(G, "concentration", include_paths=["src/"])
+    assert "calculateConcentration" in text
+    assert "Sector Concentration" not in text
+
+
+def test_query_graph_text_no_path_filter_returns_both_candidates():
+    """Without a filter, both nodes are legitimate candidates (regression
+    guard: the filter must be opt-in, not a silent default behavior change)."""
+    G = _make_path_scope_graph()
+    text = _query_graph_text(G, "concentration")
+    assert "calculateConcentration" in text
+    assert "Sector Concentration" in text
+
+
+def test_query_graph_text_exclude_path_falls_through_to_no_match():
+    """If the filter excludes the only matching node entirely, the query
+    must report no match - not silently fall through to an unfiltered
+    fallback tier and defeat the scoping."""
+    G = _make_path_scope_graph()
+    G.remove_node("code_fn")
+    text = _query_graph_text(G, "concentration", exclude_paths=["kb/"])
+    assert text == "No matching nodes found."

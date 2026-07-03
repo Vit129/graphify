@@ -276,6 +276,16 @@ def _build_server(graph_path: str):
                             "items": {"type": "string"},
                             "description": "Optional explicit edge-context filter, e.g. ['call', 'field']",
                         },
+                        "include_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Only consider nodes whose source_file starts with one of these prefixes, e.g. ['src/', 'tests/']",
+                        },
+                        "exclude_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Exclude nodes whose source_file starts with one of these prefixes, e.g. ['kb/', 'docs/']",
+                        },
                     },
                     "required": ["question"],
                 },
@@ -426,6 +436,8 @@ def _build_server(graph_path: str):
         depth = min(int(arguments.get("depth", 3)), 6)
         budget = int(arguments.get("token_budget", 2000))
         context_filter = arguments.get("context_filter")
+        include_paths = arguments.get("include_paths")
+        exclude_paths = arguments.get("exclude_paths")
         _t0 = _time.perf_counter()
         result = _query_graph_text(
             G,
@@ -434,6 +446,8 @@ def _build_server(graph_path: str):
             depth=depth,
             token_budget=budget,
             context_filters=context_filter,
+            include_paths=include_paths,
+            exclude_paths=exclude_paths,
         )
         querylog.log_query(
             kind="mcp_query",

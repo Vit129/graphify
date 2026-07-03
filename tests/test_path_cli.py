@@ -92,3 +92,69 @@ def test_path_ambiguous_warning_lists_all_tied_candidates(monkeypatch, tmp_path,
     err = capsys.readouterr().err
     assert "target match was ambiguous - 3 equally-plausible nodes" in err
     assert "stats_a" in err and "stats_b" in err and "stats_c" in err
+
+
+def _write_hub_graph(tmp_path):
+    """A shorter 2-hop route through a builtin-primitive hub ("Int") and a
+    longer 3-hop route through real, meaningful helpers - the real failure
+    found dogfooding a Swift codebase, where `graphify path` routed through
+    `Int -> Sendable`-style generic/protocol hubs instead of the real call
+    chain, because unweighted shortest_path only counts hops."""
+    graph_data = {
+        "directed": False, "multigraph": False, "graph": {},
+        "nodes": [
+            {"id": "source_fn", "label": "sourceFunction()", "source_file": "a.swift", "community": 0},
+            {"id": "int_hub", "label": "Int", "source_file": "b.swift", "community": 0},
+            {"id": "target_fn", "label": "targetFunction()", "source_file": "c.swift", "community": 0},
+            {"id": "real1", "label": "realHelperOne()", "source_file": "a.swift", "community": 0},
+            {"id": "real2", "label": "realHelperTwo()", "source_file": "c.swift", "community": 0},
+        ],
+        "links": [
+            {"source": "source_fn", "target": "int_hub", "relation": "references", "confidence": "EXTRACTED"},
+            {"source": "int_hub", "target": "target_fn", "relation": "references", "confidence": "EXTRACTED"},
+            {"source": "source_fn", "target": "real1", "relation": "calls", "confidence": "EXTRACTED"},
+            {"source": "real1", "target": "real2", "relation": "calls", "confidence": "EXTRACTED"},
+            {"source": "real2", "target": "target_fn", "relation": "calls", "confidence": "EXTRACTED"},
+        ],
+    }
+    p = tmp_path / "graph.json"
+    p.write_text(json.dumps(graph_data))
+    return p
+
+
+def test_path_avoids_builtin_primitive_hub_even_when_shorter(monkeypatch, tmp_path, capsys):
+    """The shorter route goes through a builtin-primitive node ("Int") - path
+    must prefer the longer but meaningful real-call-chain route instead,
+    since a generic/primitive hub is never a real answer to "how does A reach
+    B" even when it happens to be the shortest hop-count route."""
+    p = _write_hub_graph(tmp_path)
+    out = _run(monkeypatch, p, "sourceFunction", "targetFunction", capsys)
+    assert "Shortest path (3 hops):" in out
+    assert "Int" not in out
+
+
+def test_path_falls_back_to_hub_route_when_it_is_the_only_route(monkeypatch, tmp_path, capsys):
+    """If the ONLY route is through a noise hub, path must still find it
+    (never regress to a false "no path found") and flag that it did."""
+    graph_data = {
+        "directed": False, "multigraph": False, "graph": {},
+        "nodes": [
+            {"id": "source_fn", "label": "sourceFunction()", "source_file": "a.swift", "community": 0},
+            {"id": "int_hub", "label": "Int", "source_file": "b.swift", "community": 0},
+            {"id": "target_fn", "label": "targetFunction()", "source_file": "c.swift", "community": 0},
+        ],
+        "links": [
+            {"source": "source_fn", "target": "int_hub", "relation": "references", "confidence": "EXTRACTED"},
+            {"source": "int_hub", "target": "target_fn", "relation": "references", "confidence": "EXTRACTED"},
+        ],
+    }
+    p = tmp_path / "graph.json"
+    p.write_text(json.dumps(graph_data))
+    out = _run(monkeypatch, p, "sourceFunction", "targetFunction", capsys)
+    assert "Shortest path (2 hops):" in out
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(mainmod.sys, "argv",
+        ["graphify", "path", "sourceFunction", "targetFunction", "--graph", str(p)])
+    mainmod.main()
+    err = capsys.readouterr().err
+    assert "no path avoiding generic/primitive hub nodes" in err

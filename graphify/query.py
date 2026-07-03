@@ -1110,15 +1110,27 @@ def _query_graph_text(
     depth: int = 3,
     token_budget: int = 2000,
     context_filters: list[str] | None = None,
+    include_paths: list[str] | None = None,
+    exclude_paths: list[str] | None = None,
 ) -> str:
+    def _in_path_scope(nid: str) -> bool:
+        if not include_paths and not exclude_paths:
+            return True
+        source = G.nodes[nid].get("source_file", "") or ""
+        if include_paths and not any(source.startswith(p) for p in include_paths):
+            return False
+        if exclude_paths and any(source.startswith(p) for p in exclude_paths):
+            return False
+        return True
+
     terms = _query_terms(question)
-    scored = _score_nodes(G, terms)
+    scored = [(s, nid) for s, nid in _score_nodes(G, terms) if _in_path_scope(nid)]
     start_nodes = _pick_seeds(scored, G=G, multi_term=len(set(terms)) > 1, terms=terms)
     correction_note = ""
     if not start_nodes:
         corrected_terms, corrections = _apply_vocabulary_corrections(G, terms)
         if corrections:
-            scored = _score_nodes(G, corrected_terms)
+            scored = [(s, nid) for s, nid in _score_nodes(G, corrected_terms) if _in_path_scope(nid)]
             start_nodes = _pick_seeds(
                 scored, G=G, multi_term=len(set(corrected_terms)) > 1, terms=corrected_terms
             )
@@ -1129,7 +1141,7 @@ def _query_graph_text(
         # Last resort: approximate-substring (Bitap-style) match against
         # whole labels, for typos of a compound span longer than the
         # n-gram vocabulary's 3-token window.
-        start_nodes = _fuzzy_substring_seeds(G, terms)
+        start_nodes = [nid for nid in _fuzzy_substring_seeds(G, terms) if _in_path_scope(nid)]
         if start_nodes:
             correction_note = (
                 "Note: no exact or corrected match; showing closest approximate "
@@ -1141,7 +1153,7 @@ def _query_graph_text(
         # only ever says "authenticate" with none of _SYNONYM_GROUPS' words
         # nearby). Silently a no-op unless the optional `embeddings` extra is
         # installed - see _embedding_seed_fallback's docstring.
-        start_nodes = _embedding_seed_fallback(G, question)
+        start_nodes = [nid for nid in _embedding_seed_fallback(G, question) if _in_path_scope(nid)]
         if start_nodes:
             correction_note = (
                 "Note: no lexical/typo/substring match; used local embedding-based "

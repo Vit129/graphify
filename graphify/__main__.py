@@ -2335,6 +2335,8 @@ def main() -> None:
         print("  query \"<question>\"       BFS traversal of graph.json for a question")
         print("    --dfs                   use depth-first instead of breadth-first")
         print("    --context C             explicit edge-context filter (repeatable)")
+        print("    --path P                only consider nodes whose source_file starts with P (repeatable)")
+        print("    --exclude-path P        exclude nodes whose source_file starts with P (repeatable)")
         print("    --budget N              cap output at N tokens (default 2000)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  affected \"X\"             reverse traversal to find nodes impacted by X")
@@ -2873,7 +2875,7 @@ def main() -> None:
             sys.exit(1)
     elif cmd == "query":
         if len(sys.argv) < 3:
-            print("Usage: graphify query \"<question>\" [--dfs] [--context C] [--budget N] [--graph path]", file=sys.stderr)
+            print("Usage: graphify query \"<question>\" [--dfs] [--context C] [--path P] [--exclude-path P] [--budget N] [--graph path]", file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _query_graph_text
         from graphify.security import sanitize_label
@@ -2885,6 +2887,8 @@ def main() -> None:
         budget = 2000
         graph_path = _default_graph_path()
         context_filters: list[str] = []
+        include_paths: list[str] = []
+        exclude_paths: list[str] = []
         args = sys.argv[3:]
         i = 0
         while i < len(args):
@@ -2907,6 +2911,18 @@ def main() -> None:
                 i += 2
             elif args[i].startswith("--context="):
                 context_filters.append(args[i].split("=", 1)[1])
+                i += 1
+            elif args[i] == "--path" and i + 1 < len(args):
+                include_paths.append(args[i + 1])
+                i += 2
+            elif args[i].startswith("--path="):
+                include_paths.append(args[i].split("=", 1)[1])
+                i += 1
+            elif args[i] == "--exclude-path" and i + 1 < len(args):
+                exclude_paths.append(args[i + 1])
+                i += 2
+            elif args[i].startswith("--exclude-path="):
+                exclude_paths.append(args[i].split("=", 1)[1])
                 i += 1
             elif args[i] == "--graph" and i + 1 < len(args):
                 graph_path = args[i + 1]
@@ -2956,6 +2972,8 @@ def main() -> None:
             depth=2,
             token_budget=budget,
             context_filters=context_filters,
+            include_paths=include_paths,
+            exclude_paths=exclude_paths,
         )
         querylog.log_query(
             kind="query",
@@ -3193,27 +3211,60 @@ def main() -> None:
         src_nid = src_candidates[0]
         tgt_nid = tgt_candidates[0]
         G_undirected = G.to_undirected(as_view=True)
+        # Degree-weighted, noise-excluded traversal: an unweighted shortest_path
+        # treats every edge as equally worth crossing, so it can route through a
+        # generic/protocol-conformance hub (e.g. `Int -> Sendable`) instead of the
+        # real, meaningful call chain (real tooling - Go's callgraph, JetBrains'
+        # Call Graph plugin - mostly sidesteps this by not offering arbitrary
+        # A->B paths at all; graphify keeps the feature but fixes it with data it
+        # already has: node degree and the module/namespace + builtin-primitive
+        # noise labels already used for god-node exclusion).
+        from graphify.analyze import _BUILTIN_NOISE_LABELS
+        degree = dict(G_undirected.degree())
+        G_weighted = G.to_undirected()
+        for u, v in G_weighted.edges():
+            G_weighted[u][v]["_pathweight"] = 1 + degree.get(u, 0) + degree.get(v, 0)
+        noise_nodes = {
+            n for n in G_weighted.nodes()
+            if G_weighted.nodes[n].get("type") in ("module", "namespace")
+            or G_weighted.nodes[n].get("label", "") in _BUILTIN_NOISE_LABELS
+        }
         # Best-combo-first: try same-rank pairs before crossing into worse-ranked
         # candidates on either side, skipping any pair that resolves to one node.
         pairs = sorted(
             ((si, ti) for si in range(len(src_candidates)) for ti in range(len(tgt_candidates))),
             key=lambda p: p[0] + p[1],
         )
+        used_hub_fallback = False
         for si, ti in pairs:
             s, t = src_candidates[si], tgt_candidates[ti]
             if s == t:
                 continue
-            try:
-                path_nodes = _nx.shortest_path(G_undirected, s, t)
-                src_nid, tgt_nid = s, t
+            keep = (set(G_weighted.nodes()) - noise_nodes) | {s, t}
+            for graph_variant, is_fallback in (
+                (G_weighted.subgraph(keep), False),
+                (G_weighted, True),
+            ):
+                try:
+                    path_nodes = _nx.shortest_path(graph_variant, s, t, weight="_pathweight")
+                    src_nid, tgt_nid = s, t
+                    used_hub_fallback = is_fallback
+                    break
+                except (_nx.NetworkXNoPath, _nx.NodeNotFound):
+                    continue
+            if path_nodes is not None:
                 break
-            except (_nx.NetworkXNoPath, _nx.NodeNotFound):
-                continue
         if path_nodes is None:
             tried = len(pairs)
             suffix = f" (tried {tried} candidate pair{'s' if tried != 1 else ''})" if tried > 1 else ""
             print(f"No path found between '{source_label}' and '{target_label}'.{suffix}")
             sys.exit(0)
+        if used_hub_fallback:
+            print(
+                "note: no path avoiding generic/primitive hub nodes (Int, module anchors, etc.) - "
+                "this path routes through one",
+                file=sys.stderr,
+            )
         hops = len(path_nodes) - 1
         segments = []
         from graphify.build import edge_data
