@@ -420,12 +420,19 @@ def _get_embedding_index(G: nx.Graph) -> "tuple[list[str], object] | None":
     return index
 
 
+_EMBEDDING_MIN_SIMILARITY = 0.35
+
+
 def _embedding_seed_fallback(G: nx.Graph, question: str, top_k: int = 3) -> list[str]:
     """Last-resort seed selection via local dense-retrieval, tried only after
     BM25 + typo correction + fuzzy-substring matching all found nothing - the
     deliberate recall gap for a query and its target sharing zero literal or
     synonym-map terms (#5). Returns [] (never raises) whenever the optional
-    dependency isn't installed or the index can't be built.
+    dependency isn't installed, the index can't be built, or nothing clears
+    _EMBEDDING_MIN_SIMILARITY - cosine similarity always returns SOME nearest
+    node for ANY input, even a nonsense query with no real match anywhere in
+    the graph, so an unfiltered top-k would turn a genuinely unmatched query
+    into a confidently wrong one instead of "no match".
     """
     index = _get_embedding_index(G)
     if index is None:
@@ -439,7 +446,7 @@ def _embedding_seed_fallback(G: nx.Graph, question: str, top_k: int = 3) -> list
     query_vec = model.encode([question], normalize_embeddings=True)[0]
     scores = embeddings @ query_vec
     top_indices = np.argsort(-scores)[:top_k]
-    return [node_ids[i] for i in top_indices]
+    return [node_ids[i] for i in top_indices if scores[i] >= _EMBEDDING_MIN_SIMILARITY]
 
 
 _EXACT_MATCH_BONUS = 1000.0

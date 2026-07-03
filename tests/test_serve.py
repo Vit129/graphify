@@ -619,9 +619,15 @@ def test_query_graph_text_char_budget_uses_4_chars_per_token():
 # `embeddings` extra) - these tests mock the model/index directly, so they
 # verify the wiring/fallback logic without needing real model weights.
 
-def test_embedding_seed_fallback_empty_when_dependency_missing():
-    """With the optional extra genuinely absent, the fallback is a silent
-    no-op - never raises, just returns []."""
+def test_embedding_seed_fallback_empty_when_dependency_missing(monkeypatch):
+    """When the optional extra is absent (ImportError from the loader), the
+    fallback is a silent no-op - never raises, just returns []. Explicitly
+    simulated rather than relying on the test environment's actual install
+    state: CI runs `uv sync --all-extras`, so sentence-transformers IS
+    installed there even though it's absent on a default install."""
+    def _raise_import_error():
+        raise ImportError("sentence-transformers not installed")
+    monkeypatch.setattr("graphify.query._get_embedding_model", _raise_import_error)
     G = _make_graph()
     assert _embedding_seed_fallback(G, "some question with zero overlap") == []
 
