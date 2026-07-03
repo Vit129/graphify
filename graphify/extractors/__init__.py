@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+from graphify.extractors.apex import extract_apex
 from graphify.extractors.blade import extract_blade
 from graphify.extractors.css import extract_css, extract_scss
 from graphify.extractors.elixir import extract_elixir
@@ -23,6 +24,7 @@ from graphify.extractors.yaml_ import extract_yaml
 from graphify.extractors.zig import extract_zig
 
 LANGUAGE_EXTRACTORS: dict[str, Callable[[Path], dict]] = {
+    "apex": extract_apex,
     "blade": extract_blade,
     "css": extract_css,
     "elixir": extract_elixir,
