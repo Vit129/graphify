@@ -3224,10 +3224,27 @@ def main() -> None:
         G_weighted = G.to_undirected()
         for u, v in G_weighted.edges():
             G_weighted[u][v]["_pathweight"] = 1 + degree.get(u, 0) + degree.get(v, 0)
+        # Language-agnostic structural signal, additive to the label-based one:
+        # `_BUILTIN_NOISE_LABELS` only catches primitives someone already added to
+        # the list for a specific language - never a project-specific-but-generic
+        # type (the real `CopyModeMatch -> Sendable` bug: only `Sendable` had a
+        # label match, `CopyModeMatch`'s degree=14 alone gave it away). A node at
+        # or above the graph's own 95th-percentile degree is disproportionately
+        # over-connected relative to THIS graph, regardless of what language or
+        # label produced it - measured stable across 3 real, differently-sized
+        # graphs (p95 ~11-14 despite 3k-12k nodes each). The absolute floor keeps
+        # small/sparse graphs (where every node can look "extreme") from
+        # misfiring - only exclude nodes that are ALSO genuinely well-connected.
+        _DEGREE_FLOOR = 10
+        _sorted_degrees = sorted(degree.values())
+        _p95_idx = min(int(len(_sorted_degrees) * 0.95), len(_sorted_degrees) - 1) if _sorted_degrees else 0
+        _degree_p95 = _sorted_degrees[_p95_idx] if _sorted_degrees else 0
+        hub_degree_threshold = max(_DEGREE_FLOOR, _degree_p95)
         noise_nodes = {
             n for n in G_weighted.nodes()
             if G_weighted.nodes[n].get("type") in ("module", "namespace")
             or G_weighted.nodes[n].get("label", "") in _BUILTIN_NOISE_LABELS
+            or degree.get(n, 0) >= hub_degree_threshold
         }
         # Best-combo-first: try same-rank pairs before crossing into worse-ranked
         # candidates on either side, skipping any pair that resolves to one node.

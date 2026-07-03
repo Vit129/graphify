@@ -133,6 +133,52 @@ def test_path_avoids_builtin_primitive_hub_even_when_shorter(monkeypatch, tmp_pa
     assert "Int" not in out
 
 
+def _write_unlabeled_hub_graph(tmp_path):
+    """A project-specific type ("CustomHubType") that is NOT in
+    _BUILTIN_NOISE_LABELS but is disproportionately over-connected relative
+    to the rest of THIS graph - the real gap found for a project-specific
+    hub like Swift's `CopyModeMatch` (degree 14 in a real graph, no label
+    match possible since it's not a known primitive name in any language).
+    Language-agnostic: this must be excluded by degree alone, never by name."""
+    nodes = [
+        {"id": "source_fn", "label": "sourceFunction()", "source_file": "a.py", "community": 0},
+        {"id": "hub", "label": "CustomHubType", "source_file": "b.py", "community": 0},
+        {"id": "target_fn", "label": "targetFunction()", "source_file": "c.py", "community": 0},
+        {"id": "real1", "label": "realHelperOne()", "source_file": "a.py", "community": 0},
+        {"id": "real2", "label": "realHelperTwo()", "source_file": "c.py", "community": 0},
+    ]
+    links = [
+        {"source": "source_fn", "target": "hub", "relation": "references", "confidence": "EXTRACTED"},
+        {"source": "hub", "target": "target_fn", "relation": "references", "confidence": "EXTRACTED"},
+        {"source": "source_fn", "target": "real1", "relation": "calls", "confidence": "EXTRACTED"},
+        {"source": "real1", "target": "real2", "relation": "calls", "confidence": "EXTRACTED"},
+        {"source": "real2", "target": "target_fn", "relation": "calls", "confidence": "EXTRACTED"},
+    ]
+    # Inflate "hub"'s degree well above the rest of the graph, with no label
+    # match involved - purely a structural (percentile-degree) signal.
+    for i in range(15):
+        filler_id = f"filler{i}"
+        nodes.append({"id": filler_id, "label": f"unrelatedThing{i}()", "source_file": "z.py", "community": 1})
+        links.append({"source": "hub", "target": filler_id, "relation": "references", "confidence": "EXTRACTED"})
+    graph_data = {"directed": False, "multigraph": False, "graph": {}, "nodes": nodes, "links": links}
+    p = tmp_path / "graph.json"
+    p.write_text(json.dumps(graph_data))
+    return p
+
+
+def test_path_avoids_unlabeled_hub_via_degree_alone(monkeypatch, tmp_path, capsys):
+    """A structurally over-connected node with NO builtin-noise-label match
+    (a project-specific type, not a known-language primitive) must still be
+    avoided as an intermediate hop, purely because its degree is extreme
+    relative to the rest of the graph - this is the language-agnostic
+    complement to the label-based exclusion, so a language/type name that
+    was never added to _BUILTIN_NOISE_LABELS is still caught."""
+    p = _write_unlabeled_hub_graph(tmp_path)
+    out = _run(monkeypatch, p, "sourceFunction", "targetFunction", capsys)
+    assert "Shortest path (3 hops):" in out
+    assert "CustomHubType" not in out
+
+
 def test_path_falls_back_to_hub_route_when_it_is_the_only_route(monkeypatch, tmp_path, capsys):
     """If the ONLY route is through a noise hub, path must still find it
     (never regress to a false "no path found") and flag that it did."""
