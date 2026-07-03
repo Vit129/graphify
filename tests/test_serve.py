@@ -973,6 +973,47 @@ def test_pick_seeds_no_graph_preserves_old_behavior():
     assert _pick_seeds(scored, max_k=2) == ["a", "b"]
 
 
+# --- prose-node seed down-weighting -------------------------------------------
+
+def test_pick_seeds_prefers_code_node_over_near_tied_doc_node():
+    """A doc node (.md - real file, but prose not code) loses the top seed
+    slot to a near-tied code symbol on a genuine tie, mirroring the concept
+    penalty but gentler - a doc heading is still openable, just not
+    preferred over an equally-plausible code answer."""
+    G = nx.Graph()
+    G.add_node("doc", label="Config / Settings", source_file="decisions.md")
+    G.add_node("symbol", label="ProjectConfig", source_file="src/ProjectConfig.swift")
+    scored = [(10.0, "doc"), (9.5, "symbol")]  # doc scores higher raw
+    seeds = _pick_seeds(scored, max_k=1, G=G)
+    assert seeds == ["symbol"]
+
+
+def test_pick_seeds_doc_node_still_wins_when_genuinely_dominant():
+    """The prose penalty is a tiebreak, not a ban - a doc node that's the
+    clear best match still wins, since graphify deliberately unifies docs
+    and code in one graph."""
+    G = nx.Graph()
+    G.add_node("doc", label="Config / Settings", source_file="decisions.md")
+    G.add_node("symbol", label="unrelatedHelper", source_file="src/misc.py")
+    scored = [(10.0, "doc"), (1.0, "symbol")]
+    seeds = _pick_seeds(scored, max_k=1, G=G)
+    assert seeds == ["doc"]
+
+
+def test_pick_seeds_doc_penalty_gentler_than_concept_penalty():
+    """A doc node (real, openable file) must be penalized less harshly than
+    a true concept node (no source at all) - both lose to a near-tied code
+    symbol, but the doc node needs a smaller gap to still win."""
+    G = nx.Graph()
+    G.add_node("doc", label="Config", source_file="decisions.md")
+    G.add_node("concept", label="Config", source_file="")
+    G.add_node("symbol", label="unrelated", source_file="src/misc.py")
+    # A gap that the gentler doc penalty (0.9) survives but the harsher
+    # concept penalty (0.85) does not, against the same competing score.
+    assert _pick_seeds([(10.0, "doc"), (8.9, "symbol")], max_k=1, G=G) == ["doc"]
+    assert _pick_seeds([(10.0, "concept"), (8.9, "symbol")], max_k=1, G=G) == ["symbol"]
+
+
 def test_pick_seeds_multi_term_diversifies_across_communities():
     """A coincidental exact match (e.g. a test variable literally named
     "holdings") shouldn't crowd out a node in another community that

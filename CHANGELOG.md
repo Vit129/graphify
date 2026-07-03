@@ -4,6 +4,8 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 ## Unreleased
 
+- Feat: seed selection now gently down-weights doc/prose nodes (`.md`/`.txt`/etc., via `_PROSE_SEED_PENALTY = 0.9`) the same way concept nodes already were (`_CONCEPT_SEED_PENALTY = 0.85`, just gentler) - a code symbol wins a genuine near-tie against a doc heading instead of the reverse, without excluding docs outright (a doc that's clearly the best match still wins; a broad research pass across 8 real search systems found this was the one real gap left after 0.15.0, verified against harness-terminal's real graph before landing: `"config"` now seeds `ProjectConfig` [code] over `"Config / Settings"` [decisions.md] while a genuinely doc-focused query like `"what is the graphify architecture"` still correctly surfaces `ARCHITECTURE.md` headings first).
+
 ## 0.15.0 (2026-07-03)
 
 - Feat: `query`/`explain` output is now ranked by (hop distance from the seed, BM25 relevance, degree) instead of raw degree alone. Previously the non-seed portion of every query's output was sorted purely by node degree, so the token budget filled with whichever hubs happened to have the most edges rather than the nodes actually relevant to the question - measured live on graphify's own graph: `"how does BM25 scoring pick seed nodes"` used to lead with `main()`/a Rust test fixture/generic hubs, now leads with `_bm25_idf()`/`_pick_seeds()`/`_score_nodes()`/`_get_bm25_corpus()`, the functions actually being asked about. `_bfs`/`_dfs` return shapes are unchanged (a new `_hop_distances()` derives proximity from the edges they already return), so this is purely additive.

@@ -18,6 +18,7 @@ from array import array
 from pathlib import Path
 import networkx as nx
 from graphify.security import sanitize_label
+from graphify.detect import DOC_EXTENSIONS
 
 try:
     import jieba as _jieba  # type: ignore[import-untyped]
@@ -658,6 +659,7 @@ def _score_nodes(G: nx.Graph, terms: list[str]) -> list[tuple[float, str]]:
 
 
 _CONCEPT_SEED_PENALTY = 0.85
+_PROSE_SEED_PENALTY = 0.9
 
 
 def _is_concept_node_for_seeding(G: nx.Graph, nid: str) -> bool:
@@ -665,6 +667,19 @@ def _is_concept_node_for_seeding(G: nx.Graph, nid: str) -> bool:
     if not source:
         return True
     return "." not in source.rsplit("/", 1)[-1]
+
+
+def _is_prose_node_for_seeding(G: nx.Graph, nid: str) -> bool:
+    """A doc/prose file (.md, .txt, etc.) rather than code - has a real,
+    openable source_file (so _is_concept_node_for_seeding doesn't already
+    catch it), but a query resolving to it over an equally-plausible code
+    symbol should need to be a clearly better match, same as a concept node.
+    Gentler penalty than a true concept node: a doc heading is still an
+    openable, legitimate answer (graphify deliberately unifies docs and code
+    in one graph), just not preferred on a genuine tie.
+    """
+    source = G.nodes[nid].get("source_file", "") or ""
+    return Path(source).suffix.lower() in DOC_EXTENSIONS
 
 
 def _pick_seeds(
@@ -698,14 +713,24 @@ def _pick_seeds(
     slot over a near-tied AST symbol if it's genuinely the better match (#4) -
     a query should resolve to the symbol with a line to open, not an
     equally-plausible abstract label with nowhere to point.
+
+    A doc/prose node (.md, .txt, etc. - a real, openable file, just not code)
+    gets a gentler `_PROSE_SEED_PENALTY` for the same reason: graphify
+    deliberately unifies docs and code in one graph, so a doc heading is a
+    legitimate answer and should still win when it's clearly the better
+    match, just not on a near-tie against an equally-plausible code symbol.
     """
     if not scored:
         return []
     if G is not None:
-        scored = [
-            (score * _CONCEPT_SEED_PENALTY if _is_concept_node_for_seeding(G, nid) else score, nid)
-            for score, nid in scored
-        ]
+        def _seed_penalty(nid: str) -> float:
+            if _is_concept_node_for_seeding(G, nid):
+                return _CONCEPT_SEED_PENALTY
+            if _is_prose_node_for_seeding(G, nid):
+                return _PROSE_SEED_PENALTY
+            return 1.0
+
+        scored = [(score * _seed_penalty(nid), nid) for score, nid in scored]
         scored.sort(key=lambda s: (-s[0], len(G.nodes[s[1]].get("label") or s[1]), s[1]))
     top_score = scored[0][0]
     seeds = []
