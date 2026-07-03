@@ -424,6 +424,10 @@ def _rebuild_code(
     acquire_lock: bool = True,
     block_on_lock: bool = False,
     rank_by: str = "degree",
+    resolution: float | None = None,
+    exclude_hubs: float | None = None,
+    no_viz: bool | None = None,
+    wiki: bool | None = None,
 ) -> bool:
     """Re-run AST extraction + build + optional cluster + report for code files. No LLM needed.
 
@@ -484,6 +488,10 @@ def _rebuild_code(
                 no_cluster=no_cluster,
                 acquire_lock=False,
                 rank_by=rank_by,
+                resolution=resolution,
+                exclude_hubs=exclude_hubs,
+                no_viz=no_viz,
+                wiki=wiki,
             )
             # Late-arrival drain: another hook may have queued work while we
             # were rebuilding. Loop up to _PENDING_DRAIN_MAX_PASSES times so a
@@ -502,12 +510,21 @@ def _rebuild_code(
                         no_cluster=no_cluster,
                         acquire_lock=False,
                         rank_by=rank_by,
+                        resolution=resolution,
+                        exclude_hubs=exclude_hubs,
+                        no_viz=no_viz,
+                        wiki=wiki,
                     ) and ok
             return ok
 
     watch_root = watch_path.resolve()
     project_root = Path.cwd().resolve() if not watch_path.is_absolute() else watch_root
     report_root = _report_root_label(watch_path)
+
+    from graphify.config import load_project_config
+    proj_config = load_project_config(watch_path)
+    final_no_cluster = no_cluster or proj_config.get("no_cluster", False)
+
     try:
         from graphify.extract import extract, _get_extractor
         from graphify.detect import detect
@@ -713,7 +730,7 @@ def _rebuild_code(
         # subsequent re-run resolves it against the caller's CWD.
         (out / ".graphify_root").write_text(str(watch_path), encoding="utf-8")
 
-        if no_cluster:
+        if final_no_cluster:
             # Normalise to "links" key so schema is consistent with the full clustered path.
             # Dedupe parallel edges (the clustered path's DiGraph collapses them implicitly);
             # without it, --no-cluster + repeated `update` accumulate duplicates and edge
@@ -795,7 +812,19 @@ def _rebuild_code(
                 print("[graphify watch] No code-graph topology changes detected; outputs left untouched.")
                 return True
 
-        communities = cluster(G)
+        res = resolution if resolution is not None else proj_config.get("resolution", 1.0)
+        if isinstance(res, str):
+            res = float(res)
+        ex_hubs = exclude_hubs if exclude_hubs is not None else proj_config.get("exclude_hubs")
+        if ex_hubs is not None:
+            ex_hubs = float(ex_hubs)
+        
+        cluster_kwargs = {}
+        if res != 1.0:
+            cluster_kwargs["resolution"] = res
+        if ex_hubs is not None:
+            cluster_kwargs["exclude_hubs_percentile"] = ex_hubs
+        communities = cluster(G, **cluster_kwargs)
         previous_node_community = _node_community_map(existing_graph_data)
         if previous_node_community:
             communities = remap_communities_to_previous(communities, previous_node_community)
@@ -870,8 +899,9 @@ def _rebuild_code(
 
         # to_html raises ValueError for graphs > MAX_NODES_FOR_VIZ (5000).
         # Wrap so core outputs (graph.json + GRAPH_REPORT.md) always land.
+        final_no_viz = no_viz if no_viz is not None else proj_config.get("no_viz", False)
         html_written = False
-        if not no_change:
+        if not no_change and not final_no_viz:
             try:
                 to_html(G, communities, str(out / "graph.html"), community_labels=labels or None, node_limit=5000)
                 html_written = True
@@ -898,6 +928,24 @@ def _rebuild_code(
             except Exception as cf_err:
                 print(f"[graphify watch] callflow HTML update skipped: {cf_err}")
 
+        # Regenerate wiki if config.wiki is True or wiki is passed as True
+        final_wiki = wiki if wiki is not None else proj_config.get("wiki", False)
+        wiki_written = False
+        if final_wiki and not no_change:
+            try:
+                from graphify.wiki import to_wiki
+                to_wiki(
+                    G,
+                    communities,
+                    output_dir=out / "wiki",
+                    community_labels=labels or None,
+                    cohesion=cohesion,
+                    god_nodes_data=gods
+                )
+                wiki_written = True
+            except Exception as wiki_err:
+                print(f"[graphify watch] wiki update skipped: {wiki_err}")
+
         # clear stale needs_update flag if present
         flag = out / "needs_update"
         if flag.exists():
@@ -906,7 +954,7 @@ def _rebuild_code(
         if not no_change:
             print(f"[graphify watch] Rebuilt: {G.number_of_nodes()} nodes, "
                   f"{G.number_of_edges()} edges, {len(communities)} communities")
-            products = "graph.json" + (", graph.html" if html_written else "") + " and GRAPH_REPORT.md"
+            products = "graph.json" + (", graph.html" if html_written else "") + (", wiki" if wiki_written else "") + " and GRAPH_REPORT.md"
             if callflow_files:
                 products += f", {len(callflow_files)} callflow HTML"
             print(f"[graphify watch] {products} updated in {out}")

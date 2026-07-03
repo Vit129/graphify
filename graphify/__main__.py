@@ -2315,6 +2315,8 @@ def main() -> None:
         print("    --force                 overwrite graph.json even if the rebuild has fewer nodes")
         print("                            (also: GRAPHIFY_FORCE=1 env var; use after refactors that delete code)")
         print("    --no-cluster            skip clustering, write raw extraction only")
+        print("  update --all            re-extract and update all projects registered in global manifest")
+        print("  update-all [paths...]   re-extract and update all projects (or find ones under specified paths)")
         print("  cluster-only <path>     rerun clustering on an existing graph.json and regenerate report")
         print("    --no-viz                skip graph.html generation (useful for >5000 node graphs / CI)")
         print("    --graph <path>          path to graph.json (default <path>/graphify-out/graph.json)")
@@ -3723,11 +3725,149 @@ def main() -> None:
                 stages.mark("export"); stages.total()
                 print(f"Done - {len(communities)} communities. GRAPH_REPORT.md and graph.json updated.")
 
-    elif cmd == "update":
+    elif cmd in ("update", "update-all"):
+        is_all = cmd == "update-all" or "--all" in sys.argv
         force = os.environ.get("GRAPHIFY_FORCE", "").lower() in ("1", "true", "yes")
         no_cluster = False
         no_open = False
         rank_by = os.environ.get("GRAPHIFY_RANK_BY", "degree")
+        
+        # Helper to check git freshness
+        def _is_git_fresh(proj_dir: Path) -> bool:
+            import subprocess as _sp
+            try:
+                r = _sp.run(["git", "-C", str(proj_dir), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3)
+                if r.returncode != 0:
+                    return True
+                current_head = r.stdout.strip()
+            except Exception:
+                return True
+
+            graph_json_path = proj_dir / "graphify-out" / "graph.json"
+            if not graph_json_path.exists():
+                return False
+            try:
+                import json
+                data = json.loads(graph_json_path.read_text(encoding="utf-8"))
+                stored_commit = data.get("built_at_commit")
+                if not stored_commit:
+                    return False
+                return current_head.startswith(stored_commit) or stored_commit.startswith(current_head)
+            except Exception:
+                return False
+
+        if is_all:
+            # Batch update command!
+            force = force or "--force" in sys.argv
+            search_roots = []
+            for arg in sys.argv[2:]:
+                if arg != "--all" and arg != "--force" and not arg.startswith("-"):
+                    search_roots.append(Path(arg))
+
+            targets = []
+            if search_roots:
+                print(f"Scanning for graphify-out directories in {', '.join(str(r) for r in search_roots)}...")
+                for root in search_roots:
+                    if not root.exists():
+                        continue
+                    # Traverse up to depth 4
+                    for gout in root.glob("**/graphify-out"):
+                        try:
+                            depth = len(gout.relative_to(root).parts)
+                            if depth <= 5:
+                                proj = gout.parent
+                                if proj not in targets:
+                                    targets.append(proj)
+                        except Exception:
+                            pass
+            else:
+                # Use global manifest
+                from graphify.global_graph import global_list
+                try:
+                    repos = global_list()
+                    for tag, info in repos.items():
+                        spath = info.get("source_path")
+                        if spath:
+                            proj = Path(spath).parent.parent
+                            if proj.exists() and proj not in targets:
+                                targets.append(proj)
+                except Exception as e:
+                    print(f"Error loading global manifest: {e}", file=sys.stderr)
+
+            if not targets:
+                print("No projects found to update.")
+                sys.exit(0)
+
+            # Filter out 9arm-skills as requested
+            filtered_targets = []
+            for t in targets:
+                if "9arm-skills" in t.name or "9arm-skills" in str(t):
+                    print(f"Skipping excluded project: {t.name}")
+                    continue
+                filtered_targets.append(t)
+            targets = filtered_targets
+
+            print(f"Found {len(targets)} projects to check.")
+            
+            from graphify.watch import _rebuild_code
+            from graphify.config import load_project_config
+            
+            success_count = 0
+            for proj in targets:
+                if not force and _is_git_fresh(proj):
+                    print(f"  {proj.name} (clean)")
+                    continue
+
+                print(f"→ {proj.name} (updating)")
+                proj_config = load_project_config(proj)
+                
+                custom_script = None
+                for script_subpath in ("scripts/graphify-refresh.sh", "Scripts/graphify-refresh.sh"):
+                    candidate = proj / script_subpath
+                    if candidate.exists():
+                        custom_script = candidate
+                        break
+                
+                if custom_script:
+                    print(f"  running custom refresh script: {custom_script.relative_to(proj)}")
+                    import subprocess
+                    try:
+                        subprocess.run(["bash", str(custom_script)], cwd=str(proj), check=True)
+                        success_count += 1
+                    except Exception as e:
+                        print(f"  custom script failed: {e}", file=sys.stderr)
+                else:
+                    try:
+                        res = proj_config.get("resolution")
+                        ex_hubs = proj_config.get("exclude_hubs")
+                        no_viz = proj_config.get("no_viz")
+                        wiki = proj_config.get("wiki")
+                        proj_no_cluster = proj_config.get("no_cluster", False)
+                        proj_rank_by = proj_config.get("rank_by", "degree")
+                        
+                        ok = _rebuild_code(
+                            proj, 
+                            force=force, 
+                            no_cluster=proj_no_cluster, 
+                            block_on_lock=True, 
+                            rank_by=proj_rank_by,
+                            resolution=res,
+                            exclude_hubs=ex_hubs,
+                            no_viz=no_viz,
+                            wiki=wiki
+                        )
+                        if ok:
+                            success_count += 1
+                            html_path = proj / "graphify-out" / "graph.html"
+                            if html_path.exists():
+                                _trigger_live_reload(html_path)
+                    except Exception as e:
+                        print(f"  rebuild failed: {e}", file=sys.stderr)
+            
+            print(f"\nDone. Updated {success_count} projects.")
+            sys.exit(0)
+
+        # Single project update
         args = sys.argv[2:]
         watch_arg: str | None = None
         i_arg = 0
@@ -3778,13 +3918,27 @@ def main() -> None:
         if not watch_path.exists():
             print(f"error: path not found: {watch_path}", file=sys.stderr)
             sys.exit(1)
+            
         from graphify.watch import _rebuild_code
-
+        from graphify.config import load_project_config
+        proj_config = load_project_config(watch_path)
+        
+        # Merge configuration values
+        no_cluster = no_cluster or proj_config.get("no_cluster", False)
+        # Note: force check is already done above via OS env or CLI arg
+        
         print(f"Re-extracting code files in {watch_path} (no LLM needed)...")
-        # Interactive CLI: block on the per-repo lock rather than skip, so the
-        # user sees their explicit `graphify update` complete instead of
-        # exiting silently when a hook-driven rebuild happens to be running.
-        ok = _rebuild_code(watch_path, force=force, no_cluster=no_cluster, block_on_lock=True, rank_by=rank_by)
+        ok = _rebuild_code(
+            watch_path, 
+            force=force, 
+            no_cluster=no_cluster, 
+            block_on_lock=True, 
+            rank_by=rank_by,
+            resolution=proj_config.get("resolution"),
+            exclude_hubs=proj_config.get("exclude_hubs"),
+            no_viz=proj_config.get("no_viz"),
+            wiki=proj_config.get("wiki")
+        )
         if ok:
             print("Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.")
             html_path = watch_path / "graphify-out" / "graph.html"
@@ -4415,27 +4569,40 @@ def main() -> None:
                 print(f"error: path not found: {target}", file=sys.stderr)
                 sys.exit(1)
 
-        backend: str | None = None
-        model: str | None = None
-        extract_mode: str | None = None
-        out_dir: Path | None = None
-        cli_postgres_dsn: str | None = None
-        cli_cargo: bool = False
-        no_cluster = False
-        dedup_llm = False
-        google_workspace = False
-        global_merge = False
-        global_repo_tag: str | None = None
-        # Performance/tuning knobs (issue #792). None means "use library default".
-        cli_max_workers: int | None = None
-        cli_token_budget: int | None = None
-        cli_max_concurrency: int | None = None
-        cli_api_timeout: float | None = None
-        # Clustering tuning knobs
-        cli_resolution: float = 1.0
-        cli_exclude_hubs: float | None = None
-        cli_excludes: list[str] = []
-        cli_timing: bool = False
+        # Load configuration settings
+        from graphify.config import load_project_config
+        proj_config = load_project_config(target)
+
+        backend: str | None = proj_config.get("backend")
+        model: str | None = proj_config.get("model")
+        extract_mode: str | None = proj_config.get("mode")
+        out_dir: Path | None = Path(proj_config.get("out")) if "out" in proj_config else None
+        cli_postgres_dsn: str | None = proj_config.get("postgres")
+        cli_cargo: bool = proj_config.get("cargo", False)
+        no_cluster = proj_config.get("no_cluster", False)
+        dedup_llm = proj_config.get("dedup_llm", False)
+        google_workspace = proj_config.get("google_workspace", False)
+        global_merge = proj_config.get("global", False)
+        global_repo_tag: str | None = proj_config.get("as")
+        
+        def _get_config_int(key: str) -> int | None:
+            val = proj_config.get(key)
+            return int(val) if val is not None else None
+            
+        def _get_config_float(key: str) -> float | None:
+            val = proj_config.get(key)
+            return float(val) if val is not None else None
+
+        cli_max_workers: int | None = _get_config_int("max_workers")
+        cli_token_budget: int | None = _get_config_int("token_budget")
+        cli_max_concurrency: int | None = _get_config_int("max_concurrency")
+        cli_api_timeout: float | None = _get_config_float("api_timeout")
+        cli_resolution: float = _get_config_float("resolution") or 1.0
+        cli_exclude_hubs: float | None = _get_config_float("exclude_hubs")
+        cli_excludes: list[str] = list(proj_config.get("excludes", []))
+        cli_timing: bool = proj_config.get("timing", False)
+        cli_wiki: bool = proj_config.get("wiki", False)
+        cli_no_viz: bool = proj_config.get("no_viz", False)
 
         def _parse_int(name: str, raw: str) -> int:
             try:
@@ -4526,6 +4693,13 @@ def main() -> None:
                 i += 1
             elif a == "--timing":
                 cli_timing = True; i += 1
+            elif a == "--wiki":
+                cli_wiki = True; i += 1
+            elif a == "--no-viz":
+                cli_no_viz = True; i += 1
+            elif a == "--update":
+                # Compatibility flag, incremental_mode is auto-detected
+                i += 1
             else:
                 i += 1
 
@@ -5085,14 +5259,66 @@ def main() -> None:
                 f"{merged['output_tokens']:,} out, "
                 f"est. cost (~{backend}): ${cost:.4f}"
             )
-        # extract intentionally stops at graph.json + analysis; the report and
-        # community labels are produced by `cluster-only` (or an agent's Step 5).
-        # Point standalone users at it so communities get named (#1097).
-        print(
-            "[graphify extract] next: run "
-            f"`graphify cluster-only {graphify_out.parent}` "
-            "to generate GRAPH_REPORT.md and name communities"
-        )
+        # Generate GRAPH_REPORT.md and GRAPH_SUMMARY.md
+        if not no_cluster:
+            try:
+                from graphify.report import generate as _generate, summarize as _summarize
+                from graphify.cluster import label_communities_by_hub
+                from graphify.report import load_learning_for_report as _llfr
+                
+                # Check for existing labels
+                labels_file = graphify_out / ".graphify_labels.json"
+                try:
+                    raw = json.loads(labels_file.read_text(encoding="utf-8")) if labels_file.exists() else {}
+                    labels = {int(k): v for k, v in raw.items() if int(k) in communities}
+                except Exception:
+                    labels = {}
+                missing = {cid: members for cid, members in communities.items() if cid not in labels}
+                if missing:
+                    labels.update(label_communities_by_hub(G, missing))
+                
+                from graphify.watch import _report_root_label, _git_head, _suggest_questions
+                report_root = _report_root_label(target)
+                questions = _suggest_questions(G, communities, labels)
+                report = _generate(
+                    G, communities, cohesion, labels, gods, surprises,
+                    {"files": files_by_type, "total_files": len(code_files) + len(semantic_files), "total_words": total_words},
+                    {"input": merged["input_tokens"], "output": merged["output_tokens"]},
+                    report_root, suggested_questions=questions,
+                    built_at_commit=_git_head(), learning=_llfr(str(graph_json_path))
+                )
+                (graphify_out / "GRAPH_REPORT.md").write_text(report, encoding="utf-8")
+                (graphify_out / "GRAPH_SUMMARY.md").write_text(_summarize(report, target.name), encoding="utf-8")
+                print(f"[graphify extract] wrote {graphify_out / 'GRAPH_REPORT.md'}")
+                print(f"[graphify extract] wrote {graphify_out / 'GRAPH_SUMMARY.md'}")
+            except Exception as report_err:
+                print(f"[graphify extract] warning: failed to generate report: {report_err}", file=sys.stderr)
+
+        # Generate wiki articles if --wiki is set
+        if cli_wiki and not no_cluster:
+            try:
+                from graphify.wiki import to_wiki as _to_wiki
+                _to_wiki(
+                    G,
+                    communities,
+                    output_dir=graphify_out / "wiki",
+                    community_labels=labels or None,
+                    cohesion=cohesion,
+                    god_nodes_data=gods
+                )
+                print(f"[graphify extract] Wiki articles written to {graphify_out}/wiki/")
+            except Exception as wiki_err:
+                print(f"[graphify extract] warning: failed to generate wiki: {wiki_err}", file=sys.stderr)
+
+        # Generate graph.html if not --no-viz and not --no-cluster
+        if not cli_no_viz and not no_cluster:
+            try:
+                from graphify.export import to_html as _to_html
+                _to_html(G, communities, str(graphify_out / "graph.html"), community_labels=labels or None, node_limit=5000)
+                print(f"[graphify extract] wrote {graphify_out / 'graph.html'}")
+            except Exception as viz_err:
+                print(f"[graphify extract] warning: skipped graph.html: {viz_err}", file=sys.stderr)
+
         stages.total()
 
     elif cmd == "cache-check":

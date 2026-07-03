@@ -946,3 +946,32 @@ def test_merge_changed_paths_dedupes_in_order():
         [Path("a.py")],
     )
     assert [p.as_posix() for p in merged] == ["a.py", "b.py", "c.py"]
+
+
+def test_rebuild_code_honors_project_config(tmp_path):
+    """Verify that _rebuild_code reads and applies config settings from pyproject.toml."""
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text(
+        "def a(): return b()\ndef b(): return c()\ndef c(): pass\n", encoding="utf-8"
+    )
+
+    # 1. Create a pyproject.toml disabling viz (graph.html) and enabling wiki
+    pyproject_path = corpus / "pyproject.toml"
+    pyproject_path.write_text("""
+[tool.graphify]
+no_viz = true
+wiki = true
+""", encoding="utf-8")
+
+    assert _rebuild_code(corpus, acquire_lock=False) is True
+
+    # 2. Assert graph.html was NOT written (due to no_viz=True)
+    assert not (corpus / "graphify-out" / "graph.html").exists()
+
+    # 3. Assert wiki pages were written (due to wiki=True)
+    assert (corpus / "graphify-out" / "wiki").exists()
+    assert (corpus / "graphify-out" / "wiki" / "index.md").exists()
+

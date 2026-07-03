@@ -310,6 +310,34 @@ See the [full command reference](#full-command-reference) below.
 
 ---
 
+## Recommended standard flags
+
+If the graph is mainly for your AI assistant to query (rather than for humans to click through `graph.html`), a good default combination is:
+
+```bash
+graphify . --no-viz --wiki --exclude-hubs 99
+```
+
+- **`--no-viz`** — skips `graph.html`. Agents never open it; they use `graphify query`/`path`/`explain` or the wiki. This is usually the largest generated file, so skipping it keeps repeated builds fast and `graphify-out/` small.
+- **`--wiki`** — builds the agent-crawlable markdown wiki (`graphify-out/wiki/`). Complements scoped queries with topic-based browsing, and is what the always-on assistant instructions (`AGENTS.md`, `CLAUDE.md`, etc.) look for first.
+- **`--exclude-hubs 99`** — drops p99-degree utility nodes (base classes, shared config, everything-imports-this files) from the god-node ranking in `GRAPH_REPORT.md`, so the report highlights real architectural hubs instead of incidental ones.
+
+For large or logic-heavy corpora, add `--mode deep` (richer relationship extraction, higher API cost) and/or `--resolution 1.5` (finer-grained communities for repos spanning several distinct domains).
+
+Once you have a graph, prefer `--update` over a full re-extract for subsequent runs — it only processes changed files:
+
+```bash
+if [ -f graphify-out/graph.json ]; then
+  graphify . --update --no-viz --wiki --exclude-hubs 99
+else
+  graphify . --no-viz --wiki --exclude-hubs 99
+fi
+```
+
+Save this as `scripts/graphify-refresh.sh` (or your project's script directory) so the flags don't need to be retyped every run.
+
+---
+
 ## Ignoring files
 
 Create a `.graphifyignore` in your project root — same syntax as `.gitignore`, including `!` negation.
