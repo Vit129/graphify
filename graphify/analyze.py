@@ -127,6 +127,13 @@ def god_nodes(G: nx.Graph, top_n: int = 10, by: str = "degree") -> list[dict]:
             continue
         if G.nodes[node_id].get("label", "") in _BUILTIN_NOISE_LABELS:
             continue
+        # Import/module anchor nodes (#1327): `import Foundation` from N files collapses
+        # to one shared node with type=module, which accumulates one edge per importing
+        # file and mechanically outranks real abstractions (e.g. Swift's `Foundation`,
+        # `HarnessCore` topping a god-node list ahead of the app's own core classes).
+        # Not an architectural hub - exclude regardless of language.
+        if G.nodes[node_id].get("type") in ("module", "namespace"):
+            continue
         entry = {
             "id": node_id,
             "label": G.nodes[node_id].get("label", node_id),

@@ -604,6 +604,24 @@ def test_god_nodes_excludes_json_noise():
     assert "AuthService" in labels
 
 
+def test_god_nodes_excludes_module_anchor_nodes():
+    """god_nodes must not return import/module anchor nodes (#1327) like `Foundation` or
+    `HarnessCore`, which accumulate one edge per importing file and mechanically outrank
+    real abstractions despite representing no behavior of their own."""
+    G = nx.Graph()
+    G.add_node("real", label="SessionCoordinator", source_file="src/session.swift")
+    G.add_node("foundation", label="Foundation", type="module", source_file="src/a.swift")
+    for i in range(20):
+        n = f"file{i}"
+        G.add_node(n, label=f"File{i}", source_file=f"src/file{i}.swift")
+        G.add_edge("foundation", n)
+        G.add_edge("real", n)
+    result = god_nodes(G, top_n=10)
+    labels = [r["label"] for r in result]
+    assert "Foundation" not in labels
+    assert "SessionCoordinator" in labels
+
+
 def test_god_nodes_filter_is_case_insensitive():
     """JSON-key filter must match regardless of label casing."""
     G = nx.Graph()
