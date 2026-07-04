@@ -1,21 +1,9 @@
 <p align="center">
-  <a href="https://graphifylabs.ai"><img src="https://raw.githubusercontent.com/Vit129/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/></a>
+  <a href="https://github.com/Vit129/graphify"><img src="https://raw.githubusercontent.com/Vit129/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/></a>
 </p>
 
 <p align="center">
-  🇺🇸 <a href="README.md">English</a> | 🇨🇳 <a href="docs/translations/README.zh-CN.md">简体中文</a> | 🇯🇵 <a href="docs/translations/README.ja-JP.md">日本語</a> | 🇰🇷 <a href="docs/translations/README.ko-KR.md">한국어</a> | 🇩🇪 <a href="docs/translations/README.de-DE.md">Deutsch</a> | 🇫🇷 <a href="docs/translations/README.fr-FR.md">Français</a> | 🇪🇸 <a href="docs/translations/README.es-ES.md">Español</a> | 🇮🇳 <a href="docs/translations/README.hi-IN.md">हिन्दी</a> | 🇧🇷 <a href="docs/translations/README.pt-BR.md">Português</a> | 🇷🇺 <a href="docs/translations/README.ru-RU.md">Русский</a> | 🇸🇦 <a href="docs/translations/README.ar-SA.md">العربية</a> | 🇮🇷 <a href="docs/translations/README.fa-IR.md">فارسی</a> | 🇮🇹 <a href="docs/translations/README.it-IT.md">Italiano</a> | 🇵🇱 <a href="docs/translations/README.pl-PL.md">Polski</a> | 🇳🇱 <a href="docs/translations/README.nl-NL.md">Nederlands</a> | 🇹🇷 <a href="docs/translations/README.tr-TR.md">Türkçe</a> | 🇺🇦 <a href="docs/translations/README.uk-UA.md">Українська</a> | 🇻🇳 <a href="docs/translations/README.vi-VN.md">Tiếng Việt</a> | 🇮🇩 <a href="docs/translations/README.id-ID.md">Bahasa Indonesia</a> | 🇸🇪 <a href="docs/translations/README.sv-SE.md">Svenska</a> | 🇬🇷 <a href="docs/translations/README.el-GR.md">Ελληνικά</a> | 🇷🇴 <a href="docs/translations/README.ro-RO.md">Română</a> | 🇨🇿 <a href="docs/translations/README.cs-CZ.md">Čeština</a> | 🇫🇮 <a href="docs/translations/README.fi-FI.md">Suomi</a> | 🇩🇰 <a href="docs/translations/README.da-DK.md">Dansk</a> | 🇳🇴 <a href="docs/translations/README.no-NO.md">Norsk</a> | 🇭🇺 <a href="docs/translations/README.hu-HU.md">Magyar</a> | 🇹🇭 <a href="docs/translations/README.th-TH.md">ภาษาไทย</a> | 🇺🇿 <a href="docs/translations/README.uz-UZ.md">Oʻzbekcha</a> | 🇹🇼 <a href="docs/translations/README.zh-TW.md">繁體中文</a> | 🇵🇭 <a href="docs/translations/README.fil-PH.md">Filipino</a>
-</p>
-
-<p align="center">
-  <a href="https://www.ycombinator.com/companies/graphify"><img src="https://img.shields.io/badge/Y%20Combinator-S26-F0652F?style=flat&logo=ycombinator&logoColor=white" alt="YC S26"/></a>
-  <a href="https://discord.gg/598Ad9zQZ"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"/></a>
-  <a href="https://safishamsi.gumroad.com/l/qetvlo"><img src="https://img.shields.io/badge/Book-The%20Memory%20Layer-2ea44f?style=flat&logo=gitbook&logoColor=white" alt="The Memory Layer"/></a>
-  <a href="https://github.com/Vit129/graphify/actions/workflows/ci.yml"><img src="https://github.com/Vit129/graphify/actions/workflows/ci.yml/badge.svg?branch=v8" alt="CI"/></a>
-  <a href="https://pypi.org/project/graphifyy/"><img src="https://img.shields.io/pypi/v/graphifyy" alt="PyPI"/></a>
-  <a href="https://pepy.tech/project/graphifyy"><img src="https://img.shields.io/pepy/dt/graphifyy?color=blue&label=downloads" alt="Downloads"/></a>
   <a href="https://github.com/Vit129/graphify"><img src="https://img.shields.io/badge/sponsor-Vit129-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
-  <a href="https://www.linkedin.com/company/graphify-labs"><img src="https://img.shields.io/badge/LinkedIn-Graphify%20Labs-0077B5?logo=linkedin" alt="LinkedIn"/></a>
-  <a href="https://x.com/graphifyy"><img src="https://img.shields.io/badge/X-graphifyy-000000?logo=x&logoColor=white" alt="X"/></a>
 </p>
 
 <p align="center">
@@ -23,6 +11,8 @@
     <img src="https://api.star-history.com/svg?repos=Vit129/graphify&type=Date" alt="Star History Chart" width="370"/>
   </a>
 </p>
+
+> This is a personal/team fork of [safishamsi/graphify](https://github.com/safishamsi/graphify), maintained independently by [Vit129](https://github.com/Vit129). Not affiliated with the original project, Graphify Labs, or Penpax. It's a hard fork, not a PR queue back upstream — see [What's different from upstream](#whats-different-from-upstream). Not published to PyPI; install from source (see [Install](#install)).
 
 Type `/graphify` in your AI coding assistant and it maps your entire project — code, docs, PDFs, images, videos — into a knowledge graph you can query instead of grepping through files.
 
@@ -46,6 +36,20 @@ For a readable architecture page with Mermaid call-flow diagrams, run:
 ```bash
 graphify export callflow-html
 ```
+
+---
+
+## What's different from upstream
+
+This fork started from [safishamsi/graphify](https://github.com/safishamsi/graphify) and has since diverged substantially (~1000 commits ahead, none behind, ~67k lines changed in `graphify/` alone). Checked directly against upstream's current source, not assumed:
+
+- **Ambiguity-safe node resolution.** Upstream's `graphify/serve.py` resolves a name to a node with a single flat substring match (`term in label.lower()`) — first hit wins, silently, even with duplicate labels across files. This fork retries every near-tied candidate, reports ambiguity instead of guessing, and adds `--path`/`--source-path`/`--target-path` flags to `path`/`explain` so you can scope to the file you mean.
+- **Hub-avoidance in pathfinding.** Upstream's `shortest_path` is a bare `nx.shortest_path(G, src, tgt)` — no retry, no penalty for routing through a high-degree utility node. This fork scores and avoids degree-heavy hubs so `path` returns the architecturally meaningful route, not just *a* route.
+- **A real query layer.** Upstream has no `query.py`, `affected.py`, or `symbol_resolution.py` — those don't exist in its package at all. This fork adds BM25-scored `graphify query`, typo/synonym-corrected retry, `graphify affected` (blast-radius impact), and a shared symbol-resolution module used by `path`/`explain`/`get_node`/`get_neighbors`.
+- **Opt-in config value-coupling.** A schema-agnostic heuristic (`shares_value:<value>` edges, gated behind `value_coupling = true`) connects files that reference the same identifier-shaped value (e.g. YAML `entity_id`s) — useful for infra/config repos where nothing an AST sees actually "calls" anything.
+- **A much larger CLI surface** (`prs`, `reflect`, `global`, `merge-graphs`, per-platform install commands for 20+ assistants, etc.) — see the [full command reference](#full-command-reference).
+
+None of this is a knock on the original — it's a different, more actively-maintained branch, kept for personal/team use rather than as a product. See `agent-memory/plans/` in the repo for the dated, gated (validate-before-shipping) process behind each of these.
 
 ---
 
@@ -78,17 +82,17 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## Install
 
-> **Official package:** The PyPI package is `graphifyy` (double-y). Other `graphify*` packages on PyPI are not affiliated. The CLI command is still `graphify`.
+> **Source-only fork:** the PyPI name `graphifyy` is already taken by upstream's package (currently v0.9.5, a different, older codebase) — `pip install graphifyy` from PyPI does **not** get you this fork. Install straight from this repo instead; the CLI command is still `graphify`.
 
-**Step 1 — install the package:**
+**Step 1 — install the package from this repo:**
 
 ```bash
 # Recommended (isolated env; if 'graphify' isn't found after, run: uv tool update-shell):
-uv tool install graphifyy
+uv tool install git+https://github.com/Vit129/graphify.git
 
 # Alternatives:
-pipx install graphifyy
-pip install graphifyy  # may need PATH setup — see note below
+pipx install git+https://github.com/Vit129/graphify.git
+pip install git+https://github.com/Vit129/graphify.git  # may need PATH setup — see note below
 ```
 
 **Step 2 — register the skill with your AI assistant:**
@@ -118,7 +122,7 @@ for example `graphify claude install --project` or `graphify codex install --pro
 
 > **`graphify: command not found`?** `uv tool install` / `pipx install` put the `graphify` command in their tool bin dir (`~/.local/bin`). If your shell can't find it right after install — common on a fresh macOS + zsh setup — that dir isn't on your `PATH` yet: run `uv tool update-shell` (or `pipx ensurepath`), then open a new terminal. With plain `pip`, add `~/.local/bin` (Linux) or `~/Library/Python/3.x/bin` (Mac) to your PATH, or run `python -m graphify`.
 
-> **Running with `uvx` / `uv tool run` instead of installing?** Name the package, not the command: `uvx --from graphifyy graphify install`. Plain `uvx graphify …` fails (`No solution found … no versions of graphify`) because `uv tool run` reads the first word as a *package*, and the package is `graphifyy` — the `graphify` command lives inside it.
+> **Running with `uvx` / `uv tool run` instead of installing?** Point `--from` at the git repo, not a bare package name: `uvx --from git+https://github.com/Vit129/graphify.git graphify install`. Plain `uvx graphify …` fails (`No solution found … no versions of graphify`) because `uv tool run` reads the first word as a *PyPI package name*, and this fork isn't on PyPI.
 
 > **Avoid `pip install` on Mac/Windows** if possible. The skill resolves Python at runtime from `graphify-out/.graphify_python`; if that points to a different environment than where `pip` installed the package, you'll get `ModuleNotFoundError: No module named 'graphify'`. `uv tool install` and `pipx install` isolate the package in their own env and avoid this entirely.
 
@@ -164,29 +168,29 @@ Install only what you need:
 
 | Extra | What it adds | Install |
 |---|---|---|
-| `pdf` | PDF extraction | `uv tool install "graphifyy[pdf]"` |
-| `office` | `.docx` and `.xlsx` support | `uv tool install "graphifyy[office]"` |
-| `google` | Google Sheets rendering | `uv tool install "graphifyy[google]"` |
-| `video` | Video/audio transcription (faster-whisper + yt-dlp) | `uv tool install "graphifyy[video]"` |
-| `mcp` | MCP stdio server | `uv tool install "graphifyy[mcp]"` |
-| `neo4j` | Neo4j push support | `uv tool install "graphifyy[neo4j]"` |
-| `falkordb` | FalkorDB push support | `uv tool install "graphifyy[falkordb]"` |
-| `svg` | SVG graph export | `uv tool install "graphifyy[svg]"` |
-| `leiden` | Leiden community detection (Python < 3.13 only) | `uv tool install "graphifyy[leiden]"` |
-| `ollama` | Ollama local inference | `uv tool install "graphifyy[ollama]"` |
-| `openai` | OpenAI / OpenAI-compatible APIs | `uv tool install "graphifyy[openai]"` |
-| `gemini` | Google Gemini API | `uv tool install "graphifyy[gemini]"` |
-| `anthropic` | Anthropic Claude API (`--backend claude`, uses `ANTHROPIC_API_KEY`) | `uv tool install "graphifyy[anthropic]"` |
-| `bedrock` | AWS Bedrock (uses IAM, no API key) | `uv tool install "graphifyy[bedrock]"` |
-| `azure` | Azure OpenAI Service (`--backend azure`, uses `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT`) | `uv tool install "graphifyy[openai]"` |
-| `sql` | SQL schema extraction | `uv tool install "graphifyy[sql]"` |
-| `postgres` | Live PostgreSQL introspection (`--postgres DSN`) | `uv tool install "graphifyy[postgres]"` |
-| `dm` | BYOND DreamMaker `.dm`/`.dme` AST extraction (may need a C compiler + `python3-dev` if no wheel matches your platform) | `uv tool install "graphifyy[dm]"` |
-| `terraform` | Terraform / HCL `.tf`/`.tfvars`/`.hcl` AST extraction | `uv tool install "graphifyy[terraform]"` |
-| `robot` | Robot Framework `.robot`/`.resource` AST extraction | `uv tool install "graphifyy[robot]"` |
-| `scss` | SCSS `.scss` AST extraction (plain `.css` needs no extra) | `uv tool install "graphifyy[scss]"` |
-| `chinese` | Chinese query segmentation (jieba) | `uv tool install "graphifyy[chinese]"` |
-| `all` | Everything above | `uv tool install "graphifyy[all]"` |
+| `pdf` | PDF extraction | `uv tool install "graphifyy[pdf] @ git+https://github.com/Vit129/graphify.git"` |
+| `office` | `.docx` and `.xlsx` support | `uv tool install "graphifyy[office] @ git+https://github.com/Vit129/graphify.git"` |
+| `google` | Google Sheets rendering | `uv tool install "graphifyy[google] @ git+https://github.com/Vit129/graphify.git"` |
+| `video` | Video/audio transcription (faster-whisper + yt-dlp) | `uv tool install "graphifyy[video] @ git+https://github.com/Vit129/graphify.git"` |
+| `mcp` | MCP stdio server | `uv tool install "graphifyy[mcp] @ git+https://github.com/Vit129/graphify.git"` |
+| `neo4j` | Neo4j push support | `uv tool install "graphifyy[neo4j] @ git+https://github.com/Vit129/graphify.git"` |
+| `falkordb` | FalkorDB push support | `uv tool install "graphifyy[falkordb] @ git+https://github.com/Vit129/graphify.git"` |
+| `svg` | SVG graph export | `uv tool install "graphifyy[svg] @ git+https://github.com/Vit129/graphify.git"` |
+| `leiden` | Leiden community detection (Python < 3.13 only) | `uv tool install "graphifyy[leiden] @ git+https://github.com/Vit129/graphify.git"` |
+| `ollama` | Ollama local inference | `uv tool install "graphifyy[ollama] @ git+https://github.com/Vit129/graphify.git"` |
+| `openai` | OpenAI / OpenAI-compatible APIs | `uv tool install "graphifyy[openai] @ git+https://github.com/Vit129/graphify.git"` |
+| `gemini` | Google Gemini API | `uv tool install "graphifyy[gemini] @ git+https://github.com/Vit129/graphify.git"` |
+| `anthropic` | Anthropic Claude API (`--backend claude`, uses `ANTHROPIC_API_KEY`) | `uv tool install "graphifyy[anthropic] @ git+https://github.com/Vit129/graphify.git"` |
+| `bedrock` | AWS Bedrock (uses IAM, no API key) | `uv tool install "graphifyy[bedrock] @ git+https://github.com/Vit129/graphify.git"` |
+| `azure` | Azure OpenAI Service (`--backend azure`, uses `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT`) | `uv tool install "graphifyy[openai] @ git+https://github.com/Vit129/graphify.git"` |
+| `sql` | SQL schema extraction | `uv tool install "graphifyy[sql] @ git+https://github.com/Vit129/graphify.git"` |
+| `postgres` | Live PostgreSQL introspection (`--postgres DSN`) | `uv tool install "graphifyy[postgres] @ git+https://github.com/Vit129/graphify.git"` |
+| `dm` | BYOND DreamMaker `.dm`/`.dme` AST extraction (may need a C compiler + `python3-dev` if no wheel matches your platform) | `uv tool install "graphifyy[dm] @ git+https://github.com/Vit129/graphify.git"` |
+| `terraform` | Terraform / HCL `.tf`/`.tfvars`/`.hcl` AST extraction | `uv tool install "graphifyy[terraform] @ git+https://github.com/Vit129/graphify.git"` |
+| `robot` | Robot Framework `.robot`/`.resource` AST extraction | `uv tool install "graphifyy[robot] @ git+https://github.com/Vit129/graphify.git"` |
+| `scss` | SCSS `.scss` AST extraction (plain `.css` needs no extra) | `uv tool install "graphifyy[scss] @ git+https://github.com/Vit129/graphify.git"` |
+| `chinese` | Chinese query segmentation (jieba) | `uv tool install "graphifyy[chinese] @ git+https://github.com/Vit129/graphify.git"` |
+| `all` | Everything above | `uv tool install "graphifyy[all] @ git+https://github.com/Vit129/graphify.git"` |
 
 ---
 
@@ -247,18 +251,18 @@ To remove graphify from all platforms at once: `graphify uninstall` (add `--purg
 
 | Type | Extensions |
 |------|-----------|
-| Code (54 tree-sitter grammars) | `.py .ts .js .jsx .tsx .mjs .gs .go .rs .java .c .cpp .h .hpp .cu .cuh .metal .rb .cs .kt .scala .php .swift .lua .luau .zig .ps1 .psm1 .ex .exs .m .mm .jl .vue .svelte .astro .groovy .gradle .dart .v .sv .svh .sql .f .f90 .f95 .f03 .f08 .pas .pp .dpr .dpk .lpr .inc .dfm .lfm .lpk .sh .bash .fish .json .hook .toml .yaml .yml .css .scss .html .htm .robot .resource .feature .dm .dme .dmi .dmm .dmf .sln .slnx .csproj .fsproj .vbproj .xaml .razor .cshtml` (`.dm`/`.dme` requires `uv tool install graphifyy[dm]`; `.scss` requires `uv tool install graphifyy[scss]`; `.robot`/`.resource` requires `uv tool install graphifyy[robot]`; CUDA `.cu`/`.cuh` and Metal `.metal` reuse the C++ grammar; `.gs` reuses the JS grammar; `.feature` and `.fish` are hand-written scanners — no published tree-sitter grammar exists for either) |
+| Code (54 tree-sitter grammars) | `.py .ts .js .jsx .tsx .mjs .gs .go .rs .java .c .cpp .h .hpp .cu .cuh .metal .rb .cs .kt .scala .php .swift .lua .luau .zig .ps1 .psm1 .ex .exs .m .mm .jl .vue .svelte .astro .groovy .gradle .dart .v .sv .svh .sql .f .f90 .f95 .f03 .f08 .pas .pp .dpr .dpk .lpr .inc .dfm .lfm .lpk .sh .bash .fish .json .hook .toml .yaml .yml .css .scss .html .htm .robot .resource .feature .dm .dme .dmi .dmm .dmf .sln .slnx .csproj .fsproj .vbproj .xaml .razor .cshtml` (`.dm`/`.dme` requires `uv tool install "graphifyy[dm] @ git+https://github.com/Vit129/graphify.git"`; `.scss` requires `uv tool install "graphifyy[scss] @ git+https://github.com/Vit129/graphify.git"`; `.robot`/`.resource` requires `uv tool install "graphifyy[robot] @ git+https://github.com/Vit129/graphify.git"`; CUDA `.cu`/`.cuh` and Metal `.metal` reuse the C++ grammar; `.gs` reuses the JS grammar; `.feature` and `.fish` are hand-written scanners — no published tree-sitter grammar exists for either) |
 | Salesforce Apex | `.cls .trigger` (regex-based; classes, interfaces, enums, methods, triggers, SOQL/DML edges) |
-| Terraform / HCL | `.tf .tfvars .hcl` (requires `uv tool install graphifyy[terraform]`) |
+| Terraform / HCL | `.tf .tfvars .hcl` (requires `uv tool install "graphifyy[terraform] @ git+https://github.com/Vit129/graphify.git"`) |
 | MCP configs | `.mcp.json` `mcp.json` `mcp_servers.json` `claude_desktop_config.json` — extracts server nodes, package refs, env var requirements |
 | Package manifests | `apm.yml` `pyproject.toml` `go.mod` `pom.xml` — one canonical package node per package (by name) plus `depends_on` edges, so a package referenced from many manifests is a single hub |
 | Docs | `.md .mdx .qmd .txt .rst` (markdown `[text](./other.md)` links and `[[wikilinks]]` become `references` edges between docs) |
-| Office | `.docx .xlsx` (requires `uv tool install graphifyy[office]`) |
-| Google Workspace | `.gdoc .gsheet .gslides` (opt-in; requires `gws` auth and `--google-workspace`; Sheets need `uv tool install graphifyy[google]`) |
+| Office | `.docx .xlsx` (requires `uv tool install "graphifyy[office] @ git+https://github.com/Vit129/graphify.git"`) |
+| Google Workspace | `.gdoc .gsheet .gslides` (opt-in; requires `gws` auth and `--google-workspace`; Sheets need `uv tool install "graphifyy[google] @ git+https://github.com/Vit129/graphify.git"`) |
 | PDFs | `.pdf` |
 | Images | `.png .jpg .webp .gif` |
-| Video / Audio | `.mp4 .mov .mp3 .wav` and more (requires `uv tool install graphifyy[video]`) |
-| YouTube / URLs | any video URL (requires `uv tool install graphifyy[video]`) |
+| Video / Audio | `.mp4 .mov .mp3 .wav` and more (requires `uv tool install "graphifyy[video] @ git+https://github.com/Vit129/graphify.git"`) |
+| YouTube / URLs | any video URL (requires `uv tool install "graphifyy[video] @ git+https://github.com/Vit129/graphify.git"`) |
 
 Code is extracted locally with no API calls (AST via tree-sitter). Everything else goes through your AI assistant's model API.
 
@@ -268,7 +272,7 @@ in a headless extraction, install and authenticate the
 [`gws` CLI](https://github.com/googleworkspace/cli), then run:
 
 ```bash
-uv tool install "graphifyy[google]"  # needed for Google Sheets table rendering
+uv tool install "graphifyy[google] @ git+https://github.com/Vit129/graphify.git"  # needed for Google Sheets table rendering
 gws auth login -s drive
 graphify extract ./docs --google-workspace
 ```
@@ -426,7 +430,7 @@ docker run -p 8080:8080 -v "$(pwd)/graphify-out:/data" graphify \
 
 > **WSL / Linux note:** Ubuntu ships `python3`, not `python`. Use a venv to avoid conflicts:
 > ```bash
-> python3 -m venv .venv && .venv/bin/pip install "graphifyy[mcp]"
+> python3 -m venv .venv && .venv/bin/pip install "graphifyy[mcp] @ git+https://github.com/Vit129/graphify.git"
 > ```
 
 ---
@@ -486,12 +490,12 @@ These are only needed for **headless / CI extraction** (`graphify extract`). Whe
 
 **`graphify: command not found` after installing**
 The CLI is installed but its bin directory isn't on your shell's `PATH`. Pick the fix for how you installed:
-- **uv** (`uv tool install graphifyy`): the command lands in uv's tool bin dir (`~/.local/bin`), which a fresh macOS/zsh setup often doesn't have on `PATH`. Run `uv tool update-shell`, then open a new terminal. (Find the dir with `uv tool dir --bin`.)
-- **pipx** (`pipx install graphifyy`): run `pipx ensurepath`, then open a new terminal.
-- **pip** (`pip install graphifyy`): pip installs scripts to a user bin dir that may not be on `PATH` — add `~/Library/Python/3.x/bin` (macOS) or `~/.local/bin` (Linux) to your `PATH` in `~/.zshrc`/`~/.bashrc`, or just run `python -m graphify`.
+- **uv** (`uv tool install git+https://github.com/Vit129/graphify.git`): the command lands in uv's tool bin dir (`~/.local/bin`), which a fresh macOS/zsh setup often doesn't have on `PATH`. Run `uv tool update-shell`, then open a new terminal. (Find the dir with `uv tool dir --bin`.)
+- **pipx** (`pipx install git+https://github.com/Vit129/graphify.git`): run `pipx ensurepath`, then open a new terminal.
+- **pip** (`pip install git+https://github.com/Vit129/graphify.git`): pip installs scripts to a user bin dir that may not be on `PATH` — add `~/Library/Python/3.x/bin` (macOS) or `~/.local/bin` (Linux) to your `PATH` in `~/.zshrc`/`~/.bashrc`, or just run `python -m graphify`.
 
 **`uvx graphify …` or `uv tool run graphify …` fails to resolve `graphify`**
-The PyPI package is `graphifyy`; `graphify` is only the command it provides. `uv tool run` treats the first word as a *package name*, so it looks for a package called `graphify` and reports `No solution found … no versions of graphify`. Name the package explicitly: `uvx --from graphifyy graphify install` (same as `uv tool run --from graphifyy graphify install`). Or `uv tool install graphifyy` once and then call `graphify` directly.
+This fork isn't on PyPI, so a bare `uvx graphify …` looks for a PyPI package called `graphify` and reports `No solution found … no versions of graphify`. Point `--from` at the git repo instead: `uvx --from git+https://github.com/Vit129/graphify.git graphify install` (same as `uv tool run --from git+https://github.com/Vit129/graphify.git graphify install`). Or `uv tool install git+https://github.com/Vit129/graphify.git` once and then call `graphify` directly.
 
 **`python -m graphify` works but `graphify` command doesn't**
 Your shell's `PATH` doesn't include the bin directory the command was installed to. Prefer `uv tool install` / `pipx install` over plain `pip`, then run `uv tool update-shell` / `pipx ensurepath` and open a new terminal (see the install notes above).
@@ -541,7 +545,7 @@ ANTHROPIC_API_KEY=sk-... graphify extract ./docs --backend claude
 **Skill version mismatch warning in your IDE**
 Your installed graphify version is different from the skill file. Update:
 ```bash
-uv tool upgrade graphifyy
+uv tool install --reinstall git+https://github.com/Vit129/graphify.git
 graphify install  # overwrites the skill file
 ```
 
@@ -709,13 +713,9 @@ graphify label ./my-project --backend=openai --model gpt-4o   # force a specific
 
 ---
 
-## Built on graphify — Penpax
+## Credits
 
-[**Penpax**](https://graphifylabs.ai) is the always-on layer built on top of graphify — it applies the same graph approach to your entire working life: meetings, browser history, emails, files, and code, updating continuously in the background.
-
-Built for people whose work lives across hundreds of conversations and documents they can never fully reconstruct. No cloud, fully on-device.
-
-**Free trial launching soon.** [Join the waitlist →](https://graphifylabs.ai)
+Forked from [safishamsi/graphify](https://github.com/safishamsi/graphify) — the original project and its commercial product (Penpax, graphifylabs.ai) are unrelated to this fork.
 
 ---
 
@@ -729,7 +729,6 @@ The project uses [uv](https://docs.astral.sh/uv/) for dev workflow. Install it o
 ```bash
 git clone https://github.com/Vit129/graphify.git
 cd graphify
-git checkout v8                        # active development branch
 
 # Create the project venv and install graphify + all extras + the dev group
 # (pytest). uv installs the dev dependency group by default; pass --no-dev to
@@ -755,7 +754,7 @@ uv run pytest tests/ -q -k "python"    # filter by name
 
 ### Git workflow
 
-- Active development happens on the `v8` branch.
+- Active development happens on `main`.
 - Commit style: `fix: <description>` / `feat: <description>` / `docs: <description>`
 - Before opening a PR, run `uv run pytest tests/ -q` and confirm it passes.
 - Add a fixture file to `tests/fixtures/` and tests to `tests/test_languages.py` for any new language extractor.
