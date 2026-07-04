@@ -3317,7 +3317,7 @@ def main() -> None:
             print('Usage: graphify explain "<node>" [--context C] [--graph path]', file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _find_node
-        from graphify.query import _normalize_context_filters
+        from graphify.query import _normalize_context_filters, _find_node_tied_group
         from networkx.readwrite import json_graph
 
         label = sys.argv[2]
@@ -3356,6 +3356,14 @@ def main() -> None:
         if not matches:
             print(f"No node matching '{label}' found.")
             sys.exit(0)
+        tied = _find_node_tied_group(G, label)
+        if len(tied) >= 2:
+            print(
+                f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+                f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing "
+                f"'{tied[0]}'. Re-run with the exact node ID to pick a different one.",
+                file=sys.stderr,
+            )
         nid = matches[0]
         d = G.nodes[nid]
         print(f"Node: {d.get('label', nid)}")

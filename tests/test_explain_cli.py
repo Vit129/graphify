@@ -148,6 +148,51 @@ def _write_context_graph(tmp_path):
     return p
 
 
+def _write_duplicate_label_graph(tmp_path):
+    """Two nodes sharing the same label across different files - e.g. an
+    overloaded function name (`calcPaperPortfolioValue()` x2 with divergent
+    logic) or a repeated doc heading (`Decision` in two knowledge docs). Both
+    are real, verified duplicates found dogfooding My-Investment-Port and
+    Home-Assistant: `explain` silently returned matches[0] with no warning,
+    unlike `path`, which already flags this."""
+    graph_data = {
+        "directed": False, "multigraph": False, "graph": {},
+        "nodes": [
+            {"id": "impl_a", "label": "calcValue()",
+             "source_file": "a/paperPricingService.js", "community": 0},
+            {"id": "impl_b", "label": "calcValue()",
+             "source_file": "b/investmentDecisionUtils.js", "community": 1},
+        ],
+        "links": [],
+    }
+    p = tmp_path / "graph.json"
+    p.write_text(json.dumps(graph_data))
+    return p
+
+
+def test_explain_warns_on_duplicate_label(monkeypatch, tmp_path, capsys):
+    p = _write_duplicate_label_graph(tmp_path)
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(mainmod.sys, "argv",
+        ["graphify", "explain", "calcValue", "--graph", str(p)])
+    mainmod.main()
+    captured = capsys.readouterr()
+    assert "warning: 'calcValue' matched 2 equally-plausible nodes" in captured.err
+    assert "impl_a" in captured.err and "impl_b" in captured.err
+    assert "Node: calcValue()" in captured.out
+
+
+def test_explain_no_warning_for_unambiguous_match(monkeypatch, tmp_path, capsys):
+    p = _write_graph(tmp_path)
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(mainmod.sys, "argv",
+        ["graphify", "explain", "validateSanitySession", "--graph", str(p)])
+    mainmod.main()
+    captured = capsys.readouterr()
+    assert "Node: validateSanitySession()" in captured.out
+    assert captured.err == ""
+
+
 def test_explain_context_filter_narrows_connections(monkeypatch, tmp_path, capsys):
     p = _write_context_graph(tmp_path)
     out_unfiltered = _run(monkeypatch, p, "validateSanitySession", capsys)

@@ -87,6 +87,7 @@ from graphify.query import (
     _subsequence_score,
     _correct_term,
     _apply_vocabulary_corrections,
+    _find_node_tied_group,
     _fuzzy_substring_distance,
     _fuzzy_substring_seeds,
     _get_embedding_model,
@@ -485,7 +486,13 @@ def _build_server(graph_path: str):
         if not matches:
             return f"No node matching '{label}' found."
         nid = matches[0]
-        lines = [f"Neighbors of {sanitize_label(G.nodes[nid].get('label', nid))}:"]
+        tied = _find_node_tied_group(G, label)
+        prefix = (
+            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+            if len(tied) >= 2 else ""
+        )
+        lines = [prefix + f"Neighbors of {sanitize_label(G.nodes[nid].get('label', nid))}:"]
         for nb in G.successors(nid):
             d = edge_data(G, nid, nb)
             rel = d.get("relation", "")
@@ -516,11 +523,17 @@ def _build_server(graph_path: str):
         if not matches:
             return f"No node matching '{label}' found."
         nid = matches[0]
+        tied = _find_node_tied_group(G, label)
+        warn_prefix = (
+            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+            if len(tied) >= 2 else ""
+        )
 
         hops, truncated, node_cap = _blast_radius_hops(G, nid, max_hops, direction)
         total = sum(len(h) for h in hops)
         label_str = sanitize_label(G.nodes[nid].get("label", nid))
-        lines = [f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
+        lines = [warn_prefix + f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
         for i, hop_nodes in enumerate(hops, 1):
             lines.append(f"\nHop {i} ({len(hop_nodes)} node(s)):")
             for n in hop_nodes:

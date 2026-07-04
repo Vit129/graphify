@@ -1195,15 +1195,15 @@ def _find_node(G: nx.Graph, label: str) -> list[str]:
     return _find_node_core(G, " ".join(corrected_terms))
 
 
-def _find_node_core(G: nx.Graph, label: str) -> list[str]:
-    """Return node IDs whose label or ID matches the search term (diacritic-insensitive).
-
-    Results are ordered by precedence: exact source-file path match first, then
-    exact (label/ID) match, then prefix match, then substring match.
+def _find_node_tiers(G: nx.Graph, label: str) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Same matching as `_find_node_core`, but returns each precedence tier
+    (source_exact, exact, prefix, substring) separately instead of one flat
+    list - lets callers tell "one clear winner" from "several nodes tied for
+    the top tier" (ambiguity), which a flattened list can't distinguish.
     """
     term = " ".join(_search_tokens(label))
     if not term:
-        return []
+        return [], [], [], []
     source_exact: list[str] = []
     exact: list[str] = []
     prefix: list[str] = []
@@ -1245,4 +1245,36 @@ def _find_node_core(G: nx.Graph, label: str) -> list[str]:
         if len(preferred) == 1:
             source_exact = preferred + [nid for nid in source_exact if nid != preferred[0]]
 
+    return source_exact, exact, prefix, substring
+
+
+def _find_node_core(G: nx.Graph, label: str) -> list[str]:
+    """Return node IDs whose label or ID matches the search term (diacritic-insensitive).
+
+    Results are ordered by precedence: exact source-file path match first, then
+    exact (label/ID) match, then prefix match, then substring match.
+    """
+    source_exact, exact, prefix, substring = _find_node_tiers(G, label)
     return source_exact + exact + prefix + substring
+
+
+def _find_node_tied_group(G: nx.Graph, label: str) -> list[str]:
+    """Nodes tied for the top precedence tier `_find_node` would resolve to -
+    i.e. the set that's "equally plausible" for a single-node lookup. A
+    duplicate label (same section title in two files, an overloaded function
+    name) can fill that tier with more than one node; callers that silently
+    take matches[0] (`explain`, `get_neighbors`, `blast_radius`) pick one of
+    these arbitrarily and never say so. This mirrors `_find_node`'s own
+    vocabulary-correction retry so the "tied group" always matches whatever
+    term `_find_node` actually resolved on.
+    """
+    for tier in _find_node_tiers(G, label):
+        if tier:
+            return tier
+    corrected_terms, corrections = _apply_vocabulary_corrections(G, _search_tokens(label))
+    if not corrections:
+        return []
+    for tier in _find_node_tiers(G, " ".join(corrected_terms)):
+        if tier:
+            return tier
+    return []

@@ -29,6 +29,7 @@ from graphify.serve import (
     _hop_distances,
     _embedding_seed_fallback,
 )
+from graphify.query import _find_node_tied_group
 
 
 def _make_call_chain() -> nx.DiGraph:
@@ -228,6 +229,30 @@ def test_find_node_matches_spaced_query_against_camel_case_label():
     G = nx.Graph()
     G.add_node("n1", label="getUserData", source_file="user.py")
     assert _find_node(G, "get user data") == ["n1"]
+
+
+def test_find_node_tied_group_flags_duplicate_exact_labels():
+    """Two nodes sharing an exact label (overloaded function name, repeated
+    doc heading) both land in the same top precedence tier - the shared
+    resolver `explain`/`get_neighbors`/`blast_radius` all rely on to warn
+    before silently picking matches[0]."""
+    G = nx.Graph()
+    G.add_node("impl_a", label="calcValue()", source_file="a/pricing.js")
+    G.add_node("impl_b", label="calcValue()", source_file="b/decisions.js")
+    tied = _find_node_tied_group(G, "calcValue")
+    assert set(tied) == {"impl_a", "impl_b"}
+
+
+def test_find_node_tied_group_single_element_for_unique_match():
+    G = nx.Graph()
+    G.add_node("n1", label="getUserData", source_file="user.py")
+    assert _find_node_tied_group(G, "getUserData") == ["n1"]
+
+
+def test_find_node_tied_group_empty_for_no_match():
+    G = nx.Graph()
+    G.add_node("n1", label="getUserData", source_file="user.py")
+    assert _find_node_tied_group(G, "totallyUnrelatedTerm") == []
 
 
 def test_find_node_ignores_trailing_punctuation():
