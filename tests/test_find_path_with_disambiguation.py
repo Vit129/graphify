@@ -98,3 +98,51 @@ def test_no_path_reports_tried_pairs_count():
     result = find_path_with_disambiguation(G, "Alpha", "Beta")
     assert result["path_nodes"] is None
     assert result["tried_pairs"] == 1
+
+
+# --- P16: --source-path / --target-path scoping ------------------------------
+
+def _dup_target_graph():
+    """A duplicate-labeled target ("Stats") in two dirs, both reachable from
+    the source. Without scoping the pick is ambiguous; with a path prefix the
+    caller says which one they mean (Language-Learning's real EN/JP case)."""
+    G = nx.Graph()
+    _add(G, "overview", "Overview", "root.md")
+    _add(G, "stats_en", "Stats", "english/progress.md", community=1)
+    _add(G, "stats_jp", "Stats", "japanese/progress.md", community=2)
+    G.add_edge("overview", "stats_en", relation="contains", confidence="EXTRACTED")
+    G.add_edge("overview", "stats_jp", relation="contains", confidence="EXTRACTED")
+    return G
+
+
+def test_target_path_disambiguates_duplicate_and_silences_warning():
+    G = _dup_target_graph()
+    result = find_path_with_disambiguation(G, "Overview", "Stats", target_path="japanese/")
+    assert result["tgt_nid"] == "stats_jp"
+    assert result["path_nodes"] == ["overview", "stats_jp"]
+    # Only one candidate survives the scope, so no ambiguity warning.
+    assert not any("ambiguous" in w for w in result["warnings"])
+
+
+def test_target_path_other_prefix_picks_other_duplicate():
+    G = _dup_target_graph()
+    result = find_path_with_disambiguation(G, "Overview", "Stats", target_path="english/")
+    assert result["tgt_nid"] == "stats_en"
+
+
+def test_source_path_scopes_source_side_independently():
+    G = nx.Graph()
+    _add(G, "cfg_a", "Config", "a/config.py")
+    _add(G, "cfg_b", "Config", "b/config.py")
+    _add(G, "sink", "Sink", "c/sink.py")
+    G.add_edge("cfg_b", "sink", relation="calls", confidence="EXTRACTED")
+    result = find_path_with_disambiguation(G, "Config", "Sink", source_path="b/")
+    assert result["src_nid"] == "cfg_b"
+    assert result["path_nodes"] == ["cfg_b", "sink"]
+
+
+def test_path_prefix_matching_nothing_returns_scoped_error():
+    G = _dup_target_graph()
+    result = find_path_with_disambiguation(G, "Overview", "Stats", target_path="spanish/")
+    assert "error" in result
+    assert "under path 'spanish/'" in result["error"]

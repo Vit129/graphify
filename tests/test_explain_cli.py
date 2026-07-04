@@ -182,6 +182,32 @@ def test_explain_warns_on_duplicate_label(monkeypatch, tmp_path, capsys):
     assert "Node: calcValue()" in captured.out
 
 
+def test_explain_path_flag_disambiguates_duplicate_label(monkeypatch, tmp_path, capsys):
+    """P16: --path narrows a duplicate label to one file, so explain resolves
+    deterministically to that node with no ambiguity warning."""
+    p = _write_duplicate_label_graph(tmp_path)
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(mainmod.sys, "argv",
+        ["graphify", "explain", "calcValue", "--graph", str(p), "--path", "b/"])
+    mainmod.main()
+    captured = capsys.readouterr()
+    assert "impl_b" in captured.out
+    assert "impl_a" not in captured.out
+    assert "warning:" not in captured.err
+
+
+def test_explain_path_flag_no_match_reports_scoped_error(monkeypatch, tmp_path, capsys):
+    import pytest
+    p = _write_duplicate_label_graph(tmp_path)
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(mainmod.sys, "argv",
+        ["graphify", "explain", "calcValue", "--graph", str(p), "--path", "nonexistent/"])
+    with pytest.raises(SystemExit):
+        mainmod.main()
+    out = capsys.readouterr().out
+    assert "No node matching 'calcValue' under path 'nonexistent/' found." in out
+
+
 def test_explain_no_warning_for_unambiguous_match(monkeypatch, tmp_path, capsys):
     p = _write_graph(tmp_path)
     monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)

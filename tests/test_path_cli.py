@@ -25,10 +25,12 @@ def _write_graph(tmp_path):
     return p
 
 
-def _run(monkeypatch, graph_path, src, tgt, capsys):
+def _run(monkeypatch, graph_path, src, tgt, capsys, extra=None):
     monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
-    monkeypatch.setattr(mainmod.sys, "argv",
-        ["graphify", "path", src, tgt, "--graph", str(graph_path)])
+    argv = ["graphify", "path", src, tgt, "--graph", str(graph_path)]
+    if extra:
+        argv += extra
+    monkeypatch.setattr(mainmod.sys, "argv", argv)
     mainmod.main()
     return capsys.readouterr().out
 
@@ -92,6 +94,20 @@ def test_path_ambiguous_warning_lists_all_tied_candidates(monkeypatch, tmp_path,
     err = capsys.readouterr().err
     assert "target match was ambiguous - 3 equally-plausible nodes" in err
     assert "stats_a" in err and "stats_b" in err and "stats_c" in err
+
+
+def test_path_target_path_flag_disambiguates_without_warning(monkeypatch, tmp_path, capsys):
+    """P16: --target-path narrows a duplicate label to one dir, so the query
+    resolves deterministically with no ambiguity warning."""
+    p = _write_duplicate_name_graph(tmp_path)
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(mainmod.sys, "argv",
+        ["graphify", "path", "Overview", "Stats", "--graph", str(p), "--target-path", "japanese/"])
+    mainmod.main()
+    captured = capsys.readouterr()
+    assert "Shortest path (1 hops):" in captured.out
+    assert "Overview --contains [EXTRACTED]--> Stats" in captured.out
+    assert "ambiguous" not in captured.err
 
 
 def _write_hub_graph(tmp_path):

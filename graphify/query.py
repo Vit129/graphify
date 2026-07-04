@@ -1280,11 +1280,37 @@ def _find_node_tied_group(G: nx.Graph, label: str) -> list[str]:
     return []
 
 
-def find_path_with_disambiguation(G: nx.Graph, source_label: str, target_label: str) -> dict:
+def _scope_by_source_path(G: nx.Graph, scored: list, path_prefix: str | None) -> list:
+    """Keep only scored (score, nid) pairs whose node's source_file starts
+    with `path_prefix` (P16: let the caller disambiguate a duplicate label by
+    saying which file/dir they mean). No-op when path_prefix is falsy. Same
+    `source_file.startswith(...)` convention as query's `--path`/`_in_path_scope`."""
+    if not path_prefix:
+        return scored
+    return [
+        (score, nid)
+        for score, nid in scored
+        if str(G.nodes[nid].get("source_file", "")).startswith(path_prefix)
+    ]
+
+
+def find_path_with_disambiguation(
+    G: nx.Graph,
+    source_label: str,
+    target_label: str,
+    source_path: str | None = None,
+    target_path: str | None = None,
+) -> dict:
     """Resolve `source_label`/`target_label` to nodes and find a
     degree-weighted, hub-avoiding shortest path, retrying every near-tied
     candidate pair (not just the top-scored node on each side) before
     giving up.
+
+    `source_path`/`target_path` (P16): optional source_file-prefix filters
+    that narrow each endpoint's candidates before the tie-retry loop, so a
+    caller can say WHICH duplicate-labeled node they mean (e.g. two `Stats`
+    headings across `english/` and `japanese/`) instead of only being warned
+    it's ambiguous.
 
     This logic used to live only in the CLI `path` command; the MCP
     `shortest_path` tool kept an older, simpler top-score-only pick with a
@@ -1312,6 +1338,13 @@ def find_path_with_disambiguation(G: nx.Graph, source_label: str, target_label: 
         return {"error": f"No node matching '{source_label}' found."}
     if not tgt_scored:
         return {"error": f"No node matching '{target_label}' found."}
+
+    src_scored = _scope_by_source_path(G, src_scored, source_path)
+    tgt_scored = _scope_by_source_path(G, tgt_scored, target_path)
+    if not src_scored:
+        return {"error": f"No node matching '{source_label}' under path '{source_path}' found."}
+    if not tgt_scored:
+        return {"error": f"No node matching '{target_label}' under path '{target_path}' found."}
 
     def _near_tied_candidates(scored: list) -> list:
         if not scored:

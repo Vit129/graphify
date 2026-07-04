@@ -2287,9 +2287,13 @@ def main() -> None:
         print("  uninstall               remove graphify from all detected platforms in one shot")
         print("    --purge                 also delete graphify-out/ directory")
         print("  path \"A\" \"B\"            shortest path between two nodes in graph.json")
+        print("    --path P                narrow BOTH endpoints to nodes whose file starts with P")
+        print("    --source-path P         narrow only the source endpoint (for a duplicate label)")
+        print("    --target-path P         narrow only the target endpoint (for a duplicate label)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  explain \"X\"             plain-language explanation of a node and its neighbors")
         print("    --context C             explicit edge-context filter (repeatable)")
+        print("    --path P                narrow a duplicate label to nodes whose file starts with P")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  diagnose multigraph    report same-endpoint edge collapse risk in graph.json")
         print("    --graph <path>          path to graph/extraction JSON")
@@ -3137,7 +3141,8 @@ def main() -> None:
     elif cmd == "path":
         if len(sys.argv) < 4:
             print(
-                'Usage: graphify path "<source>" "<target>" [--graph path]',
+                'Usage: graphify path "<source>" "<target>" [--path P] '
+                "[--source-path P] [--target-path P] [--graph path]",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -3147,10 +3152,29 @@ def main() -> None:
         source_label = sys.argv[2]
         target_label = sys.argv[3]
         graph_path = _default_graph_path()
+        # P16: --path narrows BOTH endpoints (common case); --source-path /
+        # --target-path narrow each independently (needed when both labels are
+        # duplicated in different dirs). Per-endpoint value wins over --path.
+        shared_path = source_path = target_path = None
         args = sys.argv[4:]
-        for i, a in enumerate(args):
-            if a == "--graph" and i + 1 < len(args):
+        i = 0
+        while i < len(args):
+            if args[i] == "--graph" and i + 1 < len(args):
                 graph_path = args[i + 1]
+                i += 2
+            elif args[i] == "--path" and i + 1 < len(args):
+                shared_path = args[i + 1]
+                i += 2
+            elif args[i] == "--source-path" and i + 1 < len(args):
+                source_path = args[i + 1]
+                i += 2
+            elif args[i] == "--target-path" and i + 1 < len(args):
+                target_path = args[i + 1]
+                i += 2
+            else:
+                i += 1
+        source_path = source_path or shared_path
+        target_path = target_path or shared_path
         gp = Path(graph_path).resolve()
         if not gp.exists():
             print(f"error: graph file not found: {gp}", file=sys.stderr)
@@ -3165,7 +3189,9 @@ def main() -> None:
             G = json_graph.node_link_graph(_raw, edges="links")
         except TypeError:
             G = json_graph.node_link_graph(_raw)
-        result = find_path_with_disambiguation(G, source_label, target_label)
+        result = find_path_with_disambiguation(
+            G, source_label, target_label, source_path=source_path, target_path=target_path
+        )
         if "error" in result:
             print(result["error"], file=sys.stderr)
             sys.exit(1)
@@ -3218,7 +3244,7 @@ def main() -> None:
 
     elif cmd == "explain":
         if len(sys.argv) < 3:
-            print('Usage: graphify explain "<node>" [--context C] [--graph path]', file=sys.stderr)
+            print('Usage: graphify explain "<node>" [--context C] [--path P] [--graph path]', file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _find_node
         from graphify.query import _normalize_context_filters, _find_node_tied_group
@@ -3227,6 +3253,7 @@ def main() -> None:
         label = sys.argv[2]
         graph_path = _default_graph_path()
         context_filters: list[str] = []
+        scope_path = None  # P16: narrow a duplicate label to one file/dir.
         args = sys.argv[3:]
         i = 0
         while i < len(args):
@@ -3239,6 +3266,9 @@ def main() -> None:
             elif args[i].startswith("--context="):
                 context_filters.append(args[i].split("=", 1)[1])
                 i += 1
+            elif args[i] == "--path" and i + 1 < len(args):
+                scope_path = args[i + 1]
+                i += 2
             else:
                 i += 1
         context_filters = _normalize_context_filters(context_filters)
@@ -3257,10 +3287,15 @@ def main() -> None:
         except TypeError:
             G = json_graph.node_link_graph(_raw)
         matches = _find_node(G, label)
-        if not matches:
-            print(f"No node matching '{label}' found.")
-            sys.exit(0)
         tied = _find_node_tied_group(G, label)
+        if scope_path:
+            _in_scope = lambda nid: str(G.nodes[nid].get("source_file", "")).startswith(scope_path)
+            matches = [nid for nid in matches if _in_scope(nid)]
+            tied = [nid for nid in tied if _in_scope(nid)]
+        if not matches:
+            suffix = f" under path '{scope_path}'" if scope_path else ""
+            print(f"No node matching '{label}'{suffix} found.")
+            sys.exit(0)
         if len(tied) >= 2:
             print(
                 f"warning: '{label}' matched {len(tied)} equally-plausible nodes "

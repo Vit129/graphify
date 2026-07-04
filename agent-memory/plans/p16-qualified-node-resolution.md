@@ -1,6 +1,10 @@
 # P16 — Qualified Node Resolution for `path`/`explain` (duplicate-name root cause)
 
-Status: **Planned** — not started
+Status: **Phase 1 DONE** (2026-07-04) — `--path`/`--source-path`/`--target-path` on `path`,
+`--path` on `explain`, threaded into the shared `find_path_with_disambiguation` (query.py) and
+`explain`'s `_find_node`/`_find_node_tied_group` filtering. Verified live on all three evidence
+cases below. Phase 2 (`file:Label` syntax) remains deferred — Phase 1 covered the real cases
+without touching the shared resolver, so Phase 2 stays gated on "only if the flag proves clumsy."
 Priority: **P2** — the symptom is already mitigated (path retries all near-tied candidates,
 2026-07-03); this plan addresses the root cause, so it is important but not urgent
 Owner surface: Phase 1 touches only `__main__.py`'s `path`/`explain` arg parsing (additive
