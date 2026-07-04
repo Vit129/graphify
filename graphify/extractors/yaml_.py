@@ -13,12 +13,25 @@ scope until a real query gap demands them.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 from graphify.extractors.base import _file_stem, _make_id, _read_text
 
 _LABEL_KEYS = ("alias", "name", "id", "description", "summary", "title")
+
+# P15: identifier-shaped leaf values, for opt-in cross-file value-coupling.
+# Dotted (`climate.living_room_ac`, `binary_sensor.front_door`) or a long
+# snake_case token. Booleans/numbers/short words/prose are excluded by shape.
+_DOTTED_ID = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
+_LONG_SNAKE = re.compile(r"^[a-z0-9_]{8,}$")
+
+
+def _is_identifier_leaf(v: str) -> bool:
+    if _DOTTED_ID.match(v):
+        return True
+    return bool(_LONG_SNAKE.match(v) and "." not in v)
 
 
 def extract_yaml(path: Path) -> dict:
@@ -56,6 +69,28 @@ def extract_yaml(path: Path) -> dict:
 
     file_nid = _make_id(str(path))
     add_node(file_nid, path.name, 1)
+
+    # P15: collect identifier-shaped scalar leaves across the whole tree,
+    # attached to the file node (the granularity the value-coupling gate was
+    # validated at). Deduped per (value) - first line kept.
+    values: list[dict] = []
+    seen_values: set[str] = set()
+
+    def _collect_leaves(node) -> None:
+        if node is None:
+            return
+        if node.is_named and not node.children:
+            text = _read_text(node, source).strip("'\"").strip()
+            if text and text not in seen_values and _is_identifier_leaf(text):
+                seen_values.add(text)
+                values.append({"value": text, "node_id": file_nid,
+                               "source_file": str_path,
+                               "line": node.start_point[0] + 1})
+            return
+        for child in node.children:
+            _collect_leaves(child)
+
+    _collect_leaves(root)
 
     def _unwrap(node):
         """block_mapping_pair's key/value may be wrapped in block_node/
@@ -146,4 +181,4 @@ def extract_yaml(path: Path) -> dict:
                 add_node(sub_nid, label, sub_line)
                 add_edge(key_nid, sub_nid, "contains", sub_line)
 
-    return {"nodes": nodes, "edges": edges}
+    return {"nodes": nodes, "edges": edges, "values": values}

@@ -2389,6 +2389,8 @@ def main() -> None:
         print("    --out DIR               output dir (default: <path>); writes <DIR>/graphify-out/")
         print("    --google-workspace      export .gdoc/.gsheet/.gslides shortcuts via gws before extraction")
         print("    --no-cluster            skip clustering, write raw extraction only")
+        print("    --value-coupling        (config/YAML) add low-confidence shares_value edges between")
+        print("                            files sharing a `domain.entity` reference (opt-in; off by default)")
         print("    --postgres DSN          extract schema from a live PostgreSQL database")
         print("                            maps tables, views, functions + FK relationships;")
         print("                            column-level detail is not represented in the graph")
@@ -4646,6 +4648,7 @@ def main() -> None:
         cli_postgres_dsn: str | None = proj_config.get("postgres")
         cli_cargo: bool = proj_config.get("cargo", False)
         no_cluster = proj_config.get("no_cluster", False)
+        value_coupling = proj_config.get("value_coupling", False)  # P15 opt-in
         dedup_llm = proj_config.get("dedup_llm", False)
         google_workspace = proj_config.get("google_workspace", False)
         global_merge = proj_config.get("global", False)
@@ -4714,6 +4717,8 @@ def main() -> None:
                 out_dir = Path(a.split("=", 1)[1]); i += 1
             elif a == "--no-cluster":
                 no_cluster = True; i += 1
+            elif a == "--value-coupling":
+                value_coupling = True; i += 1
             elif a == "--dedup-llm":
                 dedup_llm = True; i += 1
             elif a == "--google-workspace":
@@ -4955,7 +4960,7 @@ def main() -> None:
             # Anchor the cache at the output root, not the scanned project:
             # with --out, a <target>/graphify-out/cache/ would leak a
             # graphify-out/ dir into a project that asked for external output.
-            ast_kwargs: dict = {"cache_root": out_root}
+            ast_kwargs: dict = {"cache_root": out_root, "value_coupling": value_coupling}
             if cli_max_workers is not None:
                 ast_kwargs["max_workers"] = cli_max_workers
             print(f"[graphify extract] AST extraction on {len(code_files)} code files...")

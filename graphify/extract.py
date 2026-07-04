@@ -15246,12 +15246,104 @@ def _extract_sequential(
 _PARALLEL_THRESHOLD = 20
 
 
+# P15: HA service-call verbs. A dotted value whose last segment is one of these
+# is a `domain.<service>` CALL (an action), not an entity reference - it couples
+# every file performing the same action, which is meaningless. Excluding these
+# (plus dashboard/UI files below) took the Home-Assistant validation sample from
+# ~27% to ~96% meaningful couplings (P15 Phase 0, 2026-07-04).
+_VALUE_COUPLING_SERVICE_VERBS = frozenset({
+    "turn_on", "turn_off", "toggle", "set_temperature", "set_hvac_mode",
+    "start", "stop", "cancel", "reload", "set_value", "select_option",
+    "trigger", "set_percentage", "increase_speed", "decrease_speed",
+    "oscillate", "set_preset_mode", "press", "send_command", "learn_command",
+})
+# Dashboard/UI files reference every entity they DISPLAY, coupling a UI file to
+# every automation touching that entity with no operational dependency.
+_VALUE_COUPLING_UI_MARKERS = ("/lovelace/", "/dashboards/", "/ui-lovelace")
+
+
+def _is_value_coupling_ui_file(source_file: str) -> bool:
+    s = source_file.replace("\\", "/").lower()
+    return any(m in s for m in _VALUE_COUPLING_UI_MARKERS)
+
+
+def _is_value_coupling_service_verb(value: str) -> bool:
+    return "." in value and value.rsplit(".", 1)[1] in _VALUE_COUPLING_SERVICE_VERBS
+
+
+def _resolve_value_coupling(
+    per_file: list[dict | None],
+    *,
+    hub_cap: int = 5,
+) -> list[dict]:
+    """P15 (opt-in): emit low-confidence `shares_value:<v>` edges between file
+    nodes whose YAML shares an identifier-shaped leaf value (e.g. two Home
+    Assistant automations both referencing `input_boolean.home_mode`).
+
+    ponytail: co-occurrence heuristic, not reference resolution - a shared
+    value proves the two files mention the same identifier, NOT that one
+    depends on the other. INFERRED + weight 0.3 marks that uncertainty. The
+    filter set (service-verb + UI-file exclusion + hub cap) was validated at
+    ~96% precision on Home-Assistant's real corpus before landing (P15 Phase 0);
+    the plan's original 3-filter set measured only ~27% and was rejected.
+    """
+    from collections import defaultdict
+
+    # value -> {source_file: (node_id, line)} (one entry per file; first wins)
+    value_files: dict[str, dict[str, tuple[str, int]]] = defaultdict(dict)
+    for result in per_file:
+        if not result:
+            continue
+        for entry in result.get("values") or []:
+            value = entry.get("value")
+            node_id = entry.get("node_id")
+            src = entry.get("source_file") or ""
+            if not value or not node_id:
+                continue
+            # Dotted entity-reference shape ONLY (`domain.entity`). The Phase 0
+            # sample that hit ~96% precision was measured on dotted refs only;
+            # the non-dotted long-snake branch (which `_is_identifier_leaf`
+            # still collects for possible future use) catches HA schema
+            # keywords (`automation`, `binary_sensor`, `brightness`) and bare
+            # script names, which exploded edge count +106% and tanked
+            # precision. Requiring a dot is the filter the gate actually passed.
+            if "." not in value:
+                continue
+            if _is_value_coupling_service_verb(value):
+                continue
+            if _is_value_coupling_ui_file(src):
+                continue
+            if src not in value_files[value]:
+                value_files[value][src] = (node_id, int(entry.get("line", 1)))
+
+    edges: list[dict] = []
+    for value, files in value_files.items():
+        if not (2 <= len(files) <= hub_cap):  # hub cap: a value in many files is a constant
+            continue
+        items = sorted(files.items())  # deterministic pair order
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                (src_a, (nid_a, line_a)) = items[i]
+                (src_b, (nid_b, _)) = items[j]
+                edges.append({
+                    "source": nid_a,
+                    "target": nid_b,
+                    "relation": f"shares_value:{value}",
+                    "confidence": "INFERRED",
+                    "source_file": src_a,
+                    "source_location": f"L{line_a}",
+                    "weight": 0.3,
+                })
+    return edges
+
+
 def extract(
     paths: list[Path],
     cache_root: Path | None = None,
     *,
     parallel: bool = True,
     max_workers: int | None = None,
+    value_coupling: bool = False,
 ) -> dict:
     """Extract AST nodes and edges from a list of code files.
 
@@ -15461,6 +15553,15 @@ def extract(
     _disambiguate_colliding_node_ids(all_nodes, all_edges, all_raw_calls, root)
     _canonicalize_csharp_namespace_nodes(all_nodes, all_edges)
     _rewire_unique_stub_nodes(all_nodes, all_edges)
+
+    # P15: opt-in cross-file value-coupling for config-as-code (YAML). Off by
+    # default; never runs implicitly. Emits low-confidence co-occurrence edges.
+    if value_coupling:
+        try:
+            all_edges.extend(_resolve_value_coupling(per_file))
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Value-coupling resolution failed, skipping: %s", exc)
 
     # Add cross-file class-level edges (Python only - uses Python parser internally)
     py_paths = [p for p in paths if p.suffix == ".py"]
