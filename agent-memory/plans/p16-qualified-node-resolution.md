@@ -1,10 +1,25 @@
 # P16 — Qualified Node Resolution for `path`/`explain` (duplicate-name root cause)
 
-Status: **Phase 1 DONE** (2026-07-04) — `--path`/`--source-path`/`--target-path` on `path`,
-`--path` on `explain`, threaded into the shared `find_path_with_disambiguation` (query.py) and
-`explain`'s `_find_node`/`_find_node_tied_group` filtering. Verified live on all three evidence
-cases below. Phase 2 (`file:Label` syntax) remains deferred — Phase 1 covered the real cases
-without touching the shared resolver, so Phase 2 stays gated on "only if the flag proves clumsy."
+Status: **Phase 1 DONE, Phase 2 REJECTED** (2026-07-04, decision by user)
+
+Phase 1: `--path`/`--source-path`/`--target-path` on `path`, `--path` on `explain`, threaded into
+the shared `find_path_with_disambiguation` (query.py) and `explain`'s `_find_node`/
+`_find_node_tied_group` filtering. Verified live on all three evidence cases below.
+
+Phase 2 (`file:Label` syntax in `_find_node_core`) — **decided against, not just deferred**:
+- No evidence it's needed. All three real duplicate-name cases that motivated this plan (`Stats`,
+  `handleNotification`, `calcPaperPortfolioValue`) already resolve deterministically via Phase 1's
+  flags — there is no observed case the flag fails to cover.
+- It touches `_find_node_core`, the resolver shared by `path`, `explain`, and `save-result` node
+  citation. A bug there has a blast radius across every command that resolves a label, unlike
+  Phase 1's additive flag which changed nothing for existing behavior.
+- Known concrete hazard never fully cleared: labels that already contain `:` (e.g. C++ `ns::sym`)
+  would need an explicit disambiguation rule against the new `file:Label` split, and that work was
+  never done because Phase 1 made it moot.
+- The plan's own gate for Phase 2 was "only if Phase 1 proves clumsy in real use" — it hasn't.
+  Revisit only if a future real duplicate-name case surfaces that `--path`/`--source-path`/
+  `--target-path` genuinely cannot express (e.g., needing the file scope to vary per near-tied
+  candidate mid-query, not just per invocation).
 Priority: **P2** — the symptom is already mitigated (path retries all near-tied candidates,
 2026-07-03); this plan addresses the root cause, so it is important but not urgent
 Owner surface: Phase 1 touches only `__main__.py`'s `path`/`explain` arg parsing (additive

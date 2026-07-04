@@ -20,5 +20,11 @@
 | [p13-3d-force-graph-lazy-view.md](p13-3d-force-graph-lazy-view.md) | P13 — Lazy-Loaded 3D Force Graph Option (Additive, Opt-In) | Done |
 | [p14-obsidian-like-graph-control.md](p14-obsidian-like-graph-control.md) | P14 — Obsidian-like Graph Control & Automation | In Progress |
 | [p15-config-value-coupling.md](p15-config-value-coupling.md) | P15 — Opt-In Config Value-Coupling Edges (`shares_value`) | Done (2026-07-04) — gate passed ~96%, verified on HA (+1.6% edges) |
-| [p16-qualified-node-resolution.md](p16-qualified-node-resolution.md) | P16 — Qualified Node Resolution for `path`/`explain` (duplicate-name root cause) | Phase 1 Done (2026-07-04); Phase 2 deferred |
+| [p16-qualified-node-resolution.md](p16-qualified-node-resolution.md) | P16 — Qualified Node Resolution for `path`/`explain` (duplicate-name root cause) | Phase 1 Done (2026-07-04); Phase 2 rejected — no evidence needed |
 
+## Rejected Ideas (evaluated, decided against — not just deferred)
+
+| Idea | Decision date | Reasoning |
+|------|------|-----------|
+| `affected --include-contains` (or make `contains` a default relation) | 2026-07-04 | `contains` is universal within a file/doc — every function is `contains`-linked to its file, every automation entry to its YAML file. Including it would return most/all co-located nodes for ANY query, turning `affected` from a precise dependency-impact tool into noise. Confirmed on a real case (`AiOverview.jsx`, a page component with real `imports`/`calls` edges but zero code-level dependents — `affected` correctly reports "No affected nodes found" even though removing the page would drop its route, which is a `contains`-only relation). The tradeoff (precise dependency impact vs. blind to routing/containment impact for entry-point nodes) is intentional; not revisiting without a new real case that needs it. |
+| P16 Phase 2 (`file:Label` syntax in `_find_node_core`) | 2026-07-04 | See p16-qualified-node-resolution.md — Phase 1's flags already resolve every real duplicate-name case found; Phase 2 would touch the resolver shared by `path`/`explain`/`save-result` for unproven benefit. |
