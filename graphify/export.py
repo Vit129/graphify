@@ -200,7 +200,7 @@ def _html_styles() -> str:
   #graph { flex: 1; }
   #graph-3d { flex: 1; display: none; }
   #sidebar { width: 280px; background: #1a1a2e; border-left: 1px solid #2a2a4e; display: flex; flex-direction: column; overflow: hidden; }
-  #mode-toggle-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; display: flex; gap: 8px; }
+  #mode-toggle-wrap, #lens-toggle-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; display: flex; gap: 8px; }
   .toggle-btn { flex: 1; background: #0f0f1a; border: 1px solid #3a3a5e; color: #aaa; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s ease; outline: none; font-weight: 500; text-align: center; }
   .toggle-btn:hover { border-color: #4E79A7; color: #fff; }
   .toggle-btn.active { background: #4E79A7; border-color: #4E79A7; color: #fff; box-shadow: 0 0 8px rgba(78, 121, 167, 0.4); }
@@ -442,68 +442,239 @@ document.addEventListener('click', e => {{
     searchResults.style.display = 'none';
 }});
 
+// View lens: 'community' (default, unchanged behavior) groups/colors by the
+// inferred Leiden community. 'file' and 'deps' are additive alternatives that
+// group/color by real code structure (source_file, and file-to-file
+// calls/imports/references/extends edges) instead of an inferred cluster —
+// computed lazily here in the browser from data already embedded above, so
+// building/updating the graph (`extract`, `update`, `cluster-only`) does no
+// extra work and graph.html isn't any bigger than before.
+let currentLens = 'community'; // 'community' | 'file' | 'deps'
 const hiddenCommunities = new Set();
+const hiddenFiles = new Set();
+let depNodesCache = null;
+let depEdgesCache = null;
 
 const selectAllCb = document.getElementById('select-all-cb');
+const legendEl = document.getElementById('legend');
+const legendTitleEl = document.getElementById('legend-title');
 
-function updateSelectAllState() {{
-  const total = LEGEND.length;
-  const hidden = hiddenCommunities.size;
+const _fileColorCache = {{}};
+function colorForFile(f) {{
+  if (!_fileColorCache[f]) {{
+    let hash = 0;
+    for (let i = 0; i < f.length; i++) hash = (hash * 31 + f.charCodeAt(i)) | 0;
+    _fileColorCache[f] = `hsl(${{Math.abs(hash) % 360}}, 55%, 55%)`;
+  }}
+  return _fileColorCache[f];
+}}
+
+function isNodeHidden(n) {{
+  if (currentLens === 'file') return hiddenFiles.has(n.source_file || n._source_file || '(none)');
+  return hiddenCommunities.has(n.community !== undefined ? n.community : n._community);
+}}
+
+function nodeDisplayColor(n) {{
+  if (currentLens === 'file') return colorForFile(n.source_file || n._source_file || '(none)');
+  return n.color.background;
+}}
+
+function updateSelectAllState(total, hidden) {{
   selectAllCb.checked = hidden === 0;
   selectAllCb.indeterminate = hidden > 0 && hidden < total;
 }}
 
-function toggleAllCommunities(hide) {{
-  document.querySelectorAll('.legend-item').forEach(item => {{
-    hide ? item.classList.add('dimmed') : item.classList.remove('dimmed');
-  }});
-  document.querySelectorAll('.legend-cb').forEach(cb => {{
-    cb.checked = !hide;
-  }});
-  LEGEND.forEach(c => {{
-    if (hide) hiddenCommunities.add(c.cid); else hiddenCommunities.delete(c.cid);
-  }});
-  const updates = RAW_NODES.map(n => ({{ id: n.id, hidden: hide }}));
+function applyVisibility() {{
+  if (currentLens === 'deps') {{
+    const updates = depNodesCache.map(n => ({{ id: n.id, hidden: hiddenFiles.has(n._source_file) }}));
+    nodesDS.update(updates);
+    return; // collapsed file graph has no 3D view to keep in sync
+  }}
+  const updates = RAW_NODES.map(n => ({{ id: n.id, hidden: isNodeHidden(n) }}));
   nodesDS.update(updates);
-  updateSelectAllState();
   update3DGraphData();
 }}
 
-const legendEl = document.getElementById('legend');
-LEGEND.forEach(c => {{
-  const item = document.createElement('div');
-  item.className = 'legend-item';
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.className = 'legend-cb';
-  cb.checked = true;
-  cb.addEventListener('change', (e) => {{
-    e.stopPropagation();
-    if (cb.checked) {{
-      hiddenCommunities.delete(c.cid);
-      item.classList.remove('dimmed');
-    }} else {{
-      hiddenCommunities.add(c.cid);
-      item.classList.add('dimmed');
-    }}
-    const updates = RAW_NODES
-      .filter(n => n.community === c.cid)
-      .map(n => ({{ id: n.id, hidden: !cb.checked }}));
-    nodesDS.update(updates);
-    updateSelectAllState();
-    update3DGraphData();
+function toggleAllGroups(hide) {{
+  document.querySelectorAll('.legend-item').forEach(item => {{
+    hide ? item.classList.add('dimmed') : item.classList.remove('dimmed');
   }});
-  item.innerHTML = `<div class="legend-dot" style="background:${{c.color}}"></div>
-    <span class="legend-label">${{c.label}}</span>
-    <span class="legend-count">${{c.count}}</span>`;
-  item.prepend(cb);
-  item.onclick = (e) => {{
-    if (e.target === cb) return;
-    cb.checked = !cb.checked;
-    cb.dispatchEvent(new Event('change'));
-  }};
-  legendEl.appendChild(item);
-}});
+  document.querySelectorAll('.legend-cb').forEach(cb => {{ cb.checked = !hide; }});
+  if (currentLens === 'community') {{
+    LEGEND.forEach(c => {{ if (hide) hiddenCommunities.add(c.cid); else hiddenCommunities.delete(c.cid); }});
+  }} else {{
+    const files = new Set(RAW_NODES.map(n => n.source_file || '(none)'));
+    files.forEach(f => {{ if (hide) hiddenFiles.add(f); else hiddenFiles.delete(f); }});
+  }}
+  applyVisibility();
+  const total = currentLens === 'community' ? LEGEND.length : new Set(RAW_NODES.map(n => n.source_file || '(none)')).size;
+  const hidden = currentLens === 'community' ? hiddenCommunities.size : hiddenFiles.size;
+  updateSelectAllState(total, hidden);
+}}
+
+function renderCommunityLegend() {{
+  legendTitleEl.textContent = 'Communities';
+  legendEl.innerHTML = '';
+  LEGEND.forEach(c => {{
+    const item = document.createElement('div');
+    item.className = 'legend-item' + (hiddenCommunities.has(c.cid) ? ' dimmed' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'legend-cb';
+    cb.checked = !hiddenCommunities.has(c.cid);
+    cb.addEventListener('change', (e) => {{
+      e.stopPropagation();
+      if (cb.checked) {{ hiddenCommunities.delete(c.cid); item.classList.remove('dimmed'); }}
+      else {{ hiddenCommunities.add(c.cid); item.classList.add('dimmed'); }}
+      applyVisibility();
+      updateSelectAllState(LEGEND.length, hiddenCommunities.size);
+    }});
+    item.innerHTML = `<div class="legend-dot" style="background:${{c.color}}"></div>
+      <span class="legend-label">${{c.label}}</span>
+      <span class="legend-count">${{c.count}}</span>`;
+    item.prepend(cb);
+    item.onclick = (e) => {{ if (e.target === cb) return; cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }};
+    legendEl.appendChild(item);
+  }});
+  updateSelectAllState(LEGEND.length, hiddenCommunities.size);
+}}
+
+function renderFileLegend() {{
+  legendTitleEl.textContent = currentLens === 'deps' ? 'Files' : 'Files (color)';
+  legendEl.innerHTML = '';
+  const counts = {{}};
+  RAW_NODES.forEach(n => {{ const f = n.source_file || '(none)'; counts[f] = (counts[f] || 0) + 1; }});
+  const files = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  files.forEach(f => {{
+    const color = colorForFile(f);
+    const item = document.createElement('div');
+    item.className = 'legend-item' + (hiddenFiles.has(f) ? ' dimmed' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'legend-cb';
+    cb.checked = !hiddenFiles.has(f);
+    cb.addEventListener('change', (e) => {{
+      e.stopPropagation();
+      if (cb.checked) {{ hiddenFiles.delete(f); item.classList.remove('dimmed'); }}
+      else {{ hiddenFiles.add(f); item.classList.add('dimmed'); }}
+      applyVisibility();
+      updateSelectAllState(files.length, hiddenFiles.size);
+    }});
+    item.innerHTML = `<div class="legend-dot" style="background:${{color}}"></div>
+      <span class="legend-label" title="${{esc(f)}}">${{esc(f)}}</span>
+      <span class="legend-count">${{counts[f]}}</span>`;
+    item.prepend(cb);
+    item.onclick = (e) => {{ if (e.target === cb) return; cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }};
+    legendEl.appendChild(item);
+  }});
+  updateSelectAllState(files.length, hiddenFiles.size);
+}}
+
+function renderLegend() {{
+  if (currentLens === 'community') renderCommunityLegend();
+  else renderFileLegend();
+}}
+
+// Collapse RAW_NODES/RAW_EDGES to one node per file, with an edge between
+// file A and file B for each calls/imports/references/extends/implements/uses
+// relation crossing between them. Same-file edges are skipped (already shown
+// by the file/community lenses). Computed once, lazily, on first use.
+function buildFileDependencyGraph() {{
+  const nodeToFile = {{}};
+  const fileCounts = {{}};
+  RAW_NODES.forEach(n => {{
+    const f = n.source_file || '(none)';
+    nodeToFile[n.id] = f;
+    fileCounts[f] = (fileCounts[f] || 0) + 1;
+  }});
+  // Real relation vocabulary measured across Python/YAML, Swift, and JS/TS corpora (2026-07-04):
+  // excludes structural/containment relations (contains, method, defines, case_of)
+  // and doc-explains-code (rationale_for), which aren't file-to-file coupling.
+  const REL_WHITELIST = new Set(['calls', 'imports', 'imports_from', 'references', 'inherits', 'implements', 'indirect_call', 're_exports', 'uses', 'embeds']);
+  const edgeAgg = {{}};
+  RAW_EDGES.forEach(e => {{
+    const fa = nodeToFile[e.from], fb = nodeToFile[e.to];
+    if (!fa || !fb || fa === fb) return;
+    const rel = (e.label || '').toLowerCase();
+    if (!REL_WHITELIST.has(rel)) return;
+    const key = fa + '\\u0001' + fb;
+    edgeAgg[key] = (edgeAgg[key] || 0) + 1;
+  }});
+  const maxCount = Math.max(1, ...Object.values(fileCounts));
+  depNodesCache = Object.keys(fileCounts).map(f => {{
+    const c = colorForFile(f);
+    return {{
+      id: 'file::' + f,
+      label: f.split('/').pop() || f,
+      title: esc(f),
+      color: {{ background: c, border: c, highlight: {{ background: '#fff', border: c }} }},
+      size: 10 + 25 * (fileCounts[f] / maxCount),
+      font: {{ size: 12, color: '#fff' }},
+      _community: -1, _community_name: 'n/a', _source_file: f, _file_type: 'file', _degree: fileCounts[f],
+    }};
+  }});
+  depEdgesCache = Object.entries(edgeAgg).map(([key, count], i) => {{
+    const [fa, fb] = key.split('\\u0001');
+    return {{
+      id: 'dep' + i, from: 'file::' + fa, to: 'file::' + fb,
+      label: '', title: `${{count}} cross-file reference(s)`,
+      width: Math.min(6, 1 + Math.log2(count + 1)), dashes: false,
+      color: {{ opacity: 0.5 }},
+      arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }},
+    }};
+  }});
+}}
+
+function switchLens(lens) {{
+  if (lens === currentLens) return;
+  document.querySelectorAll('.lens-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('lens-btn-' + lens).classList.add('active');
+
+  const btn3d = document.getElementById('btn-3d');
+  if (lens === 'deps') {{
+    btn3d.disabled = true;
+    btn3d.title = 'Not available in Dependencies view';
+    if (document.getElementById('graph-3d').style.display !== 'none') switchMode('2d');
+  }} else {{
+    btn3d.disabled = false;
+    btn3d.title = '';
+  }}
+
+  currentLens = lens;
+
+  if (lens === 'deps') {{
+    if (!depNodesCache) buildFileDependencyGraph();
+    nodesDS.clear();
+    nodesDS.add(depNodesCache);
+    edgesDS.clear();
+    edgesDS.add(depEdgesCache);
+  }} else {{
+    nodesDS.clear();
+    nodesDS.add(RAW_NODES.map(n => ({{
+      id: n.id, label: n.label,
+      color: lens === 'file'
+        ? {{ background: colorForFile(n.source_file || '(none)'), border: colorForFile(n.source_file || '(none)'), highlight: {{ background: '#fff', border: colorForFile(n.source_file || '(none)') }} }}
+        : n.color,
+      size: n.size, font: n.font, title: n.title,
+      _community: n.community, _community_name: n.community_name,
+      _source_file: n.source_file, _file_type: n.file_type, _degree: n.degree,
+      hidden: isNodeHidden(n),
+    }})));
+    edgesDS.clear();
+    edgesDS.add(RAW_EDGES.map((e, i) => ({{
+      id: i, from: e.from, to: e.to, label: '', title: e.title,
+      dashes: e.dashes, width: e.width, color: e.color,
+      arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }},
+    }})));
+    if (graph3DInstance) update3DGraphData();
+  }}
+
+  renderLegend();
+  network.setOptions({{ physics: {{ enabled: true }} }});
+  network.once('stabilizationIterationsDone', () => network.setOptions({{ physics: {{ enabled: false }} }}));
+}}
+
+renderLegend();
 
 let graph3DInstance = null;
 let scriptLoaded = false;
@@ -653,15 +824,15 @@ function switchMode(mode) {{
 
 function init3DGraph() {{
   const container = document.getElementById('graph-3d');
-  const activeNodes = RAW_NODES.filter(n => !hiddenCommunities.has(n.community));
+  const activeNodes = RAW_NODES.filter(n => !isNodeHidden(n));
   const activeNodeIds = new Set(activeNodes.map(n => n.id));
   const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to));
-  
+
   const gData = {{
     nodes: activeNodes.map(n => ({{
       id: n.id,
       label: n.label,
-      color: n.color.background,
+      color: nodeDisplayColor(n),
       val: n.size,
       community: n.community,
       community_name: n.community_name,
@@ -717,15 +888,15 @@ function init3DGraph() {{
 
 function update3DGraphData() {{
   if (!graph3DInstance) return;
-  const activeNodes = RAW_NODES.filter(n => !hiddenCommunities.has(n.community));
+  const activeNodes = RAW_NODES.filter(n => !isNodeHidden(n));
   const activeNodeIds = new Set(activeNodes.map(n => n.id));
   const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to));
-  
+
   graph3DInstance.graphData({{
     nodes: activeNodes.map(n => ({{
       id: n.id,
       label: n.label,
-      color: n.color.background,
+      color: nodeDisplayColor(n),
       val: n.size,
       community: n.community,
       community_name: n.community_name,
@@ -1137,6 +1308,11 @@ def to_html(
     <button id="btn-2d" class="toggle-btn active" onclick="switchMode('2d')">2D View</button>
     <button id="btn-3d" class="toggle-btn" onclick="switchMode('3d')">3D View</button>
   </div>
+  <div id="lens-toggle-wrap">
+    <button id="lens-btn-community" class="toggle-btn active lens-btn" onclick="switchLens('community')" title="Group/color by inferred community">Community</button>
+    <button id="lens-btn-file" class="toggle-btn lens-btn" onclick="switchLens('file')" title="Group/color by source file">File</button>
+    <button id="lens-btn-deps" class="toggle-btn lens-btn" onclick="switchLens('deps')" title="Collapse to one node per file, edges = calls/imports/references/extends between files">Dependencies</button>
+  </div>
   <div id="search-wrap">
     <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
     <div id="search-results"></div>
@@ -1196,9 +1372,9 @@ def to_html(
     </div>
   </div>
   <div id="legend-wrap">
-    <h3>Communities</h3>
+    <h3 id="legend-title">Communities</h3>
     <div id="legend-controls">
-      <label><input type="checkbox" id="select-all-cb" checked onchange="toggleAllCommunities(!this.checked)">Select All</label>
+      <label><input type="checkbox" id="select-all-cb" checked onchange="toggleAllGroups(!this.checked)">Select All</label>
     </div>
     <div id="legend"></div>
   </div>
