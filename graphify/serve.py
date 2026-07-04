@@ -463,14 +463,25 @@ def _build_server(graph_path: str):
         return result
 
     def _tool_get_node(arguments: dict) -> str:
-        label = arguments["label"].lower()
-        matches = [(nid, d) for nid, d in G.nodes(data=True)
-                   if label in (d.get("label") or "").lower() or label == nid.lower()]
+        label = arguments["label"]
+        # Was a standalone lowercase-substring-anywhere scan (label in every
+        # node's label, whole graph) - matched 16 nodes for a query like
+        # "context" (including unrelated ones, e.g. "ContextualLogger") with
+        # no ambiguity signal at all. Now shares the same tiered resolver and
+        # ambiguity check as `explain`/`get_neighbors`/`blast_radius`.
+        matches = _find_node(G, label)
         if not matches:
             return f"No node matching '{label}' found."
-        nid, d = matches[0]
+        nid = matches[0]
+        d = G.nodes[nid]
+        tied = _find_node_tied_group(G, label)
+        prefix = (
+            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+            if len(tied) >= 2 else ""
+        )
         # Sanitise every LLM-derived field before concatenation (F-010).
-        return "\n".join([
+        return prefix + "\n".join([
             f"Node: {sanitize_label(d.get('label', nid))}",
             f"  ID: {sanitize_label(nid)}",
             f"  Source: {sanitize_label(str(d.get('source_file', '')))} {sanitize_label(str(d.get('source_location', '')))}",
@@ -579,36 +590,25 @@ def _build_server(graph_path: str):
         )
 
     def _tool_shortest_path(arguments: dict) -> str:
-        src_scored = _score_nodes(G, [t.lower() for t in arguments["source"].split()])
-        tgt_scored = _score_nodes(G, [t.lower() for t in arguments["target"].split()])
-        if not src_scored:
-            return f"No node matching source '{arguments['source']}' found."
-        if not tgt_scored:
-            return f"No node matching target '{arguments['target']}' found."
-        src_nid, tgt_nid = src_scored[0][1], tgt_scored[0][1]
-        # Ambiguity guard: when both queries resolve to the same node, the
-        # shortest path is trivially zero hops, which is almost never what the
-        # caller wanted (see bug #828).
-        if src_nid == tgt_nid:
-            return (
-                f"'{arguments['source']}' and '{arguments['target']}' both resolved to "
-                f"the same node '{src_nid}'. Use a more specific label or the exact node ID."
+        from graphify.query import find_path_with_disambiguation
+
+        result = find_path_with_disambiguation(G, arguments["source"], arguments["target"])
+        if "error" in result:
+            return result["error"]
+        if "same_node_error" in result:
+            return result["same_node_error"]
+        warnings = result["warnings"]
+        path_nodes = result["path_nodes"]
+        if path_nodes is None:
+            tried = result["tried_pairs"]
+            suffix = f" (tried {tried} candidate pair{'s' if tried != 1 else ''})" if tried > 1 else ""
+            return f"No path found between '{arguments['source']}' and '{arguments['target']}'.{suffix}"
+        if result["used_hub_fallback"]:
+            warnings.append(
+                "note: no path avoiding generic/primitive hub nodes (Int, module anchors, etc.) - "
+                "this path routes through one"
             )
-        warnings: list[str] = []
-        for name, scored in (("source", src_scored), ("target", tgt_scored)):
-            if len(scored) >= 2:
-                top, runner = scored[0][0], scored[1][0]
-                if top > 0 and (top - runner) / top < 0.10:
-                    warnings.append(
-                        f"warning: {name} match was ambiguous "
-                        f"(top score {top:g}, runner-up {runner:g})"
-                    )
         max_hops = int(arguments.get("max_hops", 8))
-        try:
-            # Use undirected view for path-finding (works regardless of query src/tgt order)
-            path_nodes = nx.shortest_path(G.to_undirected(as_view=True), src_nid, tgt_nid)
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            return f"No path found between '{G.nodes[src_nid].get('label', src_nid)}' and '{G.nodes[tgt_nid].get('label', tgt_nid)}'."
         hops = len(path_nodes) - 1
         if hops > max_hops:
             return f"Path exceeds max_hops={max_hops} ({hops} hops found)."

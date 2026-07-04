@@ -1278,3 +1278,135 @@ def _find_node_tied_group(G: nx.Graph, label: str) -> list[str]:
         if tier:
             return tier
     return []
+
+
+def find_path_with_disambiguation(G: nx.Graph, source_label: str, target_label: str) -> dict:
+    """Resolve `source_label`/`target_label` to nodes and find a
+    degree-weighted, hub-avoiding shortest path, retrying every near-tied
+    candidate pair (not just the top-scored node on each side) before
+    giving up.
+
+    This logic used to live only in the CLI `path` command; the MCP
+    `shortest_path` tool kept an older, simpler top-score-only pick with a
+    score-gap warning bolted on. That meant `shortest_path` could report a
+    false "no path found" whenever the top-scored candidate on either side
+    happened to be disconnected while a lower-scored, equally-plausible one
+    (e.g. a duplicate-labeled node in a different file) had a real path -
+    the exact bug #828 class the CLI side was already fixed for. Centralizing
+    here means a future fix to either ambiguity handling or hub-avoidance
+    lands in both callers at once, instead of drifting the way `explain`'s
+    tie-detection previously did.
+
+    Returns a dict with exactly one of:
+      - "error": str                        (no node matched one side)
+      - "same_node_error": str              (both sides resolved to one node)
+      - the full result: "warnings" (list[str]), "path_nodes" (list[str] | None),
+        "src_nid", "tgt_nid" (resolved endpoints, or None if no path found),
+        "used_hub_fallback" (bool), "tried_pairs" (int)
+    """
+    import networkx as _nx
+
+    src_scored = _score_nodes(G, [t.lower() for t in source_label.split()])
+    tgt_scored = _score_nodes(G, [t.lower() for t in target_label.split()])
+    if not src_scored:
+        return {"error": f"No node matching '{source_label}' found."}
+    if not tgt_scored:
+        return {"error": f"No node matching '{target_label}' found."}
+
+    def _near_tied_candidates(scored: list) -> list:
+        if not scored:
+            return []
+        top = scored[0][0]
+        if top <= 0:
+            return [scored[0][1]]
+        return [nid for score, nid in scored if (top - score) / top < 0.10]
+
+    src_candidates = _near_tied_candidates(src_scored)
+    tgt_candidates = _near_tied_candidates(tgt_scored)
+
+    # Ambiguity guard: when EVERY candidate on both sides is the same single
+    # node, the shortest path is trivially zero hops, which is almost never
+    # what the caller wanted (see bug #828).
+    if src_candidates == tgt_candidates and len(src_candidates) == 1:
+        return {
+            "same_node_error": (
+                f"'{source_label}' and '{target_label}' both resolved to the same "
+                f"node '{src_candidates[0]}'. Use a more specific label or the exact node ID."
+            )
+        }
+
+    warnings: list[str] = []
+    for name, candidates in (("source", src_candidates), ("target", tgt_candidates)):
+        if len(candidates) >= 2:
+            warnings.append(
+                f"warning: {name} match was ambiguous - {len(candidates)} equally-plausible "
+                f"nodes ({', '.join(candidates[:5])}{', ...' if len(candidates) > 5 else ''}), "
+                "trying each before giving up"
+            )
+
+    # Degree-weighted, noise-excluded traversal: an unweighted shortest_path
+    # treats every edge as equally worth crossing, so it can route through a
+    # generic/protocol-conformance hub (e.g. `Int -> Sendable`) instead of the
+    # real, meaningful call chain.
+    from graphify.analyze import _BUILTIN_NOISE_LABELS
+
+    G_weighted = G.to_undirected()
+    degree = dict(G_weighted.degree())
+    for u, v in G_weighted.edges():
+        G_weighted[u][v]["_pathweight"] = 1 + degree.get(u, 0) + degree.get(v, 0)
+    # Language-agnostic structural signal, additive to the label-based one:
+    # a node at or above the graph's own 95th-percentile degree is
+    # disproportionately over-connected relative to THIS graph, regardless
+    # of what language or label produced it. The floor keeps small/sparse
+    # graphs from misfiring on every node looking "extreme".
+    _DEGREE_FLOOR = 10
+    _sorted_degrees = sorted(degree.values())
+    _p95_idx = (
+        min(int(len(_sorted_degrees) * 0.95), len(_sorted_degrees) - 1)
+        if _sorted_degrees else 0
+    )
+    _degree_p95 = _sorted_degrees[_p95_idx] if _sorted_degrees else 0
+    hub_degree_threshold = max(_DEGREE_FLOOR, _degree_p95)
+    noise_nodes = {
+        n for n in G_weighted.nodes()
+        if G_weighted.nodes[n].get("type") in ("module", "namespace")
+        or G_weighted.nodes[n].get("label", "") in _BUILTIN_NOISE_LABELS
+        or degree.get(n, 0) >= hub_degree_threshold
+    }
+
+    # Best-combo-first: try same-rank pairs before crossing into worse-ranked
+    # candidates on either side, skipping any pair that resolves to one node.
+    pairs = sorted(
+        ((si, ti) for si in range(len(src_candidates)) for ti in range(len(tgt_candidates))),
+        key=lambda p: p[0] + p[1],
+    )
+    path_nodes = None
+    used_hub_fallback = False
+    resolved_src = resolved_tgt = None
+    for si, ti in pairs:
+        s, t = src_candidates[si], tgt_candidates[ti]
+        if s == t:
+            continue
+        keep = (set(G_weighted.nodes()) - noise_nodes) | {s, t}
+        for graph_variant, is_fallback in (
+            (G_weighted.subgraph(keep), False),
+            (G_weighted, True),
+        ):
+            try:
+                path_nodes = _nx.shortest_path(graph_variant, s, t, weight="_pathweight")
+                resolved_src, resolved_tgt = s, t
+                used_hub_fallback = is_fallback
+                break
+            except (_nx.NetworkXNoPath, _nx.NodeNotFound):
+                continue
+        if path_nodes is not None:
+            break
+
+    return {
+        "warnings": warnings,
+        "path_nodes": path_nodes,
+        "src_nid": resolved_src,
+        "tgt_nid": resolved_tgt,
+        "used_hub_fallback": used_hub_fallback,
+        "tried_pairs": len(pairs),
+    }

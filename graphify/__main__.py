@@ -3141,9 +3141,8 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        from graphify.serve import _score_nodes
+        from graphify.query import find_path_with_disambiguation
         from networkx.readwrite import json_graph
-        import networkx as _nx
 
         source_label = sys.argv[2]
         target_label = sys.argv[3]
@@ -3166,117 +3165,22 @@ def main() -> None:
             G = json_graph.node_link_graph(_raw, edges="links")
         except TypeError:
             G = json_graph.node_link_graph(_raw)
-        src_scored = _score_nodes(G, [t.lower() for t in source_label.split()])
-        tgt_scored = _score_nodes(G, [t.lower() for t in target_label.split()])
-        if not src_scored:
-            print(f"No node matching '{source_label}' found.", file=sys.stderr)
+        result = find_path_with_disambiguation(G, source_label, target_label)
+        if "error" in result:
+            print(result["error"], file=sys.stderr)
             sys.exit(1)
-        if not tgt_scored:
-            print(f"No node matching '{target_label}' found.", file=sys.stderr)
+        if "same_node_error" in result:
+            print(result["same_node_error"], file=sys.stderr)
             sys.exit(1)
-        def _near_tied_candidates(scored: list) -> list:
-            """All nodes within 10% of the top score, not just the top pick -
-            a duplicate-named node (e.g. the same section title repeated
-            across several files) can tie or near-tie, and the arbitrary
-            top-of-tie choice may happen to be disconnected from the other
-            side while a different tied candidate would have connected."""
-            if not scored:
-                return []
-            top = scored[0][0]
-            if top <= 0:
-                return [scored[0][1]]
-            return [nid for score, nid in scored if (top - score) / top < 0.10]
-
-        src_candidates = _near_tied_candidates(src_scored)
-        tgt_candidates = _near_tied_candidates(tgt_scored)
-        # Ambiguity guard: when EVERY candidate on both sides is the same single
-        # node, the shortest path is trivially zero hops, which is almost never
-        # what the caller wanted (see bug #828).
-        if src_candidates == tgt_candidates and len(src_candidates) == 1:
-            print(
-                f"'{source_label}' and '{target_label}' both resolved to the same "
-                f"node '{src_candidates[0]}'. Use a more specific label or the exact node ID.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        for _name, _candidates in (("source", src_candidates), ("target", tgt_candidates)):
-            if len(_candidates) >= 2:
-                print(
-                    f"warning: {_name} match was ambiguous - {len(_candidates)} equally-plausible "
-                    f"nodes ({', '.join(_candidates[:5])}{', ...' if len(_candidates) > 5 else ''}), "
-                    "trying each before giving up",
-                    file=sys.stderr,
-                )
-        path_nodes = None
-        src_nid = src_candidates[0]
-        tgt_nid = tgt_candidates[0]
-        G_undirected = G.to_undirected(as_view=True)
-        # Degree-weighted, noise-excluded traversal: an unweighted shortest_path
-        # treats every edge as equally worth crossing, so it can route through a
-        # generic/protocol-conformance hub (e.g. `Int -> Sendable`) instead of the
-        # real, meaningful call chain (real tooling - Go's callgraph, JetBrains'
-        # Call Graph plugin - mostly sidesteps this by not offering arbitrary
-        # A->B paths at all; graphify keeps the feature but fixes it with data it
-        # already has: node degree and the module/namespace + builtin-primitive
-        # noise labels already used for god-node exclusion).
-        from graphify.analyze import _BUILTIN_NOISE_LABELS
-        degree = dict(G_undirected.degree())
-        G_weighted = G.to_undirected()
-        for u, v in G_weighted.edges():
-            G_weighted[u][v]["_pathweight"] = 1 + degree.get(u, 0) + degree.get(v, 0)
-        # Language-agnostic structural signal, additive to the label-based one:
-        # `_BUILTIN_NOISE_LABELS` only catches primitives someone already added to
-        # the list for a specific language - never a project-specific-but-generic
-        # type (the real `CopyModeMatch -> Sendable` bug: only `Sendable` had a
-        # label match, `CopyModeMatch`'s degree=14 alone gave it away). A node at
-        # or above the graph's own 95th-percentile degree is disproportionately
-        # over-connected relative to THIS graph, regardless of what language or
-        # label produced it - measured stable across 3 real, differently-sized
-        # graphs (p95 ~11-14 despite 3k-12k nodes each). The absolute floor keeps
-        # small/sparse graphs (where every node can look "extreme") from
-        # misfiring - only exclude nodes that are ALSO genuinely well-connected.
-        _DEGREE_FLOOR = 10
-        _sorted_degrees = sorted(degree.values())
-        _p95_idx = min(int(len(_sorted_degrees) * 0.95), len(_sorted_degrees) - 1) if _sorted_degrees else 0
-        _degree_p95 = _sorted_degrees[_p95_idx] if _sorted_degrees else 0
-        hub_degree_threshold = max(_DEGREE_FLOOR, _degree_p95)
-        noise_nodes = {
-            n for n in G_weighted.nodes()
-            if G_weighted.nodes[n].get("type") in ("module", "namespace")
-            or G_weighted.nodes[n].get("label", "") in _BUILTIN_NOISE_LABELS
-            or degree.get(n, 0) >= hub_degree_threshold
-        }
-        # Best-combo-first: try same-rank pairs before crossing into worse-ranked
-        # candidates on either side, skipping any pair that resolves to one node.
-        pairs = sorted(
-            ((si, ti) for si in range(len(src_candidates)) for ti in range(len(tgt_candidates))),
-            key=lambda p: p[0] + p[1],
-        )
-        used_hub_fallback = False
-        for si, ti in pairs:
-            s, t = src_candidates[si], tgt_candidates[ti]
-            if s == t:
-                continue
-            keep = (set(G_weighted.nodes()) - noise_nodes) | {s, t}
-            for graph_variant, is_fallback in (
-                (G_weighted.subgraph(keep), False),
-                (G_weighted, True),
-            ):
-                try:
-                    path_nodes = _nx.shortest_path(graph_variant, s, t, weight="_pathweight")
-                    src_nid, tgt_nid = s, t
-                    used_hub_fallback = is_fallback
-                    break
-                except (_nx.NetworkXNoPath, _nx.NodeNotFound):
-                    continue
-            if path_nodes is not None:
-                break
+        for w in result["warnings"]:
+            print(w, file=sys.stderr)
+        path_nodes = result["path_nodes"]
         if path_nodes is None:
-            tried = len(pairs)
+            tried = result["tried_pairs"]
             suffix = f" (tried {tried} candidate pair{'s' if tried != 1 else ''})" if tried > 1 else ""
             print(f"No path found between '{source_label}' and '{target_label}'.{suffix}")
             sys.exit(0)
-        if used_hub_fallback:
+        if result["used_hub_fallback"]:
             print(
                 "note: no path avoiding generic/primitive hub nodes (Int, module anchors, etc.) - "
                 "this path routes through one",
