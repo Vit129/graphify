@@ -43,6 +43,33 @@ def test_shared_value_across_two_files_makes_one_edge():
     assert {e["source"], e["target"]} == {"nid::a/bedroom_ac.yaml", "nid::b/home_mode.yaml"}
 
 
+def test_endpoints_resolved_against_final_nodes_after_id_remap():
+    """Regression: later extract() passes remap file-node ids (an absolute-path
+    stem `/x/a.yaml` → `a`), so the node_id captured at YAML-extraction time
+    dangles. Passing all_nodes lets the coupling pass resolve the CURRENT file
+    node id by source_file, so the edge points at real nodes instead of being
+    silently dropped by graph assembly (the bug that made `graphify update`
+    emit zero coupling edges)."""
+    per_file = [
+        {"nodes": [], "edges": [], "values": [
+            {"value": "climate.x", "node_id": "STALE_LONG_ID_A",
+             "source_file": "/abs/a.yaml", "line": 1}]},
+        {"nodes": [], "edges": [], "values": [
+            {"value": "climate.x", "node_id": "STALE_LONG_ID_B",
+             "source_file": "/abs/b.yaml", "line": 1}]},
+    ]
+    # Final nodes carry the REMAPPED short ids + relative source_file.
+    all_nodes = [
+        {"id": "a", "source_file": "a.yaml", "source_location": "L1"},
+        {"id": "b", "source_file": "b.yaml", "source_location": "L1"},
+    ]
+    edges = _resolve_value_coupling(per_file, all_nodes)
+    assert len(edges) == 1
+    assert {edges[0]["source"], edges[0]["target"]} == {"a", "b"}
+    # NOT the stale captured ids.
+    assert "STALE_LONG_ID_A" not in {edges[0]["source"], edges[0]["target"]}
+
+
 def test_value_in_more_than_hub_cap_files_makes_no_edge():
     # Same value in 6 files (> cap 5) => it's a constant, not a reference.
     per_file = _pf(*[(f"f{i}.yaml", ["sensor.shared_thing"]) for i in range(6)])

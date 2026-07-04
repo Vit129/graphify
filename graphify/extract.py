@@ -15273,12 +15273,20 @@ def _is_value_coupling_service_verb(value: str) -> bool:
 
 def _resolve_value_coupling(
     per_file: list[dict | None],
+    all_nodes: list[dict] | None = None,
     *,
     hub_cap: int = 5,
 ) -> list[dict]:
     """P15 (opt-in): emit low-confidence `shares_value:<v>` edges between file
     nodes whose YAML shares an identifier-shaped leaf value (e.g. two Home
     Assistant automations both referencing `input_boolean.home_mode`).
+
+    Endpoints are resolved against `all_nodes` by source_file, NOT the
+    node_id captured at YAML-extraction time: later extract() passes remap
+    file-node ids (an absolute-path stem gets shortened to `a`), so a captured
+    id would dangle and the edge would be silently dropped by graph assembly.
+    When `all_nodes` is omitted the captured node_id is used as a fallback
+    (fine for callers that don't remap, e.g. direct unit tests).
 
     ponytail: co-occurrence heuristic, not reference resolution - a shared
     value proves the two files mention the same identifier, NOT that one
@@ -15289,6 +15297,31 @@ def _resolve_value_coupling(
     """
     from collections import defaultdict
 
+    # Map each source_file to its current file-level node id (source_location
+    # "L1"). Built from the FINAL node set so ids match post-remap. Keyed by
+    # both the exact source_file and its basename so a relative final path
+    # (`a.yaml`) matches a value captured with an absolute path.
+    sf_to_fileid: dict[str, str] = {}
+    base_to_fileid: dict[str, str] = {}
+    if all_nodes is not None:
+        from pathlib import Path as _P
+        for n in all_nodes:
+            if str(n.get("source_location", "")) != "L1":
+                continue
+            sf = str(n.get("source_file", ""))
+            if not sf:
+                continue
+            sf_to_fileid.setdefault(sf, n["id"])
+            base_to_fileid.setdefault(_P(sf).name, n["id"])
+
+    def _resolve_fileid(src: str, captured: str) -> str | None:
+        if all_nodes is None:
+            return captured
+        if src in sf_to_fileid:
+            return sf_to_fileid[src]
+        from pathlib import Path as _P
+        return base_to_fileid.get(_P(src).name)
+
     # value -> {source_file: (node_id, line)} (one entry per file; first wins)
     value_files: dict[str, dict[str, tuple[str, int]]] = defaultdict(dict)
     for result in per_file:
@@ -15296,9 +15329,9 @@ def _resolve_value_coupling(
             continue
         for entry in result.get("values") or []:
             value = entry.get("value")
-            node_id = entry.get("node_id")
+            captured = entry.get("node_id")
             src = entry.get("source_file") or ""
-            if not value or not node_id:
+            if not value or not captured:
                 continue
             # Dotted entity-reference shape ONLY (`domain.entity`). The Phase 0
             # sample that hit ~96% precision was measured on dotted refs only;
@@ -15313,6 +15346,9 @@ def _resolve_value_coupling(
                 continue
             if _is_value_coupling_ui_file(src):
                 continue
+            node_id = _resolve_fileid(src, captured)
+            if node_id is None:
+                continue
             if src not in value_files[value]:
                 value_files[value][src] = (node_id, int(entry.get("line", 1)))
 
@@ -15325,6 +15361,8 @@ def _resolve_value_coupling(
             for j in range(i + 1, len(items)):
                 (src_a, (nid_a, line_a)) = items[i]
                 (src_b, (nid_b, _)) = items[j]
+                if nid_a == nid_b:
+                    continue
                 edges.append({
                     "source": nid_a,
                     "target": nid_b,
@@ -15558,7 +15596,7 @@ def extract(
     # default; never runs implicitly. Emits low-confidence co-occurrence edges.
     if value_coupling:
         try:
-            all_edges.extend(_resolve_value_coupling(per_file))
+            all_edges.extend(_resolve_value_coupling(per_file, all_nodes))
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning("Value-coupling resolution failed, skipping: %s", exc)

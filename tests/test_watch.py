@@ -176,6 +176,36 @@ def test_graphify_root_preserves_absolute_when_user_supplied(tmp_path):
     )
 
 
+def test_rebuild_code_value_coupling_survives_the_lock_wrapper(tmp_path, monkeypatch):
+    """Regression: `_rebuild_code(acquire_lock=True)` (the real CLI `update`
+    default) takes the lock then recurses into itself with `acquire_lock=False`
+    - that recursive call previously hand-listed its forwarded kwargs and
+    omitted `value_coupling`, so it silently reverted to False no matter what
+    the outer caller passed. Direct calls with `acquire_lock=False` (used by
+    every other test in this file) never exercised the recursive branch, so
+    this bug shipped in P15 despite the value_coupling unit tests passing.
+    Must run through `acquire_lock=True` to catch it."""
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.yaml").write_text(
+        "automation:\n  - alias: A\n    action:\n      entity_id: climate.living_room_ac\n",
+        encoding="utf-8",
+    )
+    (corpus / "b.yaml").write_text(
+        "automation:\n  - alias: B\n    action:\n      entity_id: climate.living_room_ac\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(corpus)
+    assert _rebuild_code(Path("."), acquire_lock=True, value_coupling=True) is True
+
+    graph = json.loads((corpus / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    edges = graph.get("links", graph.get("edges", []))
+    sv = [e for e in edges if "shares_value" in str(e.get("relation", ""))]
+    assert sv, "value_coupling edge missing - did the lock-wrapper recursion drop the flag again?"
+
+
 def test_rebuild_code_rank_by_pagerank_reaches_god_nodes(tmp_path):
     """graphify update --rank-by pagerank must thread through to god_nodes()
     without crashing, and the resulting GRAPH_REPORT.md must still render a

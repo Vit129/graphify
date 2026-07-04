@@ -3914,15 +3914,16 @@ def main() -> None:
                         proj_rank_by = proj_config.get("rank_by", "degree")
                         
                         ok = _rebuild_code(
-                            proj, 
-                            force=force, 
-                            no_cluster=proj_no_cluster, 
-                            block_on_lock=True, 
+                            proj,
+                            force=force,
+                            no_cluster=proj_no_cluster,
+                            block_on_lock=True,
                             rank_by=proj_rank_by,
                             resolution=res,
                             exclude_hubs=ex_hubs,
                             no_viz=no_viz,
-                            wiki=wiki
+                            wiki=wiki,
+                            value_coupling=proj_config.get("value_coupling", False),
                         )
                         if ok:
                             success_count += 1
@@ -3997,15 +3998,16 @@ def main() -> None:
         
         print(f"Re-extracting code files in {watch_path} (no LLM needed)...")
         ok = _rebuild_code(
-            watch_path, 
-            force=force, 
-            no_cluster=no_cluster, 
-            block_on_lock=True, 
+            watch_path,
+            force=force,
+            no_cluster=no_cluster,
+            block_on_lock=True,
             rank_by=rank_by,
             resolution=proj_config.get("resolution"),
             exclude_hubs=proj_config.get("exclude_hubs"),
             no_viz=proj_config.get("no_viz"),
-            wiki=proj_config.get("wiki")
+            wiki=proj_config.get("wiki"),
+            value_coupling=proj_config.get("value_coupling", False),
         )
         if ok:
             print("Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.")

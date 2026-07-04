@@ -118,6 +118,29 @@ requires a dot (`domain.entity` shape); `_is_identifier_leaf` still collects lon
 the `values` field for possible future use, but they are not coupled. This is the filter the gate
 actually passed.
 
+**Second correction found post-Phase-2, during advisor-prompted activation-path verification**:
+`graphify update` (the command the project's own hooks tell people to run after code changes)
+silently produced ZERO `shares_value` edges even with `value_coupling=true` in `graphify.toml`,
+despite `extract(value_coupling=True)` called directly working fine. Two independent bugs, both
+fixed:
+1. **Dangling edge endpoints**: `_resolve_value_coupling` captured the file-node id at YAML-extraction
+   time, but a later pass in `extract()` remaps file-node ids (an absolute path stem shortens to a
+   relative one) — so the captured id no longer matched any node by the time edges were assembled,
+   and the edge was silently dropped. Fixed by resolving each endpoint's CURRENT node id from
+   `all_nodes` by `source_file` (falling back to basename) at edge-emission time, not the captured id.
+2. **Kwarg dropped by the lock-wrapper recursion**: `_rebuild_code(acquire_lock=True)` (the real
+   default `update` uses) takes a lock then recurses into itself with `acquire_lock=False` - that
+   recursive call hand-lists its forwarded kwargs and had never been updated to include
+   `value_coupling`, so it silently reverted to `False` regardless of what the outer caller passed.
+   Every existing test called `_rebuild_code` with `acquire_lock=False` directly (skipping the
+   recursive branch entirely), so this was invisible to the full test suite. Fixed by forwarding
+   `value_coupling` at both recursive call sites; added a regression test that specifically exercises
+   `acquire_lock=True` to catch this class of bug.
+
+Both were caught by directly testing the CLI `update` command end-to-end (not just `extract()` or
+`_rebuild_code(acquire_lock=False)` in isolation) before declaring the feature done — the lesson: a
+green test suite does not guarantee an opt-in flag reaches the code path users actually invoke.
+
 ## Risks
 
 - **Noise / false confidence** — mitigated by opt-in + INFERRED + hub cap + identifier filter,

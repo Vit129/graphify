@@ -428,6 +428,7 @@ def _rebuild_code(
     exclude_hubs: float | None = None,
     no_viz: bool | None = None,
     wiki: bool | None = None,
+    value_coupling: bool = False,
 ) -> bool:
     """Re-run AST extraction + build + optional cluster + report for code files. No LLM needed.
 
@@ -492,6 +493,7 @@ def _rebuild_code(
                 exclude_hubs=exclude_hubs,
                 no_viz=no_viz,
                 wiki=wiki,
+                value_coupling=value_coupling,
             )
             # Late-arrival drain: another hook may have queued work while we
             # were rebuilding. Loop up to _PENDING_DRAIN_MAX_PASSES times so a
@@ -514,6 +516,7 @@ def _rebuild_code(
                         exclude_hubs=exclude_hubs,
                         no_viz=no_viz,
                         wiki=wiki,
+                        value_coupling=value_coupling,
                     ) and ok
             return ok
 
@@ -601,7 +604,7 @@ def _rebuild_code(
             extract_targets = code_files
 
         commit = _git_head()
-        result = extract(extract_targets, cache_root=watch_root) if extract_targets else {
+        result = extract(extract_targets, cache_root=watch_root, value_coupling=value_coupling) if extract_targets else {
             "nodes": [], "edges": [], "hyperedges": [],
             "input_tokens": 0, "output_tokens": 0,
         }
