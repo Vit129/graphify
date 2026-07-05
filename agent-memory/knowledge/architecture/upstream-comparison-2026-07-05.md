@@ -9,6 +9,26 @@ directly against this repo's `graphify/` package (local version `0.16.0`,
 a fresh read of both trees' actual current source, file by file, function by
 function on every file with a nonzero diff.
 
+## Status update (same PR, after this audit)
+
+Three items below were fixed directly in this PR rather than left as findings
+— see CHANGELOG.md's Unreleased section for the user-facing writeup:
+
+- ✅ **Fixed** — symlink-containment security gap (`_resolves_under_root`
+  ported into `collect_files()`/`detect()`).
+- ✅ **Fixed** — #1638 (`ref:`-prefixed unresolved JS/TS imports, prevents
+  phantom cross-language `imports_from` collisions).
+- ✅ **Fixed** — #1659 (JS/TS direct calls no longer bind cross-file without
+  import evidence) + the companion `sf_to_file_nid` lookup hardening it
+  depends on.
+- ✅ **Fixed** — C# receiver-typed member-call resolution (#1609):
+  `_csharp_member_type_table` + `_resolve_csharp_member_calls`, closing the
+  `_server.Save()` / `Cache.Save()` mis-binding bug described below.
+
+Everything else in this document (Obsidian/Canvas export, Ruby/Kotlin/Apex
+extraction gaps, Windows path handling, deterministic merge ordering, etc.)
+is unchanged — still open, not addressed by this PR.
+
 ## Headline finding
 
 **README.md's "What's different from upstream" section (before this audit's
