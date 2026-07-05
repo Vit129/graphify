@@ -1005,3 +1005,24 @@ wiki = true
     assert (corpus / "graphify-out" / "wiki").exists()
     assert (corpus / "graphify-out" / "wiki" / "index.md").exists()
 
+
+def test_rebuild_code_no_viz_removes_stale_graph_html(tmp_path):
+    """A graph.html left over from an earlier run (built without --no-viz) must be
+    removed on a no_viz rebuild, not just skipped-on-create. Otherwise --no-viz on
+    `update` looks like a no-op to anyone who already has a graph.html on disk."""
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text("def a(): return b()\ndef b(): pass\n", encoding="utf-8")
+
+    assert _rebuild_code(corpus, acquire_lock=False) is True
+    html_path = corpus / "graphify-out" / "graph.html"
+    assert html_path.exists()
+
+    (corpus / "lib.py").write_text(
+        "def a(): return b()\ndef b(): return c()\ndef c(): pass\n", encoding="utf-8"
+    )
+    assert _rebuild_code(corpus, force=True, no_viz=True, acquire_lock=False) is True
+    assert not html_path.exists()
+

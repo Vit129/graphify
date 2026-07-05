@@ -265,3 +265,30 @@ def test_extract_timing_flag_emits_stage_timings(monkeypatch, tmp_path, capsys):
         mainmod.main()
     assert exc2.value.code == 0
     assert "graphify timing" not in capsys.readouterr().err
+
+
+def test_extract_no_viz_removes_stale_graph_html(monkeypatch, tmp_path):
+    """A graph.html left over from a prior build (without --no-viz) must be removed
+    on a later --no-viz run, not just skipped-on-create — otherwise --no-viz looks
+    like a no-op to anyone who already has a graph.html on disk from before."""
+    corpus = _code_only_corpus(tmp_path)
+    _clear_backend_keys(monkeypatch)
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+
+    monkeypatch.setattr(mainmod.sys, "argv", ["graphify", "extract", str(corpus)])
+    try:
+        mainmod.main()
+    except SystemExit as exc:
+        assert exc.code in (None, 0)
+    html_path = corpus / "graphify-out" / "graph.html"
+    assert html_path.exists()
+
+    monkeypatch.setattr(
+        mainmod.sys, "argv",
+        ["graphify", "extract", str(corpus), "--update", "--no-viz", "--force"],
+    )
+    try:
+        mainmod.main()
+    except SystemExit as exc2:
+        assert exc2.code in (None, 0)
+    assert not html_path.exists()
