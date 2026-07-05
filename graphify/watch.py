@@ -906,7 +906,14 @@ def _rebuild_code(
         # Wrap so core outputs (graph.json + GRAPH_REPORT.md) always land.
         final_no_viz = no_viz if no_viz is not None else proj_config.get("no_viz", False)
         html_written = False
-        if not no_change and not final_no_viz:
+        if final_no_viz:
+            # --no-viz only stops us from generating a NEW graph.html - it must also
+            # remove one left over from an earlier run without the flag, or the file
+            # just sits there stale and the flag looks like it did nothing.
+            stale = out / "graph.html"
+            if stale.exists():
+                stale.unlink()
+        elif not no_change:
             try:
                 to_html(G, communities, str(out / "graph.html"), community_labels=labels or None, node_limit=5000)
                 html_written = True

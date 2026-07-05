@@ -5389,11 +5389,18 @@ def main() -> None:
                 print(f"[graphify extract] warning: failed to generate wiki: {wiki_err}", file=sys.stderr)
 
         # Generate graph.html if not --no-viz and not --no-cluster
-        if not cli_no_viz and not no_cluster:
+        html_target = graphify_out / "graph.html"
+        if cli_no_viz:
+            # --no-viz only stops us from generating a NEW graph.html - it must also
+            # remove one left over from an earlier run without the flag, or the file
+            # just sits there stale and the flag looks like it did nothing.
+            if html_target.exists():
+                html_target.unlink()
+        elif not no_cluster:
             try:
                 from graphify.export import to_html as _to_html
-                _to_html(G, communities, str(graphify_out / "graph.html"), community_labels=labels or None, node_limit=5000)
-                print(f"[graphify extract] wrote {graphify_out / 'graph.html'}")
+                _to_html(G, communities, str(html_target), community_labels=labels or None, node_limit=5000)
+                print(f"[graphify extract] wrote {html_target}")
             except Exception as viz_err:
                 print(f"[graphify extract] warning: skipped graph.html: {viz_err}", file=sys.stderr)
 
