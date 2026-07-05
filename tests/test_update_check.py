@@ -42,8 +42,10 @@ def test_should_check_false_within_interval(monkeypatch):
     assert uc._should_check(config, force=True) is True
 
 
-def test_resolve_auto_update_defaults_true():
-    assert uc._resolve_auto_update({}) is True
+def test_resolve_auto_update_defaults_false():
+    # PACKAGE_NAME is upstream's own PyPI package (a different codebase) — auto-installing
+    # it by default would silently replace this fork's install with the wrong software.
+    assert uc._resolve_auto_update({}) is False
     assert uc._resolve_auto_update({"autoUpdate": False}) is False
     assert uc._resolve_auto_update({"autoUpdate": True}) is True
 
@@ -88,13 +90,20 @@ def test_check_for_update_nudges_when_auto_update_disabled(monkeypatch, tmp_path
     monkeypatch.setattr(uc, "_latest_version", lambda: "0.2.0")
     uc.check_for_update("0.1.0")
     err = capsys.readouterr().err
-    assert "0.1.0 -> 0.2.0" in err
+    assert "0.2.0" in err
+    assert "0.1.0" in err
+    # Must not read as "you're behind, go run this" — this fork isn't on PyPI, so the
+    # PyPI package name should only appear inside the explicit opt-in explanation.
+    assert "github.com/Vit129/graphify" in err
     assert "uv tool upgrade" in err
 
 
 def test_check_for_update_fires_background_install_when_enabled(monkeypatch, tmp_path, capsys):
     _isolate_config(monkeypatch, tmp_path)
     monkeypatch.delenv("CI", raising=False)
+    # autoUpdate no longer defaults to True (see test_resolve_auto_update_defaults_false) —
+    # this test is specifically the explicit opt-in path.
+    monkeypatch.setattr(uc, "_read_config", lambda: {"autoUpdate": True})
     monkeypatch.setattr(uc, "_latest_version", lambda: "0.2.0")
     monkeypatch.setattr(uc, "_upgrade_command", lambda: ["uv", "tool", "upgrade", "graphifyy"])
 
@@ -112,7 +121,7 @@ def test_check_for_update_fires_background_install_when_enabled(monkeypatch, tmp
     assert command == ["uv", "tool", "upgrade", "graphifyy"]
     assert kwargs["start_new_session"] is True
     err = capsys.readouterr().err
-    assert "installing in background" in err
+    assert "in the background" in err
 
 
 def test_check_for_update_never_raises_on_network_error(monkeypatch, tmp_path):

@@ -45,7 +45,8 @@ def _always_on(basename: str) -> str:
         # only by an install/integration path that actually needs this block.
         raise RuntimeError(
             f"graphify install is incomplete: missing always-on block '{basename}' "
-            f"at {path}. Reinstall graphifyy (e.g. `uv tool install --reinstall graphifyy`)."
+            f"at {path}. Reinstall this fork (e.g. `uv tool install --reinstall "
+            f"git+https://github.com/Vit129/graphify.git`)."
         ) from exc
 
 
@@ -157,7 +158,7 @@ def _check_skill_version(skill_dst: Path) -> None:
             print(
                 f"  warning: skill is from graphify {installed}, but the package is "
                 f"{__version__} (older). Upgrade the package "
-                f"(e.g. 'uv tool upgrade graphifyy' or 'pip install -U graphifyy'); "
+                f"(e.g. 'uv tool upgrade --reinstall git+https://github.com/Vit129/graphify.git'); "
                 f"running 'graphify install' would downgrade the skill.",
                 file=sys.stderr,
             )
@@ -1177,7 +1178,8 @@ def _antigravity_install(project_dir: Path) -> None:
     print('  "graphify": {')
     print('    "command": "uv",')
     print(
-        '    "args": ["run", "--with", "graphifyy", "--with", "mcp", "-m", "graphify.serve", "${workspace.path}/graphify-out/graph.json"]'
+        '    "args": ["run", "--with", "git+https://github.com/Vit129/graphify.git", '
+        '"--with", "mcp", "-m", "graphify.serve", "${workspace.path}/graphify-out/graph.json"]'
     )
     print("  }")
 

@@ -4,6 +4,13 @@ PyPI-backed sibling of the npm-based ``update-check.mjs`` used by
 agy-plugin-cc/agy-plugin-codex: bounded foreground version check (so most
 invocations pay nothing thanks to the 24h cache), detached background install
 so a slow `uv tool upgrade` never blocks the command that triggered it.
+
+Fork notice: PACKAGE_NAME ("graphifyy") is upstream's own PyPI package, a different
+codebase from this fork — this fork isn't published to PyPI at all (see README's
+"Source-only fork" note). A "newer" PyPI release is a signal that upstream shipped
+something, not that this fork is out of date, so autoUpdate defaults to False and the
+default message points at this fork's own GitHub releases instead of suggesting an
+install command that would silently replace this fork with upstream's package.
 """
 from __future__ import annotations
 
@@ -76,8 +83,12 @@ def _should_check(config: dict, force: bool) -> bool:
 
 
 def _resolve_auto_update(config: dict) -> bool:
+    # Defaults to False (not True): PACKAGE_NAME ("graphifyy" on PyPI) is upstream's own,
+    # unrelated package — a "newer" PyPI release there is not this fork's release, so silently
+    # replacing this fork's install with it by default would be installing the wrong software.
+    # Opt-in only, via `{"autoUpdate": true}` in ~/.config/graphify/config.json.
     value = config.get("autoUpdate")
-    return True if value is None else bool(value)
+    return False if value is None else bool(value)
 
 
 def _latest_version() -> str | None:
@@ -132,8 +143,12 @@ def check_for_update(current_version: str, *, force: bool = False) -> None:
 
         if not _resolve_auto_update(config):
             print(
-                f"  graphify update available: {current_version} -> {latest}. "
-                f"Run: uv tool upgrade {PACKAGE_NAME} (or pipx upgrade {PACKAGE_NAME})",
+                f"  upstream graphify (PyPI `{PACKAGE_NAME}`) has released {latest}; "
+                f"this fork is at {current_version}. This fork isn't published to PyPI — "
+                f"see https://github.com/Vit129/graphify for this fork's own releases, "
+                f"or set {{\"autoUpdate\": true}} in ~/.config/graphify/config.json to "
+                f"auto-run `uv tool upgrade {PACKAGE_NAME}` (installs upstream's package, "
+                f"not this fork) when this fires.",
                 file=sys.stderr,
             )
             return
@@ -141,16 +156,17 @@ def check_for_update(current_version: str, *, force: bool = False) -> None:
         command = _upgrade_command()
         if command is None:
             print(
-                f"  graphify update available: {current_version} -> {latest}. "
-                f"Install uv or pipx to enable auto-update, or run: pip install -U {PACKAGE_NAME}",
+                f"  upstream graphify (PyPI `{PACKAGE_NAME}`) released {latest}; "
+                f"autoUpdate is enabled but neither uv nor pipx is on PATH to install it.",
                 file=sys.stderr,
             )
             return
 
         _run_upgrade_in_background(command)
         print(
-            f"  graphify update installing in background ({current_version} -> {latest}). "
-            f"Check {INSTALL_LOG_PATH} or re-run later to pick it up.",
+            f"  autoUpdate is enabled: installing upstream's `{PACKAGE_NAME}` {latest} "
+            f"in the background (this replaces this fork's install with upstream's — "
+            f"see {INSTALL_LOG_PATH}).",
             file=sys.stderr,
         )
     except Exception:
