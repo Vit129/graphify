@@ -236,6 +236,39 @@ def test_detect_handles_circular_symlinks(tmp_path):
     assert any("main.py" in f for f in result["files"]["code"])
 
 
+def test_detect_skips_out_of_root_symlinked_directory_even_when_following(tmp_path):
+    """A symlinked directory pointing outside the scan root must be skipped
+    even with follow_symlinks=True — containment, not just cycle-safety."""
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text("token = 'outside'")
+    (root / "linked_secret").symlink_to(outside)
+
+    result = detect(root, follow_symlinks=True)
+
+    assert not any("linked_secret" in f for f in result["files"]["code"])
+    assert any("symlink target outside scan root" in item for item in result["skipped_sensitive"])
+
+
+def test_detect_skips_out_of_root_symlinked_file(tmp_path):
+    """A symlinked file pointing outside the scan root must be skipped
+    regardless of the follow_symlinks value — a lone symlinked file is listed
+    by os.walk irrespective of followlinks, so this needs its own guard."""
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text("token = 'outside'")
+    (root / "secret_link.py").symlink_to(outside / "secret.py")
+
+    result = detect(root, follow_symlinks=False)
+
+    assert not any("secret_link.py" in f for f in result["files"]["code"])
+    assert any("symlink target outside scan root" in item for item in result["skipped_sensitive"])
+
+
 def test_detect_auto_detects_direct_symlink_child(tmp_path):
     """When ``root`` has a direct symlinked child, default (None) follows symlinks
     so the user does not have to know to pass follow_symlinks=True for "fake

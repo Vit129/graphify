@@ -372,6 +372,36 @@ def test_collect_files_handles_circular_symlinks(tmp_path):
     assert any(f.name == "mod.py" for f in files)
 
 
+def test_collect_files_skips_out_of_root_symlinked_directory(tmp_path):
+    """A symlinked directory pointing outside the scan root must be skipped
+    even with follow_symlinks=True — containment, not just cycle-safety."""
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text("token = 'outside'")
+    (root / "linked_secret").symlink_to(outside)
+
+    files = collect_files(root, follow_symlinks=True)
+
+    assert not any("linked_secret" in str(f) for f in files)
+
+
+def test_collect_files_skips_out_of_root_symlinked_file(tmp_path):
+    """A symlinked file pointing outside the scan root must be skipped
+    regardless of the follow_symlinks value."""
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text("token = 'outside'")
+    (root / "secret_link.py").symlink_to(outside / "secret.py")
+
+    files = collect_files(root, follow_symlinks=False)
+
+    assert not any(f.name == "secret_link.py" for f in files)
+
+
 def _legacy_collect_files(target, *, root=None):
     """The pre-#1261 rglob-per-extension implementation, kept as a parity oracle."""
     from graphify.detect import _is_ignored, _is_noise_dir, _load_graphifyignore
@@ -865,9 +895,11 @@ def test_cross_file_call_promoted_to_extracted_with_import_evidence(tmp_path):
     assert call_edges[0]["confidence_score"] == 1.0
 
 
-def test_cross_file_call_remains_inferred_without_import_evidence(tmp_path):
-    """A cross-file `calls` edge must stay INFERRED when there is no import
-    edge — name collision alone is insufficient evidence."""
+def test_js_cross_file_call_without_import_emits_no_edge(tmp_path):
+    """A JS/TS call with no local definition and no import must NOT bind to a
+    same-named export in another file (#1659). JS/TS modules have no implicit
+    cross-module scope, so name collision alone is not a real call — it used to
+    produce a phantom INFERRED edge that fabricated cross-package dependencies."""
     caller = tmp_path / "caller.js"
     callee = tmp_path / "lib.js"
     # Caller does NOT require lib — same-name function happens to exist elsewhere
@@ -884,8 +916,7 @@ def test_cross_file_call_remains_inferred_without_import_evidence(tmp_path):
         and nodes[e["source"]]["label"] == "run()"
         and nodes[e["target"]]["label"] == "doUnique()"
     ]
-    assert len(call_edges) == 1
-    assert call_edges[0]["confidence"] == "INFERRED"
+    assert call_edges == [], f"unimported cross-file JS call should not resolve: {call_edges}"
 
 
 def test_python_qualified_class_method_call_resolves_extracted(tmp_path):
