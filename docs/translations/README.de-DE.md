@@ -1,5 +1,7 @@
+> **Fork notice:** this is a personal fork of [safishamsi/graphify](https://github.com/safishamsi/graphify) maintained independently by [Vit129](https://github.com/Vit129), not affiliated with the original project, Graphify Labs, or Penpax. Translations below may lag the [English README](../../README.md).
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/safishamsi/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
+  <img src="https://raw.githubusercontent.com/Vit129/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
 </p>
 
 <p align="center">
@@ -7,11 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/safishamsi/graphify/actions/workflows/ci.yml"><img src="https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v4" alt="CI"/></a>
-  <a href="https://pypi.org/project/graphifyy/"><img src="https://img.shields.io/pypi/v/graphifyy" alt="PyPI"/></a>
-  <a href="https://pepy.tech/project/graphifyy"><img src="https://static.pepy.tech/badge/graphifyy" alt="Downloads"/></a>
-  <a href="https://github.com/sponsors/safishamsi"><img src="https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
-  <a href="https://www.linkedin.com/company/graphify-labs"><img src="https://img.shields.io/badge/LinkedIn-Graphify%20Labs-0077B5?logo=linkedin" alt="LinkedIn"/></a>
+  <a href="https://github.com/sponsors/Vit129"><img src="https://img.shields.io/badge/sponsor-Vit129-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
 </p>
 
 **Eine KI-Coding-Assistent-Skill.** Tippe `/graphify` in Claude Code, Codex, OpenCode, Cursor, Gemini CLI, GitHub Copilot CLI, VS Code Copilot Chat, Aider, OpenClaw, Factory Droid, Trae, Hermes, Kiro oder Google Antigravity — es liest deine Dateien, baut einen Wissensgraphen und gibt dir Struktur zurück, die du vorher nicht sehen konntest. Verstehe eine Codebasis schneller. Finde das „Warum" hinter Architekturentscheidungen.
@@ -65,7 +63,7 @@ pipx install graphifyy && graphify install
 pip install graphifyy && graphify install
 ```
 
-> **Offizielles Paket:** Das PyPI-Paket heißt `graphifyy` (installieren mit `pip install graphifyy`). Andere Pakete mit Namen `graphify*` auf PyPI sind nicht mit diesem Projekt verbunden. Das einzige offizielle Repository ist [safishamsi/graphify](https://github.com/safishamsi/graphify). CLI und Skill-Befehl heißen weiterhin `graphify`.
+> **Offizielles Paket:** Das PyPI-Paket heißt `graphifyy` (installieren mit `pip install graphifyy`). Andere Pakete mit Namen `graphify*` auf PyPI sind nicht mit diesem Projekt verbunden. Das einzige offizielle Repository ist [Vit129/graphify](https://github.com/Vit129/graphify). CLI und Skill-Befehl heißen weiterhin `graphify`.
 
 > **`graphify: command not found`?** Verwende `uv tool install graphifyy` (empfohlen) oder `pipx install graphifyy` — beide platzieren die CLI an einem verwalteten Ort, der automatisch im PATH ist. Mit einfachem `pip` musst du möglicherweise `~/.local/bin` (Linux) oder `~/Library/Python/3.x/bin` (Mac) zum PATH hinzufügen, oder `python -m graphify` verwenden.
 
@@ -169,12 +167,6 @@ graphify sendet Dateiinhalte an die Modell-API deines KI-Assistenten für semant
 
 NetworkX + Leiden (graspologic) + tree-sitter + vis.js. Semantische Extraktion via Claude, GPT-4 oder welches Modell deine Plattform verwendet. Video-Transkription via faster-whisper + yt-dlp (optional).
 
-## Auf graphify aufgebaut — Penpax
-
-[**Penpax**](https://safishamsi.github.io/penpax.ai) ist die Enterprise-Schicht über graphify. Wo graphify einen Ordner mit Dateien in einen Wissensgraphen verwandelt, wendet Penpax denselben Graphen auf dein gesamtes Arbeitsleben an — kontinuierlich.
-
-**Kostenlose Testversion startet bald.** [Auf die Warteliste setzen →](https://safishamsi.github.io/penpax.ai)
-
 ## Star-Verlauf
 
-[![Star History Chart](https://api.star-history.com/svg?repos=safishamsi/graphify&type=Date)](https://star-history.com/#safishamsi/graphify&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Vit129/graphify&type=Date)](https://star-history.com/#Vit129/graphify&Date)

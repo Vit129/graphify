@@ -1,5 +1,7 @@
+> **Fork notice:** this is a personal fork of [safishamsi/graphify](https://github.com/safishamsi/graphify) maintained independently by [Vit129](https://github.com/Vit129), not affiliated with the original project, Graphify Labs, or Penpax. Translations below may lag the [English README](../../README.md).
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/safishamsi/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
+  <img src="https://raw.githubusercontent.com/Vit129/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
 </p>
 
 <p align="center">
@@ -7,10 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/safishamsi/graphify/actions/workflows/ci.yml"><img src="https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v4" alt="CI"/></a>
-  <a href="https://pypi.org/project/graphifyy/"><img src="https://img.shields.io/pypi/v/graphifyy" alt="PyPI"/></a>
-  <a href="https://pepy.tech/project/graphifyy"><img src="https://static.pepy.tech/badge/graphifyy" alt="Downloads"/></a>
-  <a href="https://github.com/sponsors/safishamsi"><img src="https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
+  <a href="https://github.com/sponsors/Vit129"><img src="https://img.shields.io/badge/sponsor-Vit129-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
 </p>
 
 **Kasanayan para sa mga AI coding assistant.** I-type ang `/graphify` sa Claude Code, Codex, OpenCode, Cursor, Gemini CLI, GitHub Copilot CLI, VS Code Copilot Chat, Aider, OpenClaw, Factory Droid, Trae, Hermes, Kiro, o Google Antigravity — binabasa nito ang iyong mga file, gumagawa ng knowledge graph, at ibinabalik sa iyo ang mga istrukturang hindi mo alam na nandoon pala. Maunawaan ang codebase nang mas mabilis. Tuklasin ang "bakit" sa likod ng mga desisyon sa arkitektura.
@@ -49,7 +48,7 @@ pipx install graphifyy && graphify install
 pip install graphifyy && graphify install
 ```
 
-> **Opisyal na package:** Ang PyPI package ay pinangalanang `graphifyy`. Ang tanging opisyal na repository ay [safishamsi/graphify](https://github.com/safishamsi/graphify).
+> **Opisyal na package:** Ang PyPI package ay pinangalanang `graphifyy`. Ang tanging opisyal na repository ay [Vit129/graphify](https://github.com/Vit129/graphify).
 
 ## Paggamit
 
@@ -70,8 +69,4 @@ graphify update ./src
 
 Ang mga code file ay prinoseso nang lokal sa pamamagitan ng tree-sitter AST. Ang mga video ay tina-transcribe nang lokal gamit ang faster-whisper. Walang telemetry.
 
-## Binuo sa ibabaw ng graphify — Penpax
-
-Ang [**Penpax**](https://graphifylabs.ai) ay ang enterprise layer sa ibabaw ng graphify. **Malapit nang magkaroon ng libreng trial.** [Sumali sa waitlist →](https://graphifylabs.ai)
-
-[![Star History Chart](https://api.star-history.com/svg?repos=safishamsi/graphify&type=Date)](https://star-history.com/#safishamsi/graphify&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Vit129/graphify&type=Date)](https://star-history.com/#Vit129/graphify&Date)

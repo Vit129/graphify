@@ -1,5 +1,7 @@
+> **Fork notice:** this is a personal fork of [safishamsi/graphify](https://github.com/safishamsi/graphify) maintained independently by [Vit129](https://github.com/Vit129), not affiliated with the original project, Graphify Labs, or Penpax. Translations below may lag the [English README](../../README.md).
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/safishamsi/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
+  <img src="https://raw.githubusercontent.com/Vit129/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
 </p>
 
 <p align="center">
@@ -7,11 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/safishamsi/graphify/actions/workflows/ci.yml"><img src="https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v4" alt="CI"/></a>
-  <a href="https://pypi.org/project/graphifyy/"><img src="https://img.shields.io/pypi/v/graphifyy" alt="PyPI"/></a>
-  <a href="https://pepy.tech/project/graphifyy"><img src="https://static.pepy.tech/badge/graphifyy" alt="Downloads"/></a>
-  <a href="https://github.com/sponsors/safishamsi"><img src="https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
-  <a href="https://www.linkedin.com/company/graphify-labs"><img src="https://img.shields.io/badge/LinkedIn-Graphify%20Labs-0077B5?logo=linkedin" alt="LinkedIn"/></a>
+  <a href="https://github.com/sponsors/Vit129"><img src="https://img.shields.io/badge/sponsor-Vit129-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
 </p>
 
 <div dir="rtl">
@@ -79,7 +77,7 @@ pip install graphifyy && graphify install
 
 <div dir="rtl">
 
-> **الحزمة الرسمية:** اسم حزمة PyPI هو `graphifyy` (تثبيت بـ `pip install graphifyy`). الحزم الأخرى المسماة `graphify*` على PyPI ليست تابعة لهذا المشروع. المستودع الرسمي الوحيد هو [safishamsi/graphify](https://github.com/safishamsi/graphify).
+> **الحزمة الرسمية:** اسم حزمة PyPI هو `graphifyy` (تثبيت بـ `pip install graphifyy`). الحزم الأخرى المسماة `graphify*` على PyPI ليست تابعة لهذا المشروع. المستودع الرسمي الوحيد هو [Vit129/graphify](https://github.com/Vit129/graphify).
 
 ### دعم المنصات
 
@@ -164,14 +162,8 @@ graphify watch ./src               # تحديث تلقائي للرسم البي
 
 NetworkX + Leiden (graspologic) + tree-sitter + vis.js. استخراج دلالي عبر Claude أو GPT-4 أو نموذج منصتك. نسخ الفيديو عبر faster-whisper + yt-dlp (اختياري).
 
-## مبني على graphify — Penpax
-
-[**Penpax**](https://safishamsi.github.io/penpax.ai) هو الطبقة المؤسسية فوق graphify. حيث يحوّل graphify مجلداً من الملفات إلى رسم بياني للمعرفة، يطبّق Penpax نفس الرسم البياني على حياتك المهنية بأكملها — باستمرار.
-
-**نسخة تجريبية مجانية قريباً.** [انضم إلى قائمة الانتظار →](https://safishamsi.github.io/penpax.ai)
-
 ## سجل النجوم
 
 </div>
 
-[![Star History Chart](https://api.star-history.com/svg?repos=safishamsi/graphify&type=Date)](https://star-history.com/#safishamsi/graphify&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Vit129/graphify&type=Date)](https://star-history.com/#Vit129/graphify&Date)

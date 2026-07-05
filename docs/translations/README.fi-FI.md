@@ -1,5 +1,7 @@
+> **Fork notice:** this is a personal fork of [safishamsi/graphify](https://github.com/safishamsi/graphify) maintained independently by [Vit129](https://github.com/Vit129), not affiliated with the original project, Graphify Labs, or Penpax. Translations below may lag the [English README](../../README.md).
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/safishamsi/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
+  <img src="https://raw.githubusercontent.com/Vit129/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
 </p>
 
 <p align="center">
@@ -7,10 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/safishamsi/graphify/actions/workflows/ci.yml"><img src="https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v4" alt="CI"/></a>
-  <a href="https://pypi.org/project/graphifyy/"><img src="https://img.shields.io/pypi/v/graphifyy" alt="PyPI"/></a>
-  <a href="https://pepy.tech/project/graphifyy"><img src="https://static.pepy.tech/badge/graphifyy" alt="Downloads"/></a>
-  <a href="https://github.com/sponsors/safishamsi"><img src="https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
+  <a href="https://github.com/sponsors/Vit129"><img src="https://img.shields.io/badge/sponsor-Vit129-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
 </p>
 
 **Taito tekoälykoodiavustajille.** Kirjoita `/graphify` Claude Codessa, Codexissa, OpenCodessa, Cursorissa, Gemini CLI:ssä, GitHub Copilot CLI:ssä, VS Code Copilot Chatissa, Aiderissa, OpenClawissa, Factory Droidissa, Traessa, Hermeksessä, Kirossa tai Google Antigravityssa — se lukee tiedostosi, rakentaa tietograafin ja palauttaa sinulle rakenteen, jota et tiennyt olevan. Ymmärrä koodikanta nopeammin. Löydä arkkitehtuuripäätösten taustalla oleva "miksi".
@@ -49,7 +48,7 @@ pipx install graphifyy && graphify install
 pip install graphifyy && graphify install
 ```
 
-> **Virallinen paketti:** PyPI-paketti on nimeltään `graphifyy`. Ainoa virallinen repositorio on [safishamsi/graphify](https://github.com/safishamsi/graphify).
+> **Virallinen paketti:** PyPI-paketti on nimeltään `graphifyy`. Ainoa virallinen repositorio on [Vit129/graphify](https://github.com/Vit129/graphify).
 
 ## Käyttö
 
@@ -70,8 +69,4 @@ graphify update ./src
 
 Kooditiedostot käsitellään paikallisesti tree-sitter AST:n kautta. Videot litteroidaan paikallisesti faster-whisperillä. Ei telemetriaa.
 
-## Rakennettu graphifyn päälle — Penpax
-
-[**Penpax**](https://safishamsi.github.io/penpax.ai) on graphifyn päälle rakennettu yritystaso. **Ilmainen kokeilujakso tulossa pian.** [Liity odotuslistalle →](https://safishamsi.github.io/penpax.ai)
-
-[![Star History Chart](https://api.star-history.com/svg?repos=safishamsi/graphify&type=Date)](https://star-history.com/#safishamsi/graphify&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Vit129/graphify&type=Date)](https://star-history.com/#Vit129/graphify&Date)

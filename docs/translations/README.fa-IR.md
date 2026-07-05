@@ -1,5 +1,7 @@
+> **Fork notice:** this is a personal fork of [safishamsi/graphify](https://github.com/safishamsi/graphify) maintained independently by [Vit129](https://github.com/Vit129), not affiliated with the original project, Graphify Labs, or Penpax. Translations below may lag the [English README](../../README.md).
+
 <p align="center">
-  <a href="https://graphifylabs.ai"><img src="https://raw.githubusercontent.com/safishamsi/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/></a>
+  <a href="https://github.com/Vit129/graphify"><img src="https://raw.githubusercontent.com/Vit129/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/></a>
 </p>
 
 <p align="center">
@@ -7,13 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.ycombinator.com/companies/graphify"><img src="https://img.shields.io/badge/Y%20Combinator-S26-F0652F?style=flat&logo=ycombinator&logoColor=white" alt="YC S26"/></a>
-  <a href="https://github.com/safishamsi/graphify/actions/workflows/ci.yml"><img src="https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v8" alt="CI"/></a>
-  <a href="https://pypi.org/project/graphifyy/"><img src="https://img.shields.io/pypi/v/graphifyy" alt="PyPI"/></a>
-  <a href="https://pepy.tech/project/graphifyy"><img src="https://img.shields.io/pepy/dt/graphifyy?color=blue&label=downloads" alt="Downloads"/></a>
-  <a href="https://github.com/sponsors/safishamsi"><img src="https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
-  <a href="https://www.linkedin.com/company/graphify-labs"><img src="https://img.shields.io/badge/LinkedIn-Graphify%20Labs-0077B5?logo=linkedin" alt="LinkedIn"/></a>
-  <a href="https://x.com/graphifyy"><img src="https://img.shields.io/badge/X-graphifyy-000000?logo=x&logoColor=white" alt="X"/></a>
+  <a href="https://github.com/sponsors/Vit129"><img src="https://img.shields.io/badge/sponsor-Vit129-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
 </p>
 
 <div dir="rtl">
@@ -509,14 +505,6 @@ graphify --version
 
 ---
 
-## ساخته‌شده روی graphify — Penpax
-
-[**Penpax**](https://graphifylabs.ai) لایه همیشه‌روشن ساخته‌شده روی graphify است — همان رویکرد گراف را بر کل زندگی کاری شما اعمال می‌کند: جلسات، تاریخچه مرورگر، ایمیل‌ها، فایل‌ها و کد، به‌صورت مداوم در پس‌زمینه به‌روزرسانی می‌شود.
-
-ساخته‌شده برای کسانی که کارشان در صدها مکالمه و سند پراکنده است. بدون ابر، کاملاً روی دستگاه.
-
-**آزمایش رایگان به‌زودی راه‌اندازی می‌شود.** [به لیست انتظار بپیوندید ←](https://graphifylabs.ai)
-
 ---
 
 </div>
@@ -533,7 +521,7 @@ graphify --version
 </div>
 
 ```bash
-git clone https://github.com/safishamsi/graphify.git
+git clone https://github.com/Vit129/graphify.git
 cd graphify
 git checkout v8                        # شاخه توسعه فعال
 
