@@ -12,7 +12,7 @@
   </a>
 </p>
 
-> This is a personal/team fork of [safishamsi/graphify](https://github.com/safishamsi/graphify), maintained independently by [Vit129](https://github.com/Vit129). Not affiliated with the original project, Graphify Labs, or Penpax. It's a hard fork, not a PR queue back upstream — see [What's different from upstream](#whats-different-from-upstream). Not published to PyPI; install from source (see [Install](#install)).
+> This is a personal fork of [safishamsi/graphify](https://github.com/safishamsi/graphify), maintained independently by [Vit129](https://github.com/Vit129). Not affiliated with the original project, Graphify Labs, or Penpax (the original author's own commercial product built on top of graphify). It's a hard fork, not a PR queue back upstream — see [What's different from upstream](#whats-different-from-upstream). Not published to PyPI; install from source (see [Install](#install)).
 
 Type `/graphify` in your AI coding assistant and it maps your entire project — code, docs, PDFs, images, videos — into a knowledge graph you can query instead of grepping through files.
 
