@@ -121,6 +121,18 @@ def test_extract_succeeds_when_at_least_one_chunk_completes(
     assert (out_dir / "graphify-out" / "graph.json").exists(), (
         "graph.json must be written on the happy path"
     )
+    # Regression guard: this path used to import a nonexistent
+    # graphify.watch._suggest_questions (the real function is
+    # graphify.analyze.suggest_questions), so report generation silently
+    # failed with "warning: failed to generate report: cannot import name
+    # '_suggest_questions'" and GRAPH_REPORT.md/GRAPH_SUMMARY.md were never
+    # written, even though the run otherwise looked successful.
+    assert (out_dir / "graphify-out" / "GRAPH_REPORT.md").exists(), (
+        "GRAPH_REPORT.md must be written on the happy path"
+    )
+    assert (out_dir / "graphify-out" / "GRAPH_SUMMARY.md").exists(), (
+        "GRAPH_SUMMARY.md must be written on the happy path"
+    )
 
 
 def test_extract_succeeds_with_graphify_no_llm_despite_zero_chunks(
