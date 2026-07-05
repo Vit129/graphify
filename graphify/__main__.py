@@ -5045,8 +5045,16 @@ def main() -> None:
 
                 # on_chunk_done only fires after a chunk succeeds. If fresh
                 # semantic extraction was requested and no chunks completed,
-                # fail instead of writing an AST-only graph with exit 0.
-                if uncached_paths and _chunk_stats["succeeded"] == 0:
+                # fail instead of writing an AST-only graph with exit 0 —
+                # unless GRAPHIFY_NO_LLM intentionally skipped extraction
+                # entirely (extract_corpus_parallel returns before any chunk
+                # runs in that case, so 0 succeeded is the expected outcome,
+                # not a failure; llm.py already printed its own notice).
+                if (
+                    uncached_paths
+                    and _chunk_stats["succeeded"] == 0
+                    and not os.environ.get("GRAPHIFY_NO_LLM")
+                ):
                     print(
                         f"[graphify extract] error: all semantic chunks failed "
                         f"for backend '{backend}' ({len(uncached_paths)} uncached files) - "

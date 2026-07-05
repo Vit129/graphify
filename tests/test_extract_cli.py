@@ -123,6 +123,54 @@ def test_extract_succeeds_when_at_least_one_chunk_completes(
     )
 
 
+def test_extract_succeeds_with_graphify_no_llm_despite_zero_chunks(
+    monkeypatch, tmp_path
+):
+    """GRAPHIFY_NO_LLM=1 makes extract_corpus_parallel return an empty result
+    without ever calling on_chunk_done (llm.py returns before touching any
+    chunk) — indistinguishable, by chunk count alone, from every chunk
+    genuinely failing. The all-failed guard must not fire in this case: the
+    skip was intentional (llm.py already printed its own notice), and the
+    real bug this guards used to abort the whole run — discarding a
+    successful AST extraction — instead of writing the promised
+    code-only graph.
+    """
+    corpus = _make_corpus(tmp_path)
+    out_dir = tmp_path / "out"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-fake-key")
+    monkeypatch.setenv("GRAPHIFY_NO_LLM", "1")
+
+    def _no_llm_empty_result(paths, **kwargs):
+        # Mirrors llm.py's real early return: no on_chunk_done call, empty merge.
+        return {
+            "nodes": [], "edges": [], "hyperedges": [],
+            "input_tokens": 0, "output_tokens": 0,
+        }
+
+    monkeypatch.setattr(
+        "graphify.llm.extract_corpus_parallel", _no_llm_empty_result
+    )
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(
+        mainmod.sys,
+        "argv",
+        ["graphify", "extract", str(corpus), "--backend", "claude",
+         "--out", str(out_dir)],
+    )
+
+    try:
+        mainmod.main()
+    except SystemExit as exc:
+        assert exc.code in (None, 0), (
+            f"GRAPHIFY_NO_LLM should not abort the run, got exit code {exc.code}"
+        )
+
+    assert (out_dir / "graphify-out" / "graph.json").exists(), (
+        "code-only graph.json must still be written when GRAPHIFY_NO_LLM skips "
+        "semantic extraction"
+    )
+
+
 def _code_only_corpus(tmp_path):
     """A corpus with only code — no docs/papers/images."""
     (tmp_path / "auth.py").write_text(
