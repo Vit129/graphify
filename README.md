@@ -51,13 +51,11 @@ This fork started from [safishamsi/graphify](https://github.com/safishamsi/graph
 - **Extra analysis & UX**: `god_nodes(by="pagerank")`, `cross_cutting_nodes()`, `unreachable_functions()`, `GRAPH_SUMMARY.md`, a 3D/lens `graph.html` viewer, dated-backup pruning, Playwright/Jest `test()`/`describe()` node synthesis.
 - **CLI surface** is otherwise the same, not larger — upstream's `v8`-derived tree already ships the same `prs`, `reflect`, `global`, `merge-graphs`, `save-result`, and all 23 per-platform install subcommands.
 
-**Upstream-only, not carried by this fork (some fixed here, most still open — see the audit doc for the full list with evidence):**
+**Upstream-only, not carried by this fork (some fixed here, most still open):**
 - The entire **Obsidian/Canvas export** pipeline (`graphify export obsidian`) — this fork doesn't have it at all, by omission, not oversight.
 - Several extraction-correctness fixes not yet pulled in: Ruby `module`/`Struct.new`/`Class.new` container nodes, Kotlin interface-delegation edges, Apex multi-interface `extends`, TS `namespace`/generator-function/import-equals nodes, `.mts`/`.cts` recognition.
 - Robustness fixes not yet pulled in: deterministic parallel-merge ordering, Windows long-path I/O, Office `--update` re-conversion, cached word-count detection.
 - **Already fixed here**, previously upstream-only: C# receiver-typed member-call resolution (#1609), two JS/TS cross-file phantom-edge bugs (#1638, #1659), and a symlink-containment security gap in file collection.
-
-See `agent-memory/knowledge/architecture/upstream-comparison-2026-07-05.md` for the full audit — methodology, every file's diff, commit-level provenance evidence, and the complete list of what's still open.
 
 ---
 
