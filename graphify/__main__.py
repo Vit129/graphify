@@ -4827,6 +4827,7 @@ def main() -> None:
             deleted_files = []
             unchanged_total = 0
             files_by_type = {}
+            total_words = 0
         elif incremental_mode:
             print(f"[graphify extract] incremental scan of {target}")
             detection = _detect_incremental(
@@ -4836,6 +4837,7 @@ def main() -> None:
                 extra_excludes=cli_excludes or None,
             )
             files_by_type = detection.get("files", {})
+            total_words = detection.get("total_words", 0)
             new_by_type = detection.get("new_files", {})
             code_files = [Path(p) for p in new_by_type.get("code", [])]
             doc_files = [Path(p) for p in new_by_type.get("document", [])]
@@ -4847,6 +4849,7 @@ def main() -> None:
             print(f"[graphify extract] scanning {target}")
             detection = _detect(target, google_workspace=google_workspace or None, extra_excludes=cli_excludes or None)
             files_by_type = detection.get("files", {})
+            total_words = detection.get("total_words", 0)
             code_files = [Path(p) for p in files_by_type.get("code", [])]
             doc_files = [Path(p) for p in files_by_type.get("document", [])]
             paper_files = [Path(p) for p in files_by_type.get("paper", [])]
@@ -5045,8 +5048,16 @@ def main() -> None:
 
                 # on_chunk_done only fires after a chunk succeeds. If fresh
                 # semantic extraction was requested and no chunks completed,
-                # fail instead of writing an AST-only graph with exit 0.
-                if uncached_paths and _chunk_stats["succeeded"] == 0:
+                # fail instead of writing an AST-only graph with exit 0 —
+                # unless GRAPHIFY_NO_LLM intentionally skipped extraction
+                # entirely (extract_corpus_parallel returns before any chunk
+                # runs in that case, so 0 succeeded is the expected outcome,
+                # not a failure; llm.py already printed its own notice).
+                if (
+                    uncached_paths
+                    and _chunk_stats["succeeded"] == 0
+                    and not os.environ.get("GRAPHIFY_NO_LLM")
+                ):
                     print(
                         f"[graphify extract] error: all semantic chunks failed "
                         f"for backend '{backend}' ({len(uncached_paths)} uncached files) - "
@@ -5356,7 +5367,8 @@ def main() -> None:
                 if missing:
                     labels.update(label_communities_by_hub(G, missing))
                 
-                from graphify.watch import _report_root_label, _git_head, _suggest_questions
+                from graphify.watch import _report_root_label, _git_head
+                from graphify.analyze import suggest_questions as _suggest_questions
                 report_root = _report_root_label(target)
                 questions = _suggest_questions(G, communities, labels)
                 report = _generate(
