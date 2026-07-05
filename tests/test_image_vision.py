@@ -78,6 +78,34 @@ def test_partition_splits_raster_from_text(tmp_path):
     assert set(text_files) == {doc, svg}
 
 
+def test_read_files_skips_out_of_root_symlink(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text("token = 'outside'")
+    link = root / "secret_link.py"
+    link.symlink_to(outside / "secret.py")
+
+    out = llm._read_files([link], root)
+
+    assert "outside" not in out
+
+
+def test_build_image_refs_skips_out_of_root_symlink(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.png").write_bytes(_PNG_BYTES)
+    link = root / "secret_link.png"
+    link.symlink_to(outside / "secret.png")
+
+    refs = llm._build_image_refs([link], root)
+
+    assert refs == []
+
+
 def test_build_image_refs_sets_rel_media_and_bytes(tmp_path):
     img, _, _ = _make_corpus(tmp_path)
     (ref,) = llm._build_image_refs([img], tmp_path)
