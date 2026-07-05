@@ -363,6 +363,92 @@ git commits. Not confirmed whether this code path is actually wired up to
 run anywhere (`grep`-only check, not traced), just flagged as a loose end
 worth a look if `graphify --version` nags about updates unexpectedly.
 
+## Whole-repo sweep — extractors/, skills/, tests/, tools/, docs/, config, CI
+
+Everything above only covered `graphify/*.py` top-level modules. A follow-up
+pass diffed content (not just filenames) across every other directory.
+
+**`graphify/extractors/`** — exists on both sides (an ongoing migration out of
+monolithic `extract.py`, tracked in each side's own `MIGRATION.md`). Fork-only:
+`apex.py` (moved here from inline), `css.py`, `fish.py`, `gherkin.py`,
+`html.py`, `robot.py`, `toml_.py`, `yaml_.py`. Byte-identical both sides:
+`blade.py`, `csharp.py`, `elixir.py`, `razor.py`, `zig.py`. **New finding:
+`base.py` differs, and upstream is ahead** — its `_file_stem()` has an extra
+guard (#1618) against a `source_file` that relativizes to an empty name
+(raises `ValueError` during build); the fork's copy lacks it. Fortran,
+Pascal, Delphi-forms, and DreamMaker extractors live inline in `extract.py`
+on *both* sides, not in this folder — the 54-vs-36 grammar count difference
+comes entirely from `extract.py`'s inline dispatch table.
+
+**`graphify/skills/`** — 112 of 126 files byte-identical. The 14 that differ
+are the same one change repeated per platform: every
+`skills/<platform>/references/query.md` on the fork drops the explicit
+`encoding='utf-8'` argument from embedded `Path(...).read_text()`/
+`write_text()` snippets that upstream has — a real (if minor) portability
+regression, and notably a fix that WAS part of the 2026-07-02 merge
+(upstream's own #1619) but appears to have been reverted afterward.
+
+**Top-level `skill-*.md` / `skill.md` (16 files)** — all 16 differ from
+upstream, all for the same reason: the Obsidian-vault export step
+(`--obsidian`/`--obsidian-dir` flags, the "Step 6 — Generate Obsidian vault"
+section, the outputs line) is removed on the fork side, consistent with the
+fork simply not carrying that feature end to end. `command-kilo.md` is
+byte-identical. **New finding, a real currently-broken bug:
+`skill-windows.md` still declares frontmatter `name: graphify-windows`**
+instead of `name: graphify` — Claude Code requires the skill folder name to
+equal the frontmatter name, so this breaks skill discovery on Windows.
+Upstream already fixed this in its own Unreleased section (#1635, "thanks
+@ray8875") — the fork hasn't pulled it in.
+
+**`tests/`** — 113 shared filenames, 91 byte-identical, 22 differ. Each
+difference traces back to a gap or feature already covered above (Obsidian
+export tests upstream-only; `query.py`/hub-avoidance/`--path` tests
+fork-only; Kotlin/Apex/Ruby extraction tests upstream-only; deterministic
+merge-order test upstream-only). One new item: **`test_image_vision.py`
+shows upstream added symlink-containment checks for image reads
+(`_read_files`/`_build_image_synonym_reference` and friends) that this
+fork's earlier symlink-containment fix (code/doc scanning in `extract.py`/
+`detect.py`) did not extend to — the image-vision path in `llm.py` still has
+no equivalent guard.**
+
+**`tools/`** — 172 shared files, 124 identical, 48 differ, all cascading from
+the same few root causes already named above (`platforms.toml`'s Windows
+skill-name bug, `fragments/core/core.md`'s Obsidian step, `fragments/
+references/query/default.md`'s missing `encoding='utf-8'`, `gen.py`'s
+mirrored sanctioned-edit markers). No new findings beyond what's already
+listed.
+
+**`docs/`** — 37 shared files, 36 identical. Only `how-it-works.md` differs
+(the fork's new "Search & query algorithms" section, added in a follow-up
+commit this session, describing `query.py`/`dedup.py` — upstream has no
+equivalent since it lacks `query.py`). Translations (`docs/translations/*`)
+match file-for-file, spot-checked identical.
+
+**Top-level config — new finding, an operational gap: no CI.** Upstream has
+`.github/workflows/ci.yml` (skillgen-check, full test suite, a security job)
+running on every push/PR. **This fork has only `release-graph.yml`**
+(identical both sides) — nothing runs the test suite automatically; every
+verification in this document was run by hand. `pyproject.toml` differs as
+expected (version/URLs/name, plus the fork's extra tree-sitter deps for its
+7 extractors and `pagerank`/`embeddings` extras for `query.py`).
+`Dockerfile`, `.pre-commit-config.yaml`, `.gitattributes`, `.gitignore`,
+`SECURITY.md` are byte-identical. `.graphifyignore` is fork-only (dogfooding).
+`ARCHITECTURE.md` differs by one line (upstream's `export.py` row mentions
+Obsidian output). `AGENTS.md` differs to reference the fork's own
+`query`/`explain`/`affected` tools in its bug-fix workflow section.
+
+### New items found in this sweep, not yet fixed
+
+1. **`skill-windows.md`'s broken frontmatter name** — breaks Claude Code
+   skill discovery on Windows right now. Upstream already fixed it (#1635).
+2. **No CI workflow** — no automated test/security run on push or PR.
+3. **Missing `encoding='utf-8'` in skill reference docs** — a portability
+   regression across every platform, previously fixed then apparently
+   reverted.
+4. **Image-vision path lacks symlink containment** — this session's
+   symlink fix covered code/doc scanning but not `llm.py`'s image reads.
+5. **`extractors/base.py` missing the #1618 crash guard.**
+
 ## Bottom line
 
 **Far less different than README used to claim, the difference runs in
