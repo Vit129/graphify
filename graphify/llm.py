@@ -503,9 +503,14 @@ def _read_files(units: "list[Path | FileSlice]", root: Path) -> str:
     **parent file path** as ``rel`` so every slice of a file shares one
     source_file and the graph isn't fragmented per-slice.
     """
+    from graphify.detect import _resolves_under_root
+
     parts: list[str] = []
     for u in units:
         p = unit_path(u)
+        if not _resolves_under_root(p, root):
+            print(f"[graphify] skipping {p}: symlink target outside corpus root", file=sys.stderr)
+            continue
         try:
             rel = str(p.relative_to(root))
         except ValueError:
@@ -610,8 +615,13 @@ def _build_image_refs(image_files: list[Path], root: Path, *, read_bytes: bool =
     downsample as needed, so there is no per-image size limit and no reason to
     load (potentially tens of MB of) bytes that would never be used.
     """
+    from graphify.detect import _resolves_under_root
+
     refs: list[_ImageRef] = []
     for p in image_files:
+        if not _resolves_under_root(p, root):
+            print(f"[graphify] skipping image {p}: symlink target outside corpus root", file=sys.stderr)
+            continue
         try:
             rel = str(p.relative_to(root))
         except ValueError:
