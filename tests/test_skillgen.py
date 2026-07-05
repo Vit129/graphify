@@ -285,9 +285,9 @@ def test_descriptions_are_unified():
 
 
 def test_windows_frontmatter_name_and_shell_and_extra():
-    """windows: graphify-windows name, powershell install, troubleshooting tail."""
+    """windows: graphify name (must match the .claude/skills/graphify/ install folder), powershell install, troubleshooting tail."""
     core, _ = _platform_artifacts("windows")
-    assert core.startswith("---\nname: graphify-windows\n")
+    assert core.startswith("---\nname: graphify\n")
     assert "```powershell" in core
     assert "function Find-GraphifyPython" in core
     assert "## Troubleshooting" in core
