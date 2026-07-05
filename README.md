@@ -49,7 +49,7 @@ This fork started from [safishamsi/graphify](https://github.com/safishamsi/graph
 - **Per-project config + `update --all`.** `graphify.toml` / `[tool.graphify]` config and the batch `update --all` command (`config.py`) are fork-only.
 - **CLI surface is not "much larger" anymore** — upstream's current `v8`-derived tree already ships the same `prs`, `reflect`, `global`, `merge-graphs`, `save-result`, and all 23 per-platform install subcommands. The fork-only CLI surface is limited to what `query.py`/`config.py` add on top.
 
-In the other direction, upstream has kept shipping real community-contributed fixes since this fork's last sync that haven't been pulled back in yet — C# receiver-typed member-call resolution, Ruby `Struct.new`/`Class.new`/`module` container nodes, Kotlin interface-delegation edges, and Apex multi-interface `extends`, among others. See `agent-memory/knowledge/architecture/upstream-comparison-2026-07-05.md` for the full verified audit (methodology, line counts, file-by-file evidence) behind every claim above.
+In the other direction, upstream has kept shipping real community-contributed fixes since this fork's last sync that haven't been pulled back in yet — C# receiver-typed member-call resolution, Ruby `Struct.new`/`Class.new`/`module` container nodes, Kotlin interface-delegation edges, and Apex multi-interface `extends`, among others.
 
 ---
 
