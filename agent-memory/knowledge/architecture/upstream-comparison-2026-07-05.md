@@ -24,6 +24,48 @@ in the 3 days since this fork's merge point. The two trees have partially
 **re-converged**, and in a few areas **upstream is now ahead of this fork**,
 not behind it.
 
+## Provenance correction — this is adoption, not convergent invention
+
+The first pass of this audit (diffing current-HEAD source only) left it
+ambiguous whether the byte-identical files were "both sides independently
+built the same thing" or "one side copied the other." Checked with
+`git log --diff-filter=A --follow` on this fork's own history — it's not
+ambiguous:
+
+- `graphify/affected.py` was added **2026-05-20** by a commit literally
+  titled `feat: add v8 affected and import-resolution support`.
+- This fork's own branch history contains repeated wholesale adoptions of
+  upstream's **`v8`** branch as this fork's main content, going back months
+  before the 2026-07-02 event this audit originally focused on:
+  `merge: replace v1/v2 history with v8 codebase as new main`,
+  `merge: adopt v8 tree as main content`,
+  `Merge remote-tracking branch 'upstream/v8' into v8`,
+  `Merge official v8 (v0.8.32) with CodeBuddy support`,
+  `Merge pull request #1071 from TheFedaikin/v8`, going back to at least
+  2026-05-15 (`Add v8 to CI branch list`).
+
+**Plain reading: `safishamsi/graphify` did a major internal rewrite on a
+branch called `v8`, and this fork has been repeatedly adopting that v8
+branch wholesale as its own main content for months** — not independently
+building equivalent code that happened to converge. `affected.py`,
+`resolver_registry.py`, `symbol_resolution.py`, and almost certainly a large
+fraction of the rest of the shared 45,419-LOC package, are upstream's own
+work, absorbed via these merges — not this fork's original engineering.
+
+The one place this audit can positively confirm original, fork-authored
+work (not absorbed from a v8 merge) is `query.py`: added by commit
+`2586f03` at **2026-07-02 16:26**, several hours *before* the final
+`merge: upstream/v8 (through their 0.9.5) into main` commit (`ea2135e`,
+2026-07-02 20:15). That merge commit's own message confirms it explicitly:
+*"upstream still had the full pre-BM25 scoring implementation (their
+serve.py never saw this session's P1 rewrite that moved everything to
+query.py) — discarded upstream's copy, kept this fork's re-export shim."*
+So the BM25/disambiguation/hub-avoidance query layer, `config.py`,
+`update_check.py`, and the 7 fork-only extractors remain a fair claim to
+"built here" — everything else claimed as a differentiator earlier in this
+doc should be read as "this fork currently has it, upstream's `v8` line
+is where it came from," not "this fork invented it."
+
 ## Quantified, as of right now
 
 | Metric | This fork | Upstream (`3140b2e`) |
@@ -180,19 +222,25 @@ worth a look if `graphify --version` nags about updates unexpectedly.
 
 ## Bottom line
 
-The two-sentence honest answer to "how different are they really":
-**far less different than README claims, and the difference runs in both
-directions.** This fork's standing, real advantage is *breadth* (7 extra
+The honest answer to "how different are they really, and whose work is
+this": **far less different than README claims, and most of what's shared
+is upstream's own code, adopted — not two teams independently converging.**
+This fork's own, verifiably-original contribution on top of that adopted
+base is narrower than README implies but real: *breadth* (7 extra
 language/config-format extractors upstream has none of) and a *genuinely
-better query/pathfinding layer* (real BM25 + combinatorial disambiguation +
-hub-avoidance vs. upstream's still-tiered heuristic scorer + single-shot
-resolution) plus value-coupling. Upstream's standing, real advantage right
-now is 3 days of *extraction-correctness* fixes (C#, Ruby, Kotlin, Apex,
-TS/JS, Windows path handling) this fork hasn't pulled back in since the last
-sync. Everything else the README calls out as a differentiator
-(`affected.py`, `resolver_registry.py`, `symbol_resolution.py`, the CLI
-command surface, "ambiguity-safe resolution" as a headline) is now either
-identical or has a materially different, narrower shape than the README
-currently describes. **README.md:42-52 should be rewritten**, and it would
-be worth pulling upstream's last 3 days of commits (C#/Ruby/Kotlin/Apex/
-TS-JS fixes) into this fork the same way the 2026-07-02 merge did.
+better query/pathfinding layer built in a single documented session*
+(real BM25 + combinatorial disambiguation + hub-avoidance vs. upstream's
+still-tiered heuristic scorer + single-shot resolution, confirmed by commit
+timestamps and the merge commit's own message), plus value-coupling.
+Upstream's standing, real advantage right now is 3 days of
+*extraction-correctness* fixes (C#, Ruby, Kotlin, Apex, TS/JS, Windows path
+handling) shipped by its real contributor community since this fork's last
+sync, that this fork hasn't pulled back in. Everything else the README
+calls out as a differentiator (`affected.py`, `resolver_registry.py`,
+`symbol_resolution.py`, the CLI command surface, "ambiguity-safe
+resolution" as a headline) is either identical because it **is** upstream's
+`v8` code, or has a materially different, narrower shape than README
+describes. **README.md:42-52 should be rewritten** to stop implying this
+fork built the shared foundation, and it would be worth pulling upstream's
+last 3 days of commits (C#/Ruby/Kotlin/Apex/TS-JS fixes) into this fork the
+same way the repeated `v8` adoptions did.
