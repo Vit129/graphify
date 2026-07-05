@@ -1,5 +1,7 @@
+> **Fork notice:** this is a personal fork of [safishamsi/graphify](https://github.com/safishamsi/graphify) maintained independently by [Vit129](https://github.com/Vit129), not affiliated with the original project, Graphify Labs, or Penpax. Translations below may lag the [English README](../../README.md).
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/safishamsi/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
+  <img src="https://raw.githubusercontent.com/Vit129/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/>
 </p>
 
 <p align="center">
@@ -7,10 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/safishamsi/graphify/actions/workflows/ci.yml"><img src="https://github.com/safishamsi/graphify/actions/workflows/ci.yml/badge.svg?branch=v4" alt="CI"/></a>
-  <a href="https://pypi.org/project/graphifyy/"><img src="https://img.shields.io/pypi/v/graphifyy" alt="PyPI"/></a>
-  <a href="https://pepy.tech/project/graphifyy"><img src="https://static.pepy.tech/badge/graphifyy" alt="Downloads"/></a>
-  <a href="https://github.com/sponsors/safishamsi"><img src="https://img.shields.io/badge/sponsor-safishamsi-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
+  <a href="https://github.com/sponsors/Vit129"><img src="https://img.shields.io/badge/sponsor-Vit129-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
 </p>
 
 **ทักษะสำหรับผู้ช่วยเขียนโค้ด AI** พิมพ์ `/graphify` ใน Claude Code, Codex, OpenCode, Cursor, Gemini CLI, GitHub Copilot CLI, VS Code Copilot Chat, Aider, OpenClaw, Factory Droid, Trae, Hermes, Kiro หรือ Google Antigravity — มันจะอ่านไฟล์ของคุณ สร้างกราฟความรู้ และส่งคืนโครงสร้างที่คุณไม่รู้ว่ามีอยู่ ทำความเข้าใจ codebase ได้เร็วขึ้น ค้นหา "ทำไม" เบื้องหลังการตัดสินใจด้านสถาปัตยกรรม
@@ -49,7 +48,7 @@ pipx install graphifyy && graphify install
 pip install graphifyy && graphify install
 ```
 
-> **แพ็กเกจอย่างเป็นทางการ:** แพ็กเกจ PyPI ชื่อ `graphifyy` repository อย่างเป็นทางการเดียวคือ [safishamsi/graphify](https://github.com/safishamsi/graphify)
+> **แพ็กเกจอย่างเป็นทางการ:** แพ็กเกจ PyPI ชื่อ `graphifyy` repository อย่างเป็นทางการเดียวคือ [Vit129/graphify](https://github.com/Vit129/graphify)
 
 ## การใช้งาน
 
@@ -70,8 +69,4 @@ graphify update ./src
 
 ไฟล์โค้ดถูกประมวลผลในเครื่องผ่าน tree-sitter AST วิดีโอถูกถอดเสียงในเครื่องด้วย faster-whisper ไม่มีการส่งข้อมูลวัดผล
 
-## สร้างบน graphify — Penpax
-
-[**Penpax**](https://safishamsi.github.io/penpax.ai) คือชั้น enterprise เหนือ graphify **ทดลองใช้ฟรีเร็วๆ นี้** [เข้าร่วมรายชื่อรอ →](https://safishamsi.github.io/penpax.ai)
-
-[![Star History Chart](https://api.star-history.com/svg?repos=safishamsi/graphify&type=Date)](https://star-history.com/#safishamsi/graphify&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Vit129/graphify&type=Date)](https://star-history.com/#Vit129/graphify&Date)
