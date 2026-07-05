@@ -6,37 +6,35 @@ Method: shallow-cloned `https://github.com/safishamsi/graphify` (HEAD `3140b2e`,
 2026-07-05, `pyproject.toml` version `0.9.6`) into a scratch dir and diffed it
 directly against this repo's `graphify/` package (local version `0.16.0`,
 1042 local commits) — not a repeat of README's or CHANGELOG's existing claims,
-a fresh read of both trees' actual current source.
+a fresh read of both trees' actual current source, file by file, function by
+function on every file with a nonzero diff.
 
 ## Headline finding
 
-**README.md's "What's different from upstream" section (lines 42-52) is
-significantly stale.** It was accurate at some point in this fork's history,
-but on 2026-07-02 this fork did a large **merge FROM upstream**
-(CHANGELOG.md:86, `## 0.9.5 (2026-07-02, merged from upstream)` — ~15 items,
-all crediting real external contributors: @joanfgarcia, @jerryliurui,
-@Synvoya, @sheik-hiiobd, etc.), which pulled a large fraction of upstream's
-own codebase in wholesale. `safishamsi/graphify` is not a stale/abandoned
-project the fork left behind — it's an actively maintained, real
-community-driven OSS project (dozens of numbered issues, distinct named
-contributors, commits as recent as today, 2026-07-05) that has kept moving
-in the 3 days since this fork's merge point. The two trees have partially
-**re-converged**, and in a few areas **upstream is now ahead of this fork**,
-not behind it.
+**README.md's "What's different from upstream" section (before this audit's
+rewrite) was significantly stale.** It was accurate at some point in this
+fork's history, but on 2026-07-02 this fork did a large **merge FROM
+upstream** (CHANGELOG.md:86, `## 0.9.5 (2026-07-02, merged from upstream)` —
+~15 items, all crediting real external contributors: @joanfgarcia,
+@jerryliurui, @Synvoya, @sheik-hiiobd, etc.), which pulled a large fraction
+of upstream's own codebase in wholesale. `safishamsi/graphify` is not a
+stale/abandoned project the fork left behind — it's an actively maintained,
+real community-driven OSS project (dozens of numbered issues, distinct
+named contributors, commits as recent as today, 2026-07-05) that has kept
+moving in the 3 days since this fork's merge point. The two trees have
+partially **re-converged**, and in several areas — including one
+security-relevant one — **upstream is now ahead of this fork**, not behind
+it.
 
 ## Provenance correction — this is adoption, not convergent invention
 
-The first pass of this audit (diffing current-HEAD source only) left it
-ambiguous whether the byte-identical files were "both sides independently
-built the same thing" or "one side copied the other." Checked with
-`git log --diff-filter=A --follow` on this fork's own history — it's not
-ambiguous:
+`git log --diff-filter=A --follow` on this fork's own history removes any
+ambiguity about who wrote the shared foundation:
 
 - `graphify/affected.py` was added **2026-05-20** by a commit literally
   titled `feat: add v8 affected and import-resolution support`.
 - This fork's own branch history contains repeated wholesale adoptions of
-  upstream's **`v8`** branch as this fork's main content, going back months
-  before the 2026-07-02 event this audit originally focused on:
+  upstream's **`v8`** branch as this fork's main content, going back months:
   `merge: replace v1/v2 history with v8 codebase as new main`,
   `merge: adopt v8 tree as main content`,
   `Merge remote-tracking branch 'upstream/v8' into v8`,
@@ -45,26 +43,19 @@ ambiguous:
   2026-05-15 (`Add v8 to CI branch list`).
 
 **Plain reading: `safishamsi/graphify` did a major internal rewrite on a
-branch called `v8`, and this fork has been repeatedly adopting that v8
-branch wholesale as its own main content for months** — not independently
-building equivalent code that happened to converge. `affected.py`,
-`resolver_registry.py`, `symbol_resolution.py`, and almost certainly a large
-fraction of the rest of the shared 45,419-LOC package, are upstream's own
-work, absorbed via these merges — not this fork's original engineering.
+branch called `v8`, and this fork has repeatedly adopted that v8 branch
+wholesale as its own main content for months** — not independently built
+equivalent code that happened to converge. `affected.py`,
+`resolver_registry.py`, `symbol_resolution.py`, and most of the rest of the
+shared package are upstream's own work, absorbed via these merges.
 
 The one place this audit can positively confirm original, fork-authored
 work (not absorbed from a v8 merge) is `query.py`: added by commit
 `2586f03` at **2026-07-02 16:26**, several hours *before* the final
 `merge: upstream/v8 (through their 0.9.5) into main` commit (`ea2135e`,
-2026-07-02 20:15). That merge commit's own message confirms it explicitly:
-*"upstream still had the full pre-BM25 scoring implementation (their
-serve.py never saw this session's P1 rewrite that moved everything to
-query.py) — discarded upstream's copy, kept this fork's re-export shim."*
-So the BM25/disambiguation/hub-avoidance query layer, `config.py`,
-`update_check.py`, and the 7 fork-only extractors remain a fair claim to
-"built here" — everything else claimed as a differentiator earlier in this
-doc should be read as "this fork currently has it, upstream's `v8` line
-is where it came from," not "this fork invented it."
+2026-07-02 20:15). That merge commit's own message confirms it: *"upstream
+still had the full pre-BM25 scoring implementation ... discarded upstream's
+copy, kept this fork's re-export shim."*
 
 ## Quantified, as of right now
 
@@ -80,12 +71,12 @@ is where it came from," not "this fork invented it."
 
 **Real changed-line count on files that exist in both** (via direct `diff`,
 not an estimate): ~4,840 diff lines across 13 shared files — nowhere near
-README's claimed "~67k lines changed in `graphify/` alone." That 67k figure
-is very likely a cumulative historical stat (total added+removed across all
-~1000 commits since the original fork point), most of which the 2026-07-02
-upstream merge has since reconciled away. The real, current, standing diff
-is roughly **7,000-8,000 lines total** — ~4,840 of diff churn in shared files
-plus ~2,459 lines of genuinely fork-exclusive modules (below).
+README's old claim of "~67k lines changed in `graphify/` alone." That 67k
+figure is very likely a cumulative historical stat (total added+removed
+across ~1000 commits since the original fork point), most of which the
+2026-07-02 upstream merge has since reconciled away. The real, current,
+standing diff is roughly **7,000-8,000 lines total** — ~4,840 of diff churn
+in 13 shared files plus ~2,459 lines of genuinely fork-exclusive modules.
 
 Per-file diff size (shared files only, line-diff count):
 
@@ -104,117 +95,249 @@ Per-file diff size (shared files only, line-diff count):
    9  build.py
    2  wiki.py
    1  __init__.py
-   0  everything else (30 files, byte-identical)
+   0  everything else (30 files, byte-identical, incl.
+      symbol_resolution.py, resolver_registry.py, affected.py, reflect.py,
+      security.py, prs.py, manifest.py, paths.py, multigraph_compat.py,
+      mcp_ingest.py, scip_ingest.py, transcribe.py, tree_html.py, validate.py)
 ```
 
-30 of the 43 shared top-level modules are **byte-for-byte identical**,
-including `symbol_resolution.py`, `resolver_registry.py`, `affected.py`,
-`reflect.py`, `security.py`, `prs.py`, `manifest.py`, `paths.py`,
-`multigraph_compat.py`, `mcp_ingest.py`, `scip_ingest.py`, `transcribe.py`,
-`tree_html.py`, `validate.py`. README's claim that upstream "has no
-`affected.py`... those don't exist in its package at all" (README.md:48) is
-**false as of today** — `affected.py`, `resolver_registry.py`, and
-`symbol_resolution.py` all exist upstream, verbatim identical to this fork's
-copies.
+## File-by-file: what actually differs (not just line counts)
 
-## What's still genuinely true and fork-exclusive (verified against real upstream source)
+Read every nonzero-diff file end to end and categorized each hunk. `+` =
+upstream-only, `-` = fork-only, unless noted.
 
-1. **Language extraction breadth.** Upstream's own README table lists 36
-   tree-sitter grammars; this fork's lists 54. Confirmed by grepping for the
-   actual extractor functions in upstream's `extract.py` — `extract_css`,
-   `extract_html`, `extract_yaml`, `extract_toml`, `extract_robot`,
-   `extract_gherkin`, `extract_fish` **do not exist anywhere in upstream**,
-   not inline, not as modules. This fork's `.css/.scss/.html/.htm/.yaml/.yml
-   /.toml/.robot/.resource/.feature/.fish` support (the P2/P6/P7/P8/P9/P10
-   work logged in `feature-provenance.md`) is a real, still-standing,
-   verified gap upstream hasn't closed.
-2. **`query.py` — the BM25/disambiguation query layer — genuinely doesn't
-   exist upstream.** Upstream's `serve.py` still carries the old hand-rolled
-   tiered scorer (`_EXACT_MATCH_BONUS = 1000.0`, confirmed present at
-   `serve.py:149` upstream) rather than this fork's real BM25 scorer (which
-   now lives in `graphify/query.py`, not `serve.py`). `config.py` (per-project
-   `graphify.toml`/`pyproject.toml` config + `update --all`) and
-   `update_check.py` (self-update checker) are likewise absent upstream.
-   Combined: ~2,459 lines of fork-exclusive code across these 3 files +
-   7 extractor modules that upstream has no equivalent of at all.
-3. **Hub-avoidance in `shortest_path` — still real, but the framing needs
-   correcting.** Read both implementations side by side
-   (`serve.py:_tool_shortest_path`, both sides): upstream's version is *not*
-   the bare, naive call README implies — it already does BM25-adjacent
-   scoring via `_score_nodes` for source/target resolution, a same-node
-   guard, and a top-vs-runner-up ambiguity warning (`< 10%` gap). But it
-   still calls **raw** `nx.shortest_path(G.to_undirected(as_view=True), ...)`
-   with **no hub-degree penalty and no retry** — it will happily route
-   through a high-degree utility node and only ever tries the single
-   top-scored candidate pair. This fork's `find_path_with_disambiguation`
-   (in `query.py`, called from `serve.py`) genuinely does more: it retries
-   every near-tied candidate pair (`tried_pairs`), explicitly tracks
-   `used_hub_fallback`, and only settles for a hub-routed path as a last
-   resort with a warning. **Net: the underlying behavior difference is
-   real and confirmed, but "ambiguity-safe resolution" is not unique to this
-   fork anymore — only the combinatorial retry + hub-avoidance is.**
-4. **Opt-in value-coupling (`shares_value:<value>` edges, config-gated).**
-   Confirmed absent from upstream entirely (`value_coupling`/`shares_value`
-   grep returns zero hits in upstream's tree). Still a real, fork-only
-   feature.
-5. **CLI surface — mostly converged, not "much larger."** All 23 platform
-   install subcommands (`claude`, `codex`, `kilo`, `cursor`, `aider`, `claw`,
-   `droid`, `trae`, `trae-cn`, `hermes`, `amp`, `agents`/`skills`, `kiro`,
-   `pi`, `devin`, `antigravity`, `codebuddy`, `opencode`, `copilot`,
-   `vscode`, `gemini`, `hook`, ...) exist **identically** upstream, and so do
-   `prs`, `prs --triage`, `prs --conflicts`, `reflect`, `global add/remove/
-   list/path`, `merge-graphs`, `save-result`, `clone`. README's "much larger
-   CLI surface" bullet is **not currently accurate** — the only real CLI
-   delta left is the query-layer subcommands this fork's `query.py` adds
-   (typo/synonym-corrected retry flags) and whatever `config.py`'s
-   `update --all`/`update-all` batch command adds.
+**`export.py`** (1167 diff lines)
+- Fork-only: the full 3D/2D interactive `graph.html` viewer
+  (`switchMode`/`init3DGraph`/`update3DGraphData`, 3D-force-graph via CDN),
+  a Community/File/Dependencies "lens" toggle, and a physics/display
+  settings panel. Upstream's `to_html` ships a plain 2D vis-network view
+  only.
+- Fork-only: backup retention (`_prune_old_backups()` +
+  `GRAPHIFY_BACKUP_KEEP_DAYS`, default 14 days) — upstream's dated backup
+  dirs accumulate forever with no pruning.
+- **Upstream-only, and fork has zero equivalent: the entire Obsidian export
+  pipeline** — `to_obsidian()` (one `.md` note per node, `_COMMUNITY_*.md`
+  overview notes, Dataview queries, `.obsidian/graph.json` color groups),
+  `to_canvas()` (Obsidian Canvas grid layout), `_cap_filename` (255-byte
+  filename cap + hash suffix, upstream #1094), `_dedup_node_filenames`
+  (case-insensitive collision guard), and an ownership manifest
+  (`.graphify_obsidian_manifest.json`) so re-runs don't clobber a user's
+  vault. This is not a small gap — it's a whole export target this fork
+  doesn't have at all (confirmed: `__main__.py`'s `export` subcommand
+  whitelist has no `obsidian`/`canvas` entry, `export.py` defines neither
+  function).
 
-## What upstream now has that this fork is missing (the reverse gap — new finding, not in any existing doc)
+**`extract.py`** (1161 diff lines)
+- Fork-only extractors (7, in `graphify/extractors/`): CSS/SCSS, Fish,
+  Gherkin, TOML, YAML, HTML, Robot Framework — genuinely absent from
+  upstream, not just unimported.
+- Fork-only: Playwright/Jest `test()`/`it()`/`describe()` call synthesis —
+  each test case becomes its own queryable node. Upstream lacks this
+  entirely.
+- Fork-only: "P15 value coupling" (`_resolve_value_coupling`,
+  `shares_value:<v>` edges, opt-in `value_coupling=` flag).
+- Fork-only: `.gs` (Google Apps Script) and `.kiro.hook` recognition. Apex
+  (`.cls`/`.trigger`) exists on both sides with identical regex logic —
+  fork just moved it to `extractors/apex.py`; cosmetic only.
+- Upstream-only: `.mts`/`.cts` TypeScript extension support (dispatch
+  table, resolvers, language-family grouping).
+- Upstream-only JS/TS: generator functions registered as callable nodes;
+  `namespace`/`module`/`declare module` TS containers (`_ts_extra_walk`);
+  decorator edges (`_ts_emit_decorator_edges`, `@Component`/`@Injectable`).
+- Upstream-only Ruby: `module` as a container type (fixes dot-less method
+  labels); `Struct.new`/`Class.new`/`Data.define` factory-assignment
+  container synthesis (#1640).
+- Upstream-only Kotlin: `class Foo : Bar by baz` delegation resolves an
+  `implements` edge.
+- **Upstream-only C# receiver-typed call resolution** (`extract.py:11923`,
+  `_resolve_csharp_member_calls`, #1609) — **a real correctness bug in this
+  fork's favor for upstream**: without it, this fork's C# resolver does a
+  bare-name match corpus-wide, so `_server.Save()` can mis-bind to an
+  unrelated `Cache.Save()` — a *wrong* edge, not just a missing one.
+- **Upstream-only TS/JS receiver typing** (#1630, tracks calls inside
+  inline/returned closures like `return () => svc.doThing()` that this
+  fork's walker currently drops).
+- **Upstream-only fix #1638**: unresolved JS import targets are namespaced
+  (`ref:<raw>`) instead of a bare last-segment id — prevents phantom
+  cross-language `imports_from` collisions (this fork's own README
+  documents fixing an almost-identical class of bug for JS bare imports,
+  #1224/#1581 style — this is a related bug upstream closed and the fork
+  hasn't).
+- **Upstream-only fix #1659**: a JS/TS direct call with no import evidence
+  is no longer resolved cross-file by bare name — this fork keeps the more
+  permissive (and more bug-prone) behavior for JS/TS.
+- **Security-relevant, upstream-only: symlink containment.** Upstream's
+  `collect_files()` gained `_resolves_under_root()` checks (for both
+  single-file targets and directory walks) so a symlink inside the scan
+  root pointing *outside* it is skipped rather than followed. **This fork's
+  `collect_files()` has no such guard** — confirmed absent via grep across
+  `extract.py`, `detect.py`, `llm.py` (only symlink *cycle* detection
+  exists, not containment). Practical impact: pointing `graphify extract`
+  at a repo containing an attacker- or accident-planted symlink to
+  `/etc/passwd` or a sibling private repo would silently ingest and extract
+  that target's content into `graph.json` today.
 
-All from upstream commits **after** this fork's 2026-07-02 merge point
-(i.e., 3 days of upstream work not yet pulled back in):
+**`__main__.py`** (563 diff lines — CLI subcommand *names* are identical on
+both sides; this is internal-implementation diff)
+- Fork-only: `--path`/`--source-path`/`--target-path` on `path`/`explain`,
+  `--path`/`--exclude-path` on `query`, `update-all`/`--all` batch mode
+  (config-driven, scans a global manifest or search roots),
+  `--rank-by degree|pagerank`, browser automation
+  (`_auto_open_browser`/`_trigger_live_reload` via `osascript`), and a PyPI
+  update-check that runs on most commands.
+- Fork-only: `extract` auto-generates `GRAPH_REPORT.md`/`GRAPH_SUMMARY.md`/
+  wiki/`graph.html` at the end; upstream's `extract` stops at `graph.json`
+  and tells the user to run `cluster-only` next.
+- Upstream-only: the new `export obsidian` subcommand; PowerShell-safe `;`
+  command chaining in reminder text (fork still uses `&&`, which upstream's
+  own #1646 fix says PowerShell 5.1 rejects).
 
-- **C# receiver-typed member-call resolution** (upstream `extract.py:11923`,
-  `_resolve_csharp_member_calls`, upstream issue #1609, 2026-07-02).
-  Completely absent from this fork's `extract.py` — confirmed by grep,
-  zero matches. Without it, `recv.Method()` on a typed C# field/property/
-  param/local can mis-bind to any same-named method corpus-wide, the exact
-  failure mode `#1591`'s fix (already shared/merged) was adjacent to but
-  didn't cover.
-- **Ruby `module`/`Struct.new`/`Class.new`/`Data.define` container nodes**
-  (upstream #1640, 2026-07-04). `resolve_ruby_member_calls` (the
-  call-resolution half, in `ruby_resolution.py`) is byte-identical between
-  fork and upstream — but the *container-node creation* half (in
-  `extract.py`, confirmed present upstream via a `Struct.new` docstring
-  match, confirmed absent in this fork's `extract.py` via the same grep)
-  isn't. Plain Ruby `module Foo` blocks and `Foo = Struct.new(...)`/
-  `Class.new(...)`/`Data.define(...)` constant-assignment idioms currently
-  produce no queryable node in this fork's graphs.
-- **Kotlin interface delegation edges** (`class Foo : Bar by baz`, upstream
-  #1644, 2026-07-04) — `explicit_delegation` unwrapping is present upstream,
-  absent from this fork's `extract.py` (confirmed via grep, zero matches).
-- **Apex `interface X extends A, B` multi-inheritance edges** (upstream
-  #1645, 2026-07-04) — confirmed absent from this fork's
-  `extractors/apex.py` (no `extends`-per-parent loop found there).
-- A cluster of smaller upstream fixes from the same 3-day window not
-  independently verified line-by-line here but worth flagging as likely
-  also missing (same "post-merge lag" reasoning): symlinked-input
-  containment (#1613), 4 TS/JS extractor gaps — generator functions,
-  namespace/module containers, import-equals edges (#1615), `.mts`/`.cts`
-  extension recognition (#1607), malformed-semantic-chunk crash hardening
-  (#1631), bare-npm-import false-aliasing fix (#1638), non-deterministic
-  `graph.json` node/edge ordering fix (#1632), `obsidian export to_canvas`
-  crash on dangling community members (#1236 follow-up), stale-source
-  reconciliation on `update`/`watch` (#1623/#1622), Windows long-path
-  hashing (#1655), Office-file `--update` re-entry bug (#1649), cached word
-  counts for incremental detection (#1656).
+**`watch.py`** (468 diff lines)
+- Upstream refactored the ad hoc "preserve/evict nodes+edges" logic into
+  `_StoredSourcePaths` + `_reconcile_existing_graph`, handling
+  lexical-vs-resolved paths and legacy-relative-root detection —
+  **this is upstream's fix for stale-source reconciliation on
+  update/delete/rename (#1623/#1622), and this fork still has the older,
+  more bug-prone inline logic** (confirmed: fork's `watch.py` has neither
+  helper; `_relativize_source_files` still has the pre-fix signature).
+- Fork-only: exposes `rank_by`/`resolution`/`exclude_hubs`/`no_viz`/`wiki`/
+  `value_coupling` from project config; regenerates wiki + GRAPH_SUMMARY.md
+  inside `watch`.
+- Small but real: fork writes `.graphify_root` *before* the shrink-guard
+  check; upstream defers that write until after the candidate graph is
+  accepted, avoiding a marker/graph mismatch if the guard rejects the
+  rebuild.
+
+**`analyze.py`** (170 diff lines — beyond the already-confirmed-identical
+god-node module/namespace exclusion)
+- Fork-only: `god_nodes(by="pagerank")` option, extra noise-label
+  exclusions (primitive types, `package.json` keys), `cross_cutting_nodes()`
+  (ranks nodes bridging the most distinct communities), and
+  `unreachable_functions()` (dead-code heuristic via call-graph
+  reachability). All absent upstream.
+- Fork-only: `surprising_connections()` bonus for a `documents_bug_in`
+  relation upstream doesn't have.
+
+**`detect.py`** (137 diff lines)
+- Upstream-only, all real fixes this fork lacks: `.mts`/`.cts` recognized
+  as code; Office `.docx`/`.xlsx` sidecar re-conversion when the source is
+  newer (#1649 — this fork's sidecar logic still unconditionally skips
+  re-conversion once a sidecar exists, so an edited Office file after first
+  conversion never updates); word-count caching keyed by file stat
+  signature (#1656 — fork recomputes every run); Windows long-path-safe
+  I/O wrapper (#1655 — fork uses plain `Path` calls, so paths past 260
+  chars fail to hash on Windows); symlink-containment guard (same
+  `_resolves_under_root()` gap noted under `extract.py`).
+- Fork-only: `.html`/`.yaml`/`.yml` are AST-extracted as code (own
+  extractors); upstream classifies these as plain documents since it has
+  no dedicated extractors for them.
+
+**`report.py`** (125 diff lines)
+- Fork-only: `summarize()` (`GRAPH_SUMMARY.md`), a "Cross-Cutting Nodes"
+  section, and an `unreachable_functions()`-backed Knowledge Gaps entry —
+  none exist upstream.
+- Upstream-only: a "Community Hubs (Navigation)" section with Obsidian
+  wikilinks (tied to the obsidian export this fork lacks), and gating the
+  "Import Cycles" section on the graph actually containing code (#1657 —
+  this fork still emits a "None detected" Import Cycles section
+  unconditionally, including on doc-only corpora).
+
+**`llm.py`** (122 diff lines)
+- Upstream-only, real hardening this fork lacks: `_sanitize_fragment()`
+  coercing malformed LLM JSON entries so one bad edge/node doesn't crash
+  the whole chunk merge (#1631 — confirmed: fork's `_parse_llm_json`
+  returns `parsed` with no sanitization step); deterministic
+  submission-order merging for parallel LLM chunks (#1632 — fork still
+  merges via `as_completed()` completion order, so `graph.json` node/edge
+  ordering can churn between identical runs); symlink-escape checks for
+  text/image extraction units (same containment gap as above); and a fix
+  to stop passing `--system-prompt` to the Claude Code CLI backend (newer
+  CLIs ≥2.1 don't treat it as sole authority, so extraction can stall
+  mid-bisection — fork still uses the old `--system-prompt` approach).
+- Fork-only: `documents_bug_in` relation support, `GRAPHIFY_NO_LLM`
+  skip/log short-circuit.
+
+**`cache.py`** (56 diff lines) — upstream adds `cached_word_count()` and
+hardens `file_hash()` to coexist with word-count-only cache entries; fork
+has neither (ties into the `detect.py` word-count-caching gap above).
+
+**`ruby_resolution.py`** (34 diff lines) — upstream registers
+method-less class/module container nodes (bare-constant nodes for
+empty/error classes) and generalizes `Class.new`-only resolution to other
+capitalized-receiver calls (e.g. `Service.call`, the dominant Rails idiom);
+this fork only handles the `.new` case.
+
+**`build.py`** (9 diff lines) — upstream guards against a crash when a
+node's `source_file` relativizes to `Path('.')` (#1618) and adds
+`.mts`/`.cts` to the JS language family; fork has neither.
+
+**`wiki.py`** (2 diff lines) — cosmetic only: footer link points at
+`Vit129/graphify` (fork) vs `safishamsi/graphify` (upstream).
+
+**`__init__.py`** (1 diff line) — upstream registers a lazy `"to_canvas"`
+export entry (ties to the obsidian export); fork doesn't, consistent with
+lacking that feature entirely.
+
+## Verification checklist — all 13 "assumed missing" items from the first pass, now confirmed
+
+The first pass of this audit flagged 12-13 upstream fixes as "likely also
+missing, not independently verified." Re-checked every one directly against
+this fork's source (file:line evidence, not assumption):
+
+| # | Item (upstream issue) | Verdict | Evidence |
+|---|---|---|---|
+| 1 | Symlinked-input containment (#1613) | **CONFIRMED ABSENT** | No `_resolves_under_root`/`_resolve_under_root` in `detect.py`/`extract.py`/`llm.py`; only symlink *cycle* detection exists (`detect.py:1072-1074`, `extract.py:15927-15928`) |
+| 2 | TS/JS generator functions as nodes (#1615) | **CONFIRMED ABSENT** | `generator_function_declaration` only in scope-boundary set (`extract.py:1594-1595`), missing from `function_types`/`function_boundary_types` (`extract.py:2728-2759`) |
+| 3 | TS namespace/module containers (#1615) | **CONFIRMED ABSENT** | No `_ts_extra_walk`/`internal_module` anywhere; never added, not reverted (checked fork's own commit history) |
+| 4 | TS import-equals edges (#1615) | **CONFIRMED ABSENT** | No `import_require_clause` in `extract.py`; import resolvers only scan direct `string` children |
+| 5 | `.mts`/`.cts` recognition (#1607) | **CONFIRMED ABSENT** | Zero matches anywhere in `extract.py`/`detect.py` |
+| 6 | Malformed LLM chunk sanitization (#1631) | **CONFIRMED ABSENT** | `llm.py:781`, `_parse_llm_json` has no `_sanitize_fragment` step |
+| 7 | `ref:` prefix on unresolved imports (#1638) | **CONFIRMED ABSENT** | `extract.py:1782`, `_resolve_js_import_target` still returns a bare id |
+| 8 | Deterministic parallel-merge ordering (#1632) | **CONFIRMED ABSENT** | `llm.py:1853-1863`, merges via `as_completed()` directly |
+| 9 | `to_canvas` dangling-member guard (#1236 follow-up) | **CONFIRMED ABSENT (bigger gap)** | The entire obsidian/canvas export target doesn't exist in the fork — nothing to guard |
+| 10 | Stale-source reconciliation (#1623/#1622) | **CONFIRMED ABSENT** | `watch.py` has no `_reconcile_existing_graph`/`_StoredSourcePaths` |
+| 11 | Windows long-path hashing (#1655) | **CONFIRMED ABSENT** | `cache.py:144-151` only strips `\\?\` for cache keys, doesn't add it for real I/O |
+| 12 | Office `--update` re-entry fix (#1649) | **CONFIRMED ABSENT** | `detect.py:637-639`, `convert_office_file` unconditionally skips existing sidecars |
+| 13 | Cached word counts (#1656) | **CONFIRMED ABSENT** | No `cached_word_count` anywhere in `cache.py`/`detect.py` |
+
+**All 13 are genuinely absent** — none partially present, none independently
+reimplemented differently. Item 9 turned out to be a much bigger gap than
+originally scoped (a missing guard on a feature that doesn't exist at all,
+not a missing guard on an existing feature).
+
+## Consolidated: fork-only wins vs. upstream-only wins
+
+**This fork has, and upstream has nothing equivalent to:**
+`query.py`'s BM25 + typo/synonym retry + combinatorial-disambiguation +
+hub-avoidance query/pathfinding layer; 7 extra language/config extractors
+(CSS/SCSS, HTML, YAML, TOML, Robot Framework, Gherkin, Fish); value-coupling
+(`shares_value` edges); per-project config (`config.py`,
+`graphify.toml`/`[tool.graphify]`) + `update --all`; the 3D/lens
+`graph.html` viewer; backup pruning; Playwright/Jest test-node synthesis;
+`cross_cutting_nodes()`/`unreachable_functions()` analysis + `GRAPH_SUMMARY.md`;
+`--path`/`--source-path`/`--target-path`/`--context` CLI flags; browser
+auto-open/live-reload; `documents_bug_in` relation + `GRAPHIFY_NO_LLM`.
+
+**Upstream has, and this fork has nothing equivalent to:**
+the entire Obsidian/Canvas export pipeline; C# receiver-typed call
+resolution (+ a real bugfix over this fork's bare-name matching); TS/JS
+receiver typing for inline/returned closures; two real JS/TS cross-file
+false-edge fixes (#1638, #1659) this fork's resolver still exhibits; Ruby
+`module`/factory-class container nodes; TS namespace/module containers,
+generator-function nodes, decorator edges, import-equals edges; Kotlin
+delegation edges; Apex multi-interface `extends`; `.mts`/`.cts` support;
+**symlink-containment security guard** (missing across `extract.py`,
+`detect.py`, `llm.py` — the one item here worth prioritizing above the
+others); malformed-LLM-JSON hardening; deterministic parallel-merge
+ordering; Windows long-path I/O; Office incremental re-conversion; cached
+word counts; stale-source reconciliation on `update`/`watch`.
 
 ## Curiosity, not verified further
 
 `update_check.py` (fork-only) checks PyPI for package name `graphifyy`
 (`PACKAGE_NAME = "graphifyy"`) — but this fork explicitly does **not**
-publish to PyPI (README.md:85, "the PyPI name `graphifyy` is already taken
-by upstream's package"). So this fork's self-update-check mechanism, if it
+publish to PyPI (README.md, "the PyPI name `graphifyy` is already taken by
+upstream's package"). So this fork's self-update-check mechanism, if it
 still runs, would be checking upstream's PyPI releases, not this fork's own
 git commits. Not confirmed whether this code path is actually wired up to
 run anywhere (`grep`-only check, not traced), just flagged as a loose end
@@ -222,25 +345,21 @@ worth a look if `graphify --version` nags about updates unexpectedly.
 
 ## Bottom line
 
-The honest answer to "how different are they really, and whose work is
-this": **far less different than README claims, and most of what's shared
-is upstream's own code, adopted — not two teams independently converging.**
-This fork's own, verifiably-original contribution on top of that adopted
-base is narrower than README implies but real: *breadth* (7 extra
-language/config-format extractors upstream has none of) and a *genuinely
-better query/pathfinding layer built in a single documented session*
-(real BM25 + combinatorial disambiguation + hub-avoidance vs. upstream's
-still-tiered heuristic scorer + single-shot resolution, confirmed by commit
-timestamps and the merge commit's own message), plus value-coupling.
-Upstream's standing, real advantage right now is 3 days of
-*extraction-correctness* fixes (C#, Ruby, Kotlin, Apex, TS/JS, Windows path
-handling) shipped by its real contributor community since this fork's last
-sync, that this fork hasn't pulled back in. Everything else the README
-calls out as a differentiator (`affected.py`, `resolver_registry.py`,
-`symbol_resolution.py`, the CLI command surface, "ambiguity-safe
-resolution" as a headline) is either identical because it **is** upstream's
-`v8` code, or has a materially different, narrower shape than README
-describes. **README.md:42-52 should be rewritten** to stop implying this
-fork built the shared foundation, and it would be worth pulling upstream's
-last 3 days of commits (C#/Ruby/Kotlin/Apex/TS-JS fixes) into this fork the
-same way the repeated `v8` adoptions did.
+**Far less different than README used to claim, the difference runs in
+both directions, and most of the shared foundation is upstream's own code
+adopted via repeated `v8` merges — not this fork's original engineering.**
+This fork's genuinely original contribution is: the query/pathfinding layer
+(`query.py`, built in one documented session, confirmed by commit
+timestamps and the merge commit's own message), 7 extra language/config
+extractors, value-coupling, per-project config, and a handful of UX/tooling
+additions (3D viewer, backup pruning, browser automation, extra analysis
+metrics). Upstream's genuinely original, currently-unmerged contribution is
+larger than first estimated: real extraction-correctness fixes across 6+
+languages, deterministic/robustness hardening in the LLM and caching
+layers, Windows compatibility fixes, and — the one item worth acting on
+first — **a symlink-containment guard this fork's extraction pipeline
+currently lacks entirely.** Pulling upstream's post-2026-07-02 commits back
+in (the same way the repeated `v8` adoptions worked) would close all of the
+above in one pass; the symlink-containment gap is the one item here with a
+plausible security angle and worth prioritizing independently of a full
+re-sync.
