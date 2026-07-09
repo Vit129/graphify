@@ -75,6 +75,38 @@ def _default_graph_path() -> str:
     return str(Path(_GRAPHIFY_OUT) / "graph.json")
 
 
+def _warn_if_graph_stale(gp: Path, raw: dict | None = None) -> None:
+    """One-line stderr note when graph.json's built_at_commit is behind HEAD.
+
+    Mirrors update --all's `_is_git_fresh` freshness check but as a
+    non-blocking hint on read commands (query/explain/path/affected)
+    instead of a rebuild gate - never raises, never affects exit code.
+    """
+    try:
+        data = raw if raw is not None else json.loads(gp.read_text(encoding="utf-8"))
+        stored_commit = data.get("built_at_commit")
+        if not stored_commit:
+            return
+        import subprocess as _sp
+        r = _sp.run(
+            ["git", "-C", str(gp.parent.parent), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if r.returncode != 0:
+            return
+        current_head = r.stdout.strip()
+        if current_head.startswith(stored_commit) or stored_commit.startswith(current_head):
+            return
+        print(
+            f"[graphify] note: graph.json was built at commit {stored_commit[:8]}, "
+            f"HEAD is now {current_head[:8]} - results may be stale. "
+            f"Run `graphify update .` to refresh.",
+            file=sys.stderr,
+        )
+    except Exception:
+        pass
+
+
 class _StageTimer:
     """Print per-stage wall-clock timings to stderr when --timing is set (#1490).
 
@@ -2310,6 +2342,7 @@ def main() -> None:
         print("  clone <github-url>      clone a GitHub repo locally and print its path for /graphify")
         print("  merge-driver <base> <current> <other>  git merge driver: union-merge two graph.json files (set up via hook install)")
         print("  merge-graphs <g1> <g2>  merge two or more graph.json files into one cross-repo graph")
+        print("  diff <g1> <g2>          show node/edge delta between two graph.json snapshots")
         print("    --out <path>            output path (default: graphify-out/merged-graph.json)")
         print("    --branch <branch>       checkout a specific branch (default: repo default)")
         print("    --out <dir>             clone to a custom directory (default: ~/.graphify/repos/<owner>/<repo>)")
@@ -2970,6 +3003,7 @@ def main() -> None:
         except Exception as exc:
             print(f"error: could not load graph: {exc}", file=sys.stderr)
             sys.exit(1)
+        _warn_if_graph_stale(gp, _raw)
         import time as _time
         _t0 = _time.perf_counter()
         _mode = "dfs" if use_dfs else "bfs"
@@ -3046,6 +3080,7 @@ def main() -> None:
         except Exception as exc:
             print(f"error: could not load graph: {exc}", file=sys.stderr)
             sys.exit(1)
+        _warn_if_graph_stale(gp)
         print(
             format_affected(
                 graph,
@@ -3193,6 +3228,7 @@ def main() -> None:
             G = json_graph.node_link_graph(_raw, edges="links")
         except TypeError:
             G = json_graph.node_link_graph(_raw)
+        _warn_if_graph_stale(gp, _raw)
         result = find_path_with_disambiguation(
             G, source_label, target_label, source_path=source_path, target_path=target_path
         )
@@ -3290,6 +3326,7 @@ def main() -> None:
             G = json_graph.node_link_graph(_raw, edges="links")
         except TypeError:
             G = json_graph.node_link_graph(_raw)
+        _warn_if_graph_stale(gp, _raw)
         matches = _find_node(G, label)
         tied = _find_node_tied_group(G, label)
         if scope_path:
@@ -4223,6 +4260,70 @@ def main() -> None:
         out_path.write_text(json.dumps(out_data, indent=2), encoding="utf-8")
         print(f"Merged {len(graphs)} graphs -> {merged.number_of_nodes()} nodes, {merged.number_of_edges()} edges")
         print(f"Written to: {out_path}")
+
+    elif cmd == "diff":
+        # graphify diff <graph1.json> <graph2.json> - node/edge delta between
+        # two already-built graph.json snapshots (e.g. main's graph vs a
+        # feature branch's graph, saved to different paths/worktrees). This
+        # only diffs two graphs it's given - it does not checkout a ref or
+        # rebuild a second graph itself.
+        if len(sys.argv) < 4:
+            print("Usage: graphify diff <graph1.json> <graph2.json>", file=sys.stderr)
+            sys.exit(1)
+        from networkx.readwrite import json_graph as _jg
+
+        def _load_diff_graph(p: Path):
+            if not p.exists():
+                print(f"error: not found: {p}", file=sys.stderr)
+                sys.exit(1)
+            _enforce_graph_size_cap_or_exit(p)
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if "links" not in data and "edges" in data:
+                data = dict(data, links=data["edges"])
+            try:
+                return _jg.node_link_graph(data, edges="links")
+            except TypeError:
+                return _jg.node_link_graph(data)
+
+        gp1, gp2 = Path(sys.argv[2]), Path(sys.argv[3])
+        G1 = _load_diff_graph(gp1)
+        G2 = _load_diff_graph(gp2)
+
+        nodes1, nodes2 = set(G1.nodes), set(G2.nodes)
+        added_nodes = nodes2 - nodes1
+        removed_nodes = nodes1 - nodes2
+
+        def _edge_set(G):
+            return {(u, v, d.get("relation", "")) for u, v, d in G.edges(data=True)}
+
+        edges1, edges2 = _edge_set(G1), _edge_set(G2)
+        added_edges = edges2 - edges1
+        removed_edges = edges1 - edges2
+
+        print(f"graph1: {gp1} ({len(nodes1)} nodes, {len(edges1)} edges)")
+        print(f"graph2: {gp2} ({len(nodes2)} nodes, {len(edges2)} edges)")
+        print()
+        _DIFF_LIST_CAP = 50
+        if added_nodes:
+            print(f"+ {len(added_nodes)} node(s) added:")
+            for nid in sorted(added_nodes)[:_DIFF_LIST_CAP]:
+                d = G2.nodes[nid]
+                print(f"  + {d.get('label', nid)}  [{d.get('source_file', '')}]")
+            if len(added_nodes) > _DIFF_LIST_CAP:
+                print(f"  ... and {len(added_nodes) - _DIFF_LIST_CAP} more")
+        if removed_nodes:
+            print(f"- {len(removed_nodes)} node(s) removed:")
+            for nid in sorted(removed_nodes)[:_DIFF_LIST_CAP]:
+                d = G1.nodes[nid]
+                print(f"  - {d.get('label', nid)}  [{d.get('source_file', '')}]")
+            if len(removed_nodes) > _DIFF_LIST_CAP:
+                print(f"  ... and {len(removed_nodes) - _DIFF_LIST_CAP} more")
+        if added_edges:
+            print(f"+ {len(added_edges)} edge(s) added")
+        if removed_edges:
+            print(f"- {len(removed_edges)} edge(s) removed")
+        if not (added_nodes or removed_nodes or added_edges or removed_edges):
+            print("No differences.")
 
     elif cmd == "clone":
         if len(sys.argv) < 3:
