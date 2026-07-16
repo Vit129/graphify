@@ -2309,6 +2309,9 @@ def main() -> None:
         from graphify.update_check import check_for_update
         check_for_update(__version__)
 
+        from graphify.git_update_check import check_git_clone_update
+        check_git_clone_update()
+
     if len(sys.argv) >= 2 and sys.argv[1] in ("-v", "--version", "version"):
         print(f"graphify {__version__}")
         return
