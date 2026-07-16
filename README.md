@@ -774,3 +774,7 @@ uv run pytest tests/ -q -k "python"    # filter by name
 See [ARCHITECTURE.md](ARCHITECTURE.md) for module responsibilities and how to add a language.
 
 </details>
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
