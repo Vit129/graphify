@@ -748,6 +748,14 @@ uv run graphify --version
 uv run python -c "import graphify; print(graphify.__file__)"
 ```
 
+Running `graphify` from an editable git-clone checkout like this also checks
+this repo's `version.json` on `main` once a day and, on a clean working tree,
+asks (y/N) whether to `git pull` when a newer version is available — never
+automatically. Decline and it won't ask again for that version; a dirty tree
+gets a notice instead of a prompt. This only applies to editable checkouts
+(where `graphify/__file__` lives inside a git working tree) — the `uv tool
+install`/`pipx`/`pip install` paths above are unaffected.
+
 ### Running tests
 
 ```bash
