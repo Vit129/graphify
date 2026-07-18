@@ -5890,6 +5890,39 @@ def extract_vue(path: Path) -> dict:
     return result
 
 
+def extract_html_with_scripts(path: Path) -> dict:
+    """extract_html's DOM-id nodes, plus a JS extraction pass over inline
+    <script> bodies - the html.py extractor only sees elements with an `id`
+    attribute, so a function defined inside a <script> block (no id involved)
+    was previously invisible to the graph entirely (graphify explain/query
+    could never find it). Reuses _vue_mask_non_script's blank-and-preserve-
+    newlines technique (already generic HTML script-tag matching, not
+    Vue-specific) so extracted node line numbers need no offset arithmetic.
+    <script src="..."> (external, no inline body) masks to an empty span and
+    contributes nothing - harmless, not special-cased.
+    """
+    html_result = extract_html(path)
+    try:
+        src = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return html_result
+
+    masked, _lang = _vue_mask_non_script(src)
+    if masked.strip() == "":
+        return html_result  # no <script> body at all - skip the second pass
+
+    js_result = _extract_generic(path, _JS_CONFIG, source_override=masked.encode("utf-8"))
+
+    seen_ids = {n["id"] for n in html_result.get("nodes", [])}
+    merged_nodes = list(html_result.get("nodes", []))
+    for n in js_result.get("nodes", []):
+        if n["id"] not in seen_ids:
+            merged_nodes.append(n)
+            seen_ids.add(n["id"])
+    merged_edges = list(html_result.get("edges", [])) + list(js_result.get("edges", []))
+    return {**html_result, "nodes": merged_nodes, "edges": merged_edges}
+
+
 def extract_java(path: Path) -> dict:
     """Extract classes, interfaces, methods, constructors, and imports from a .java file."""
     return _extract_generic(path, _JAVA_CONFIG)
@@ -15182,12 +15215,12 @@ _DISPATCH: dict[str, Any] = {
     ".sql": extract_sql,
     ".css": extract_css,
     ".scss": extract_scss,
-    ".html": extract_html,
+    ".html": extract_html_with_scripts,
     ".feature": extract_gherkin,
     ".toml": extract_toml,
     ".fish": extract_fish,
     ".hook": extract_json,
-    ".htm": extract_html,
+    ".htm": extract_html_with_scripts,
     ".md": extract_markdown,
     ".mdx": extract_markdown,
     ".qmd": extract_markdown,

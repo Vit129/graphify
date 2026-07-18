@@ -1195,15 +1195,18 @@ def _find_node(G: nx.Graph, label: str) -> list[str]:
     return _find_node_core(G, " ".join(corrected_terms))
 
 
-def _find_node_tiers(G: nx.Graph, label: str) -> tuple[list[str], list[str], list[str], list[str]]:
+def _find_node_tiers(
+    G: nx.Graph, label: str
+) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
     """Same matching as `_find_node_core`, but returns each precedence tier
-    (source_exact, exact, prefix, substring) separately instead of one flat
-    list - lets callers tell "one clear winner" from "several nodes tied for
-    the top tier" (ambiguity), which a flattened list can't distinguish.
+    (source_exact, exact, prefix, substring, bm25_fallback) separately instead
+    of one flat list - lets callers tell "one clear winner" from "several
+    nodes tied for the top tier" (ambiguity), which a flattened list can't
+    distinguish.
     """
     term = " ".join(_search_tokens(label))
     if not term:
-        return [], [], [], []
+        return [], [], [], [], []
     source_exact: list[str] = []
     exact: list[str] = []
     prefix: list[str] = []
@@ -1245,17 +1248,34 @@ def _find_node_tiers(G: nx.Graph, label: str) -> tuple[list[str], list[str], lis
         if len(preferred) == 1:
             source_exact = preferred + [nid for nid in source_exact if nid != preferred[0]]
 
-    return source_exact, exact, prefix, substring
+    bm25_fallback: list[str] = []
+    if not (source_exact or exact or prefix or substring):
+        # None of the strict single-field tiers matched anything - covers a
+        # qualified cross-field name (e.g. "SessionEditor.zoomPane": class in
+        # source_file, method in label) that no single field spans, so every
+        # tier above fails even though the node is a real, resolvable match.
+        # Fall back to the same cross-field BM25 ranking `query`/`path` use.
+        # Returns every near-tied top scorer (10% gap, matching
+        # find_path_with_disambiguation's threshold) rather than just the
+        # winner, so a genuine tie here still surfaces through the normal
+        # _find_node_tied_group ambiguity warning instead of a silent pick.
+        scored = _score_nodes(G, [label])
+        if scored and scored[0][0] > 0:
+            top = scored[0][0]
+            bm25_fallback = [nid for score, nid in scored if (top - score) / top < 0.10]
+
+    return source_exact, exact, prefix, substring, bm25_fallback
 
 
 def _find_node_core(G: nx.Graph, label: str) -> list[str]:
     """Return node IDs whose label or ID matches the search term (diacritic-insensitive).
 
     Results are ordered by precedence: exact source-file path match first, then
-    exact (label/ID) match, then prefix match, then substring match.
+    exact (label/ID) match, then prefix match, then substring match, then (only
+    when all of those are empty) a cross-field BM25 fallback.
     """
-    source_exact, exact, prefix, substring = _find_node_tiers(G, label)
-    return source_exact + exact + prefix + substring
+    source_exact, exact, prefix, substring, bm25_fallback = _find_node_tiers(G, label)
+    return source_exact + exact + prefix + substring + bm25_fallback
 
 
 def _find_node_tied_group(G: nx.Graph, label: str) -> list[str]:

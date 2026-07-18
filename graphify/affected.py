@@ -134,7 +134,34 @@ def resolve_seed(graph: nx.Graph, query: str) -> str | None:
     ]
     if len(contains_matches) == 1:
         return contains_matches[0]
-    return None
+    return _bm25_confident_pick(graph, query)
+
+
+def _bm25_confident_pick(graph: nx.Graph, query: str) -> str | None:
+    """Last-resort tier: the same cross-field BM25 ranking query/explain/path
+    already use (query.py's _score_nodes), for names none of the strict
+    single-field tiers above could assemble a unique winner for - either a
+    qualified cross-field name (class in source_file, method in label) no
+    single field spans, or a raw substring count that looked ambiguous
+    (several nodes happen to contain the term) even though relevance scoring
+    clearly separates one from the rest.
+
+    Only returns a pick when the top score clearly separates from the next
+    (same 10% gap threshold find_path_with_disambiguation uses) - a genuine
+    near-tie still returns None here, same as every tier above. This adds a
+    case strict counting can't see, it does not turn a real ambiguity into a
+    silent guess.
+    """
+    from graphify.query import _score_nodes  # local: avoid import-time cost when affected isn't used
+
+    scored = _score_nodes(graph, [query])
+    if not scored:
+        return None
+    top = scored[0][0]
+    if top <= 0:
+        return None
+    near_tied = [nid for score, nid in scored if (top - score) / top < 0.10]
+    return near_tied[0] if len(near_tied) == 1 else None
 
 
 def affected_nodes(

@@ -18,7 +18,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-CURRENT_VERSION = 1  # bump alongside version.json at the repo root whenever a feature ships
+CURRENT_VERSION = 2  # bump alongside version.json at the repo root whenever a feature ships
 REPO = "Vit129/graphify"
 VERSION_URL = f"https://raw.githubusercontent.com/{REPO}/main/version.json"
 FETCH_TIMEOUT_SECONDS = 2.5
