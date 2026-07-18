@@ -1,5 +1,13 @@
 # P14: Obsidian-like Graph Control & Automation
 
+Status: **Done** — all 4 goals shipped (structural view mode 2026-07-04 per its own note below; auto-open/
+live-reload/interactive settings panel landed in `e4e4f9c feat: implement Obsidian-like control panel,
+auto-open browser, and live reload` and `d79b6fb feat: add lazy-loaded 3D force graph view option to HTML
+export`). This doc was never updated when that work landed — verified live in `graphify/__main__.py`
+(`--no-open`, `webbrowser.open`, `osascript` Chrome/Safari reload) and `graphify/export.py`
+(`#settings-2d`/`#settings-3d` panels with `gravitationalConstant`/`springLength` sliders) during the
+2026-07-18 session, corrected here rather than left stale.
+
 This plan designs and implements Obsidian-like graph interaction features in `graphify`. The target is to make graph generation, visualization, and parameter tuning effortless and highly interactive.
 
 ---
