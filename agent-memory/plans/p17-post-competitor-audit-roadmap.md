@@ -26,6 +26,13 @@ a file watcher" bug against a personal fork). This doc captures those before the
 
 ### 1. File-watcher auto-sync — biggest concrete gap found, do first
 
+**Design done**: see `file-watcher-auto-sync/design.md` (same directory). Orientation confirmed
+`graphify watch` already exists and works (real `watchdog` daemon) but is opt-in/foreground-blocking and
+nothing auto-starts it; also found `_install_claude_hook`'s printed message already falsely claims a
+post-edit rebuild happens. Decided: a new `PostToolUse` hook triggering a debounced background
+`graphify update`, not an auto-started `watch` daemon (no new dependency, no process-lifecycle surface).
+Next: `task-design` to break this into implementation tasks, then implement.
+
 The single most-repeated architectural gap vs. actively-growing competitors (**CodeGraph**, 47k GitHub
 stars in 5 months — largest data point in the whole audit; **GitNexus**, similar auto-sync claim):
 they watch the filesystem and incrementally re-extract on save. graphify requires an explicit
