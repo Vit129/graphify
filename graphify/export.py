@@ -449,9 +449,14 @@ document.addEventListener('click', e => {{
 // computed lazily here in the browser from data already embedded above, so
 // building/updating the graph (`extract`, `update`, `cluster-only`) does no
 // extra work and graph.html isn't any bigger than before.
-let currentLens = 'community'; // 'community' | 'file' | 'deps'
+let currentLens = 'community'; // 'community' | 'file' | 'deps' | 'calls'
 const hiddenCommunities = new Set();
 const hiddenFiles = new Set();
+// Real relation vocabulary measured across Python/YAML, Swift, and JS/TS corpora (2026-07-04):
+// excludes structural/containment relations (contains, method, defines, case_of)
+// and doc-explains-code (rationale_for), which aren't call/dependency structure.
+// Shared by the 'deps' (file-collapsed) and 'calls' (per-symbol) lenses.
+const REL_WHITELIST = new Set(['calls', 'imports', 'imports_from', 'references', 'inherits', 'implements', 'indirect_call', 're_exports', 'uses', 'embeds']);
 let depNodesCache = null;
 let depEdgesCache = null;
 
@@ -470,12 +475,13 @@ function colorForFile(f) {{
 }}
 
 function isNodeHidden(n) {{
-  if (currentLens === 'file') return hiddenFiles.has(n.source_file || n._source_file || '(none)');
+  if (currentLens === 'calls' && (n.file_type || n._file_type) !== 'code') return true;
+  if (currentLens === 'file' || currentLens === 'calls') return hiddenFiles.has(n.source_file || n._source_file || '(none)');
   return hiddenCommunities.has(n.community !== undefined ? n.community : n._community);
 }}
 
 function nodeDisplayColor(n) {{
-  if (currentLens === 'file') return colorForFile(n.source_file || n._source_file || '(none)');
+  if (currentLens === 'file' || currentLens === 'calls') return colorForFile(n.source_file || n._source_file || '(none)');
   return n.color.background;
 }}
 
@@ -587,10 +593,6 @@ function buildFileDependencyGraph() {{
     nodeToFile[n.id] = f;
     fileCounts[f] = (fileCounts[f] || 0) + 1;
   }});
-  // Real relation vocabulary measured across Python/YAML, Swift, and JS/TS corpora (2026-07-04):
-  // excludes structural/containment relations (contains, method, defines, case_of)
-  // and doc-explains-code (rationale_for), which aren't file-to-file coupling.
-  const REL_WHITELIST = new Set(['calls', 'imports', 'imports_from', 'references', 'inherits', 'implements', 'indirect_call', 're_exports', 'uses', 'embeds']);
   const edgeAgg = {{}};
   RAW_EDGES.forEach(e => {{
     const fa = nodeToFile[e.from], fb = nodeToFile[e.to];
@@ -652,7 +654,7 @@ function switchLens(lens) {{
     nodesDS.clear();
     nodesDS.add(RAW_NODES.map(n => ({{
       id: n.id, label: n.label,
-      color: lens === 'file'
+      color: (lens === 'file' || lens === 'calls')
         ? {{ background: colorForFile(n.source_file || '(none)'), border: colorForFile(n.source_file || '(none)'), highlight: {{ background: '#fff', border: colorForFile(n.source_file || '(none)') }} }}
         : n.color,
       size: n.size, font: n.font, title: n.title,
@@ -661,7 +663,7 @@ function switchLens(lens) {{
       hidden: isNodeHidden(n),
     }})));
     edgesDS.clear();
-    edgesDS.add(RAW_EDGES.map((e, i) => ({{
+    edgesDS.add(RAW_EDGES.filter(e => lens !== 'calls' || REL_WHITELIST.has((e.label || '').toLowerCase())).map((e, i) => ({{
       id: i, from: e.from, to: e.to, label: '', title: e.title,
       dashes: e.dashes, width: e.width, color: e.color,
       arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }},
@@ -826,7 +828,8 @@ function init3DGraph() {{
   const container = document.getElementById('graph-3d');
   const activeNodes = RAW_NODES.filter(n => !isNodeHidden(n));
   const activeNodeIds = new Set(activeNodes.map(n => n.id));
-  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to));
+  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to)
+    && (currentLens !== 'calls' || REL_WHITELIST.has((e.label || '').toLowerCase())));
 
   const gData = {{
     nodes: activeNodes.map(n => ({{
@@ -890,7 +893,8 @@ function update3DGraphData() {{
   if (!graph3DInstance) return;
   const activeNodes = RAW_NODES.filter(n => !isNodeHidden(n));
   const activeNodeIds = new Set(activeNodes.map(n => n.id));
-  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to));
+  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to)
+    && (currentLens !== 'calls' || REL_WHITELIST.has((e.label || '').toLowerCase())));
 
   graph3DInstance.graphData({{
     nodes: activeNodes.map(n => ({{
@@ -1312,6 +1316,7 @@ def to_html(
     <button id="lens-btn-community" class="toggle-btn active lens-btn" onclick="switchLens('community')" title="Group/color by inferred community">Community</button>
     <button id="lens-btn-file" class="toggle-btn lens-btn" onclick="switchLens('file')" title="Group/color by source file">File</button>
     <button id="lens-btn-deps" class="toggle-btn lens-btn" onclick="switchLens('deps')" title="Collapse to one node per file, edges = calls/imports/references/extends between files">Dependencies</button>
+    <button id="lens-btn-calls" class="toggle-btn lens-btn" onclick="switchLens('calls')" title="Code symbols only (functions/classes/methods) — hides concept/rationale/document nodes, edges = real calls/imports/references between symbols">Calls</button>
   </div>
   <div id="search-wrap">
     <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">

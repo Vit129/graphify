@@ -175,6 +175,21 @@ def test_to_html_contains_nodes_and_edges():
         assert "RAW_NODES" in content
         assert "RAW_EDGES" in content
 
+def test_to_html_contains_calls_lens():
+    # 'calls' lens: code-symbol-only, non-collapsed view (file_type != 'code'
+    # hidden, edges restricted to REL_WHITELIST) — distinct from the existing
+    # community/file/deps lenses.
+    G = make_graph()
+    communities = cluster(G)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.html"
+        to_html(G, communities, str(out))
+        content = out.read_text()
+        assert "lens-btn-calls" in content
+        assert "switchLens('calls')" in content
+        assert "REL_WHITELIST" in content
+        assert content.count("REL_WHITELIST = new Set(") == 1
+
 
 def test_to_html_member_counts_accepted():
     """to_html accepts member_counts without raising."""
