@@ -15,6 +15,13 @@ def _isolate_config(monkeypatch, tmp_path):
     monkeypatch.setattr(guc, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(guc, "CONFIG_PATH", config_dir / "config.json")
     monkeypatch.setattr(guc, "DISMISS_FILE", config_dir / "update-dismissed")
+    # Pin the local version independent of the real module constant - tests
+    # below mock the remote as version 2 to mean "newer than local checkout".
+    # Without this, bumping the real CURRENT_VERSION alongside a release (as
+    # the constant's own comment says to do) makes "remote 2 > local" false
+    # the moment CURRENT_VERSION reaches 2, and every check-update test here
+    # silently no-ops instead of testing the update flow at all.
+    monkeypatch.setattr(guc, "CURRENT_VERSION", 1)
 
 
 def test_should_check_true_on_first_run():
