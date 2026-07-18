@@ -1101,3 +1101,18 @@ def test_trigger_background_update_survives_spawn_failure(tmp_path, monkeypatch)
 
     monkeypatch.setattr(subprocess, "Popen", raising_popen)
     trigger_background_update(tmp_path)  # must not raise
+
+
+def test_cli_trigger_flag_returns_fast(tmp_path):
+    """Running python -m graphify.watch --trigger <path> exits fast and doesn't hang."""
+    start_time = time.monotonic()
+    proc = subprocess.run(
+        [sys.executable, "-m", "graphify.watch", "--trigger", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=5.0
+    )
+    assert proc.returncode == 0
+    duration = time.monotonic() - start_time
+    assert duration < 3.0
+

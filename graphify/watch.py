@@ -1177,5 +1177,9 @@ if __name__ == "__main__":
     parser.add_argument("path", nargs="?", default=".", help="Folder to watch (default: .)")
     parser.add_argument("--debounce", type=float, default=3.0,
                         help="Seconds to wait after last change before updating (default: 3)")
+    parser.add_argument("--trigger", help="Trigger a background update for the given project path and exit immediately")
     args = parser.parse_args()
+    if args.trigger:
+        trigger_background_update(Path(args.trigger))
+        sys.exit(0)
     watch(Path(args.path), debounce=args.debounce)

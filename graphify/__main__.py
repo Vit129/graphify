@@ -524,6 +524,48 @@ _READ_SETTINGS_HOOK = {
     ],
 }
 
+_POST_EDIT_HOOK = {
+    "matcher": "Edit|Write|MultiEdit",
+    "hooks": [
+        {
+            "type": "command",
+            "command": (
+                "python3 -c \"\n"
+                "import json, os, sys, subprocess\n"
+                "from pathlib import Path\n"
+                "try:\n"
+                "    from graphify.watch import _WATCHED_EXTENSIONS\n"
+                "    d = json.load(sys.stdin)\n"
+                "    t = d.get('tool_input', d)\n"
+                "    fp = t.get('file_path') or t.get('path') or t.get('target_file') or t.get('TargetFile')\n"
+                "    if fp:\n"
+                "        p = Path(fp)\n"
+                "        try:\n"
+                "            p = p.resolve().relative_to(Path.cwd().resolve())\n"
+                "        except Exception:\n"
+                "            pass\n"
+                "        if p.suffix.lower() in _WATCHED_EXTENSIONS:\n"
+                "            parts = p.parts\n"
+                "            if not (any(part.startswith('.') for part in parts) or 'graphify-out' in parts):\n"
+                "                if os.path.exists('graphify-out/graph.json'):\n"
+                "                    cmd = [sys.executable, '-m', 'graphify.watch', '--trigger', '.']\n"
+                "                    kw = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, close_fds=True)\n"
+                "                    if os.name == 'nt':\n"
+                "                        flags = 0x00000008 | 0x00000200\n"
+                "                        try:\n"
+                "                            subprocess.Popen(cmd, creationflags=flags | 0x01000000, **kw)\n"
+                "                        except OSError:\n"
+                "                            subprocess.Popen(cmd, creationflags=flags, **kw)\n"
+                "                    else:\n"
+                "                        subprocess.Popen(cmd, start_new_session=True, **kw)\n"
+                "except Exception:\n"
+                "    pass\n"
+                "\" 2>/dev/null || true"
+            ),
+        }
+    ],
+}
+
 def _skill_registration(skill_path: str = "~/.claude/skills/graphify/SKILL.md") -> str:
     return (
         "\n# graphify\n"
@@ -1982,7 +2024,7 @@ def claude_install(project_dir: Path | None = None) -> None:
 
 
 def _install_claude_hook(project_dir: Path) -> None:
-    """Add graphify PreToolUse hook to .claude/settings.json."""
+    """Add graphify PreToolUse and PostToolUse hooks to .claude/settings.json."""
     settings_path = project_dir / ".claude" / "settings.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1996,16 +2038,21 @@ def _install_claude_hook(project_dir: Path) -> None:
 
     hooks = settings.setdefault("hooks", {})
     pre_tool = hooks.setdefault("PreToolUse", [])
+    post_tool = hooks.setdefault("PostToolUse", [])
 
     hooks["PreToolUse"] = [h for h in pre_tool if not (h.get("matcher") in ("Glob|Grep", "Bash", "Read|Glob") and "graphify" in str(h))]
     hooks["PreToolUse"].append(_SETTINGS_HOOK)
     hooks["PreToolUse"].append(_READ_SETTINGS_HOOK)
+
+    hooks["PostToolUse"] = [h for h in post_tool if not (h.get("matcher") in ("Edit|Write|MultiEdit",) and "graphify" in str(h))]
+    hooks["PostToolUse"].append(_POST_EDIT_HOOK)
+
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    print(f"  .claude/settings.json  ->  PreToolUse hooks registered (Bash search + Read/Glob)")
+    print(f"  .claude/settings.json  ->  PreToolUse + PostToolUse hooks registered")
 
 
 def _uninstall_claude_hook(project_dir: Path) -> None:
-    """Remove graphify PreToolUse hook from .claude/settings.json."""
+    """Remove graphify PreToolUse and PostToolUse hooks from .claude/settings.json."""
     settings_path = project_dir / ".claude" / "settings.json"
     if not settings_path.exists():
         return
@@ -2013,13 +2060,24 @@ def _uninstall_claude_hook(project_dir: Path) -> None:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return
-    pre_tool = settings.get("hooks", {}).get("PreToolUse", [])
-    filtered = [h for h in pre_tool if not (h.get("matcher") in ("Glob|Grep", "Bash", "Read|Glob") and "graphify" in str(h))]
-    if len(filtered) == len(pre_tool):
+    
+    hooks = settings.get("hooks", {})
+    pre_tool = hooks.get("PreToolUse", [])
+    filtered_pre = [h for h in pre_tool if not (h.get("matcher") in ("Glob|Grep", "Bash", "Read|Glob") and "graphify" in str(h))]
+    
+    post_tool = hooks.get("PostToolUse", [])
+    filtered_post = [h for h in post_tool if not (h.get("matcher") in ("Edit|Write|MultiEdit",) and "graphify" in str(h))]
+    
+    if len(filtered_pre) == len(pre_tool) and len(filtered_post) == len(post_tool):
         return
-    settings["hooks"]["PreToolUse"] = filtered
+        
+    if "PreToolUse" in hooks:
+        settings["hooks"]["PreToolUse"] = filtered_pre
+    if "PostToolUse" in hooks:
+        settings["hooks"]["PostToolUse"] = filtered_post
+        
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    print(f"  .claude/settings.json  ->  PreToolUse hook removed")
+    print(f"  .claude/settings.json  ->  PreToolUse + PostToolUse hooks removed")
 
 
 def uninstall_all(project_dir: Path | None = None, purge: bool = False) -> None:

@@ -1,7 +1,7 @@
 # Dev Task Progress — File-Watcher Auto-Sync (P17 item 1)
 
-Last updated: 2026-07-18 22:50
-Status: In Progress
+Last updated: 2026-07-18 23:13
+Status: Done
 
 ## Context
 - System: graphify
@@ -30,8 +30,8 @@ apply as-is; mapped to what this repo actually has)
 
 ## Summary
 - Total tasks: 6
-- Completed: 1
-- Remaining: 5
+- Completed: 6
+- Remaining: 0
 
 ## Server Logic
 
@@ -56,65 +56,28 @@ apply as-is; mapped to what this repo actually has)
     correct `graph.json` (3 nodes/3 edges) within 3s, with the parent call returning instantly — not just
     validated against mocks. Full suite: 3003 passed, 0 failed, 0 regressions.
 
-- [ ] **Task 2 — thin CLI entry point to invoke it**
-  A way for a shell hook one-liner to call Task 1's function without importing Python inline in the hook
-  string (keeps the hook string short and the logic testable/importable) — e.g.
-  `python3 -m graphify.watch --trigger <path>` in `watch.py`'s existing `if __name__ == "__main__":`
-  block (currently only wires the full `watch()` daemon — add a `--trigger` flag alongside `--debounce`
-  that calls `trigger_background_update()` and exits immediately instead of entering the `while True` loop).
-  - Blocked by Task 1.
-  - Verify: extend the same test file — `python -m graphify.watch --trigger <tmp_path>` subprocess call,
-    assert it returns fast (non-blocking) and doesn't hang.
+- [x] **Task 2 — thin CLI entry point to invoke it** — Done (2026-07-18)
+  Added a `--trigger` flag to `watch.py`'s existing `if __name__ == "__main__":` argparse block. When `--trigger <path>` is passed, it calls `trigger_background_update(Path(args.trigger))` and exits immediately (sys.exit(0)), without entering the foregound `while True` watchdog thread block.
+  - Verify: Added `test_cli_trigger_flag_returns_fast` in `tests/test_watch.py` asserting that calling `python -m graphify.watch --trigger <tmp_path>` as a subprocess exits immediately (under 3.0s) and does not hang.
 
-- [ ] **Task 3 — `_POST_EDIT_HOOK` constant in `graphify/__main__.py`**
-  New hook constant, `"matcher": "Edit|Write|MultiEdit"`, following `_SETTINGS_HOOK`/
-  `_READ_SETTINGS_HOOK`'s exact style (`__main__.py:470-524`): a `python3 -c "..."` one-liner parses
-  `tool_input` from stdin, extracts `file_path` (or the file-path list for `MultiEdit` — check its
-  actual `tool_input` shape first, don't assume it matches single-`Edit`'s), bails (exit 0, fail open) if
-  `graphify-out/graph.json` doesn't exist, the path is under `graphify-out/` (avoid a self-triggered
-  rebuild loop — same guard `watch.py`'s `Handler.on_any_event` already has), or the extension isn't
-  code/doc/paper/image (mirror `watch.py`'s `_WATCHED_EXTENSIONS`); otherwise calls Task 2's CLI entry.
-  - Blocked by Task 2.
-  - Verify: `tests/test_install_strings.py`-style test (or new `tests/test_post_edit_hook.py`) —
-    assert the hook JSON structure, the matcher, and (mirroring `test_hooks_use_cross_platform_detach`/
-    `test_launcher_and_rebuild_body_are_valid_python` in `tests/test_hooks.py`) that the embedded
-    `python3 -c "..."` body is syntactically valid Python on its own (parse it standalone in the test,
-    same technique that file already uses for the git-hook bodies).
+- [x] **Task 3 — `_POST_EDIT_HOOK` constant in `graphify/__main__.py`** — Done (2026-07-18)
+  Added a `_POST_EDIT_HOOK` constant mapping to tool type matcher `"Edit|Write|MultiEdit"`. The hook runs a Python one-liner that reads `tool_input` from `sys.stdin`, handles potential variations of the key (`file_path`, `path`, `target_file`, `TargetFile`), bails early if `graphify-out/graph.json` doesn't exist, if the edited file is inside `graphify-out/` or hidden `.directories`, or if the file suffix is not in `_WATCHED_EXTENSIONS`. If validated, it spawns `python -m graphify.watch --trigger .` fully detached.
+  - Verify: Added `test_post_edit_hook_structure_and_syntax` to `tests/test_install_strings.py` asserting the hook structure, matcher, and checking via `ast.parse` that the embedded python body is syntactically valid Python code.
 
 ## Integration
 
-- [ ] **Task 4 — wire into `_install_claude_hook`/`_uninstall_claude_hook`**
-  Add `hooks.setdefault("PostToolUse", [])` alongside the existing `PreToolUse` list in
-  `_install_claude_hook` (`__main__.py:1985`), append `_POST_EDIT_HOOK`, dedupe on re-install (same
-  `"graphify" in str(h)` filter pattern the `PreToolUse` list already uses at line 2000). Mirror in
-  `_uninstall_claude_hook`. Correct the printed message at `__main__.py:1980-1981` — it already claims
-  this happens; once this task lands, the claim becomes true (verify wording still reads correctly,
-  adjust only if needed).
-  - Blocked by Task 3.
-  - Verify: **confirmed `_install_claude_hook`/`_uninstall_claude_hook` have zero existing test coverage**
-    (grepped `tests/*.py` — no hits) — a real pre-existing gap, closed as a side effect here rather than
-    a separate cleanup task. New `tests/test_install_claude_hook.py` (or add to `test_read_hook.py` if
-    it turns out to share enough setup — check its fixtures first): install into a `tmp_path`
-    `.claude/settings.json`, assert `PostToolUse` key present with the new hook, assert idempotent
-    re-install doesn't duplicate, assert uninstall removes it cleanly.
+- [x] **Task 4 — wire into `_install_claude_hook`/`_uninstall_claude_hook`** — Done (2026-07-18)
+  Wired the hook into `_install_claude_hook` to dynamically add the `PostToolUse` hook alongside the `PreToolUse` hook in `.claude/settings.json`, and deduplicate it on re-install. Updated `_uninstall_claude_hook` to symmetrically remove both PreToolUse and PostToolUse hook registrations.
+  - Verify: Confirmed zero existing test coverage on `_install_claude_hook`/`_uninstall_claude_hook`. Wrote a new test file `tests/test_install_claude_hook.py` that installs the hooks in a `tmp_path` settings file, asserts the hooks keys, verifies re-installation is idempotent, and asserts uninstallation removes all graphify hooks cleanly.
 
-- [ ] **Task 5 — ✅ Run test scripts (verify GREEN)**
-  Full `pytest tests/` run — the standard this session held itself to throughout (2900+ passed baseline,
-  zero regressions expected since every change here is additive: a new function, a new CLI flag, a new
-  hook constant, new hook-list entries — nothing existing is modified in a way that changes prior
-  behavior).
-  - Blocked by Tasks 1-4.
+- [x] **Task 5 — ✅ Run test scripts (verify GREEN)** — Done (2026-07-18)
+  Ran the full test suite in the virtual environment to ensure zero regressions.
+  - Verify: All 3006 passed, 28 skipped, 0 failed.
 
-- [ ] **Task 6 — live validation against a real repo**
-  Same discipline this session used for the query/affected/HTML fixes: don't stop at synthetic tests.
-  Install the hook in a real scratch project (or one of this session's known real repos — kouen-terminal/
-  Fitness-Tracker/Home-Assistant, all already graphified), simulate an Edit-tool-shaped stdin payload (or
-  make a real edit through an actual agent session if feasible), confirm `graph.json`'s mtime/node count
-  changes automatically within debounce+rebuild time, with no manual `graphify update` call. Confirm
-  the self-triggered-loop guard actually holds (editing a file, the hook fires once, not repeatedly).
-  - Blocked by Task 5.
+- [x] **Task 6 — live validation against a real repo** — Done (2026-07-18)
+  Performed end-to-end live validation using a real python environment and a real throwaway workspace in `/tmp`.
+  - Verify: Created a validation script `/Users/supavit.cho/.gemini/antigravity-cli/brain/cacc4ce5-2996-4a57-a04f-2864070e1178/scratch/live_validate.py` that sets up a throwaway project in `/tmp/graphify_validation_scratch/`, creates a file, builds the graph, updates the file, and runs the simulated JSON stdin payload to trigger the hook. Confirmed `graph.json`'s mtime updated and node count increased within 5 seconds. Also verified that editing files under `graphify-out/` or editing non-watched extension files (e.g. `.xyz`) did not trigger updates, confirming all guards work correctly.
 
 ## Next Step
+- Complete! Ready for local git commit.
 
-All tasks done + verified GREEN + live-validated → continue with `/build` (or implement directly given
-the scope is small and already fully specified above — user's call, not assumed here).
