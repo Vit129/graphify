@@ -13,29 +13,49 @@ Confirmed by reading the real code, not assumed:
 - It is **opt-in and foreground-blocking**: `watchdog` is an optional extra (`pyproject.toml:62`,
   `watch = ["watchdog"]`, not installed by default), and `watch()`'s main loop is `while True: time.sleep(0.5)`
   (`watch.py:1080`) — a human must run `graphify watch .` in a dedicated terminal and leave it running.
-- **There is no hook that triggers a rebuild after an AI agent's own edits.** Grepped the whole codebase
-  for `PostToolUse` — zero matches. The only installed Claude Code hook is `PreToolUse`
-  (`_SETTINGS_HOOK`/`_READ_SETTINGS_HOOK`, `__main__.py:470-524`), which nudges the agent to *query* the
-  graph before reading raw files — it says nothing about keeping the graph fresh after a write.
+- **Correction (caught mid-task-design, after this doc's first draft): there IS a third existing
+  mechanism, missed in the first pass of this same orientation** — `graphify/hooks.py` (548 lines,
+  tested in `tests/test_hooks.py`) installs real **git `post-commit`/`post-checkout` hooks**
+  (`hooks.py:483`, `install(path)`) that trigger a detached, non-blocking background rebuild
+  (`_detached_launch`, `hooks.py:230`) after every commit. This is not hypothetical — it's installed in
+  graphify's own dev repo right now; the `graphify-out/.last-refresh.log: No such file or directory`
+  line that fired on every single `git commit`/`git checkout` throughout this whole session's work *was*
+  this hook running. It's a separate opt-in command (`graphify hook install`), not bundled into
+  `graphify install`'s main Claude Code hook setup (`_install_claude_hook`, `__main__.py:1985`) — a
+  discoverability gap in its own right, but not this design's problem to fix.
+- **What this corrects, not invalidates**: the git hook fires **on commit**, async/detached. It does
+  nothing for the much larger window every coding session actually lives in — uncommitted edits, mid-task,
+  which is exactly when an agent needs an accurate graph to validate a fix (this session's own Home-
+  Assistant/Fitness-Tracker rebuilds happened *before* any commit). So the real remaining gap, precisely:
+  **no mechanism fires between an agent's edit and their next commit.** `graphify watch` covers this for
+  a human who remembered to start it; nothing covers it automatically for an agent session.
+- **There is still no hook that triggers a rebuild after an AI agent's own edit tool calls specifically.**
+  Grepped the whole codebase for `PostToolUse` — zero matches (this part of the original finding holds).
+  The only installed Claude Code hook is `PreToolUse` (`_SETTINGS_HOOK`/`_READ_SETTINGS_HOOK`,
+  `__main__.py:470-524`), which nudges the agent to *query* the graph before reading raw files — it says
+  nothing about keeping the graph fresh after a write.
 - **`_install_claude_hook`'s own printed message is currently false advertising**: `__main__.py:1980-1981`
   prints *"Claude Code will now check the knowledge graph before answering codebase questions and rebuild
-  it after code changes"* — the second half describes a feature that doesn't exist. This design closes
-  that gap for real, rather than just fixing the sentence.
+  it after code changes"* — the second half describes a feature that doesn't exist *for the Claude Code
+  hook path* (the git-hook path is real, but separate, opt-in, and commit-triggered, not what this
+  sentence is describing in context — it's printed right after installing the query-nudge hook). This
+  design closes that gap for real, rather than just fixing the sentence.
 - This session hit the resulting gap directly twice (Home-Assistant, Fitness-Tracker) and needed a manual
   `graphify update .` (once even needing a manual `graphify-out/cache` wipe, since the SHA256 cache tracks
   file content, not extractor-code version — a narrower issue, out of scope here, only affects people
   developing graphify's own extractors).
 
-**Conclusion: the gap is not "missing rebuild engine," it's "nothing invokes it automatically for the
-one workflow graphify is actually built around — an AI agent editing files in the same session that
-queries the graph."** This reframes the fix from "port a competitor's file-watcher" to "wire up a
-capability graphify already built and already claims to have."
+**Conclusion: the gap is not "missing rebuild engine" (there are already two: `watch`'s filesystem
+daemon and `hooks.py`'s git-commit hook) — it's "neither existing mechanism covers the uncommitted-edit
+window an agent session actually lives in."** This reframes the fix from "port a competitor's
+file-watcher" to "add the one missing trigger point between the two graphify already has."
 
 ## Strategic Design
 
 This is a CLI/tooling feature, not a business-domain model — bounded-context/aggregate/domain-event
 vocabulary doesn't map cleanly onto it, so this section states that plainly rather than forcing a fit.
-The one real strategic decision is **which of two competing mechanisms** closes the gap:
+The one real strategic decision is **which mechanism** closes the remaining gap — evaluated against the
+two that already exist, not just each other:
 
 | | **A. Auto-start the existing daemon** | **B. Hook-triggered incremental update** |
 |---|---|---|
