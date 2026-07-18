@@ -26,12 +26,15 @@ a file watcher" bug against a personal fork). This doc captures those before the
 
 ### 1. File-watcher auto-sync — biggest concrete gap found, do first
 
-**Design done**: see `file-watcher-auto-sync/design.md` (same directory). Orientation confirmed
-`graphify watch` already exists and works (real `watchdog` daemon) but is opt-in/foreground-blocking and
-nothing auto-starts it; also found `_install_claude_hook`'s printed message already falsely claims a
-post-edit rebuild happens. Decided: a new `PostToolUse` hook triggering a debounced background
-`graphify update`, not an auto-started `watch` daemon (no new dependency, no process-lifecycle surface).
-Next: `task-design` to break this into implementation tasks, then implement.
+**Design + tasks done**: see `file-watcher-auto-sync/design.md` and `dev-task-progress.md` (same
+directory). Orientation found not one but two existing partial mechanisms (`graphify watch`'s
+foreground/opt-in filesystem daemon, and `graphify/hooks.py`'s already-installed git post-commit hook —
+missed on the first orientation pass, caught and corrected mid-task-design). Real remaining gap: neither
+fires between an agent's edit and their next commit. Decided: a new `PostToolUse` hook (Edit/Write/
+MultiEdit) triggering a debounced background `graphify update`, not a new daemon (no new dependency, no
+process-lifecycle surface) — 6 tasks broken down, none started yet.
+Next: implement (task 1 first, `trigger_background_update()` in `watch.py`) — not yet started, awaiting
+the go-ahead.
 
 The single most-repeated architectural gap vs. actively-growing competitors (**CodeGraph**, 47k GitHub
 stars in 5 months — largest data point in the whole audit; **GitNexus**, similar auto-sync claim):
