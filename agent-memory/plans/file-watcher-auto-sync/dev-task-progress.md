@@ -1,6 +1,6 @@
 # Dev Task Progress — File-Watcher Auto-Sync (P17 item 1)
 
-Last updated: 2026-07-18 22:10
+Last updated: 2026-07-18 22:50
 Status: In Progress
 
 ## Context
@@ -30,22 +30,31 @@ apply as-is; mapped to what this repo actually has)
 
 ## Summary
 - Total tasks: 6
-- Completed: 0
-- Remaining: 6
+- Completed: 1
+- Remaining: 5
 
 ## Server Logic
 
-- [ ] **Task 1 — `trigger_background_update()` in `graphify/watch.py`**
-  Debounce-and-spawn function: given a project root, write/refresh a debounce marker under
-  `graphify-out/.pending-update`, check for an already-running updater via the same `_rebuild_lock()`
-  PID/lock pattern `watch.py:93` already uses, and if none is running, spawn
-  `graphify update <project-root>` detached (stdout/stderr redirected to `graphify-out/.update.log`,
-  never raised to the caller — this must fail silently from the hook's perspective). Reuses `watch.py`'s
-  existing 3s debounce constant rather than a new one.
-  - Not blocked by anything — pure addition to an existing module.
-  - Verify: `tests/test_watch.py` **already exists** (confirmed) — add cases there, following its
-    existing fixtures/style. Unit test, monkeypatched subprocess spawn + tmp_path graph — do NOT spawn a
-    real background process in the test suite.
+- [x] **Task 1 — `trigger_background_update()` in `graphify/watch.py`** — Done (2026-07-18)
+  **Deviated from the original plan on implementation, for the better — documented here since the plan
+  text above described a different mechanism than what shipped:** no new `.pending-update` marker file
+  and no reimplemented PID/lock check. `_rebuild_code` (called by the spawned child) already has its own
+  non-blocking `_rebuild_lock` + `_queue_pending`/`_drain_pending` coalescing (confirmed by reading
+  `watch.py:459-480` during implementation) — a burst of rapid triggers already collapses into the fewest
+  rebuilds necessary without any new debounce state. What actually shipped: `trigger_background_update
+  (project_root, changed_paths=None)` spawns `[sys.executable, "-c", _TRIGGER_BODY, str(project_root),
+  *changed_paths]` fully detached — POSIX `start_new_session=True`, Windows `DETACHED_PROCESS |
+  CREATE_NEW_PROCESS_GROUP` (+ `CREATE_BREAKAWAY_FROM_JOB` attempt first) — mirroring `hooks.py`'s
+  `_LAUNCHER_TEMPLATE` flags exactly (proven cross-platform there already), but as plain Python since
+  this isn't shell-embedded. Paths travel as argv (immune to quoting issues), not templated into source
+  text. stdout/stderr to `graphify-out/.update.log`; spawn failures logged, never raised — verified via a
+  mocked-Popen `OSError` test.
+  - Verify: **5 new tests** in `tests/test_watch.py` (all passing) — `_TRIGGER_BODY` parses as standalone
+    Python; Popen called with the right cmd shape + detach kwargs; changed_paths land as argv; log dir
+    gets created; a spawn failure doesn't raise. **Plus a real (non-mocked) end-to-end smoke test**: spawned
+    against a real 2-function scratch corpus, confirmed the detached child actually ran and produced a
+    correct `graph.json` (3 nodes/3 edges) within 3s, with the parent call returning instantly — not just
+    validated against mocks. Full suite: 3003 passed, 0 failed, 0 regressions.
 
 - [ ] **Task 2 — thin CLI entry point to invoke it**
   A way for a shell hook one-liner to call Task 1's function without importing Python inline in the hook

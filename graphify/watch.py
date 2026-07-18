@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -1005,6 +1006,79 @@ def _notify_only(watch_path: Path) -> None:
 
 def _has_non_code(changed_paths: list[Path]) -> bool:
     return any(p.suffix.lower() not in _CODE_EXTENSIONS for p in changed_paths)
+
+
+# Passed as argv, not templated into source text, so a path containing spaces/
+# quotes can't break the child's syntax - same rebuild call hooks.py's git
+# post-commit hook makes (_REBUILD_BODY_COMMIT), reached here via argv instead
+# of an env var since there's no shell layer in between to carry one.
+_TRIGGER_BODY = (
+    "import sys; from pathlib import Path; "
+    "from graphify.watch import _rebuild_code, _apply_resource_limits; "
+    "_apply_resource_limits(); "
+    "_rebuild_code(Path(sys.argv[1]), changed_paths=[Path(p) for p in sys.argv[2:]] or None)"
+)
+
+
+def trigger_background_update(project_root: Path, changed_paths: list[Path] | None = None) -> None:
+    """Spawn a detached, non-blocking background rebuild for ``project_root``.
+
+    For an AI-agent session editing files: covers the window neither existing
+    auto-rebuild mechanism does - graphify_watch's foreground daemon (must be
+    started by hand) and hooks.py's git post-commit hook (fires only on
+    commit) both miss uncommitted, mid-session edits. Meant to be called once
+    per agent write (see the PostToolUse hook), not from a long-running loop.
+
+    Coalescing is not reimplemented here - _rebuild_code's own non-blocking
+    lock (_rebuild_lock, acquire_lock=True/block_on_lock=False, the default)
+    already queues changed_paths and returns immediately if a rebuild is in
+    progress; the lock-holder drains the queue before finishing, so a burst of
+    edits collapses into the fewest rebuilds necessary without a separate
+    debounce timer here.
+
+    Detach technique mirrors hooks.py's `_LAUNCHER_TEMPLATE` exactly (POSIX
+    `start_new_session`, Windows `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`
+    with a `CREATE_BREAKAWAY_FROM_JOB` attempt first) - proven cross-platform
+    in that hook already; not reused directly because that template is built
+    to be embedded inside a shell `-c` argument (single-quote-only source),
+    a constraint this function - already running as plain Python - doesn't have.
+
+    Never raises: spawn failures are logged to `graphify-out/.update.log`
+    (falling back to discarding output if even that can't be opened) rather
+    than surfaced to the caller, since a rebuild trigger firing from a hook
+    must never fail an agent's tool call.
+    """
+    out_dir = project_root / _GRAPHIFY_OUT
+    log_path = out_dir / ".update.log"
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        log_fh = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")
+    except OSError:
+        log_fh = subprocess.DEVNULL
+
+    cmd = [sys.executable, "-c", _TRIGGER_BODY, str(project_root)]
+    cmd.extend(str(p) for p in (changed_paths or []))
+    kwargs = dict(
+        stdout=log_fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        cwd=str(project_root), close_fds=True,
+    )
+    try:
+        if os.name == "nt":
+            flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+            try:
+                subprocess.Popen(cmd, creationflags=flags | 0x01000000, **kwargs)  # + CREATE_BREAKAWAY_FROM_JOB
+            except OSError:
+                subprocess.Popen(cmd, creationflags=flags, **kwargs)
+        else:
+            subprocess.Popen(cmd, start_new_session=True, **kwargs)
+    except OSError as exc:
+        if log_fh is not subprocess.DEVNULL:
+            with contextlib.suppress(OSError):
+                log_fh.write(f"[graphify] trigger_background_update failed to spawn: {exc}\n")
+    finally:
+        if log_fh is not subprocess.DEVNULL:
+            with contextlib.suppress(OSError):
+                log_fh.close()
 
 
 def watch(watch_path: Path, debounce: float = 3.0) -> None:

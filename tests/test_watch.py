@@ -1,4 +1,5 @@
 """Tests for watch.py - file watcher helpers (no watchdog required)."""
+import ast
 import json
 import os
 import subprocess
@@ -1026,3 +1027,77 @@ def test_rebuild_code_no_viz_removes_stale_graph_html(tmp_path):
     assert _rebuild_code(corpus, force=True, no_viz=True, acquire_lock=False) is True
     assert not html_path.exists()
 
+
+
+# --- trigger_background_update (P17 item 1: file-watcher auto-sync) ---
+
+
+def test_trigger_body_is_valid_python():
+    """_TRIGGER_BODY is passed as a subprocess -c argument, not imported - a
+    syntax error in it would only surface at spawn time, silently, in a
+    detached child whose stderr nobody's watching. Parse it standalone."""
+    from graphify.watch import _TRIGGER_BODY
+    ast.parse(_TRIGGER_BODY)
+
+
+def test_trigger_background_update_spawns_detached(tmp_path, monkeypatch):
+    from graphify.watch import trigger_background_update
+
+    calls = []
+
+    def fake_popen(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return object()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    trigger_background_update(tmp_path)
+
+    assert len(calls) == 1
+    cmd, kwargs = calls[0]
+    assert cmd[0] == sys.executable
+    assert cmd[1] == "-c"
+    assert cmd[3] == str(tmp_path)
+    assert kwargs["stdin"] == subprocess.DEVNULL
+    assert kwargs["stderr"] == subprocess.STDOUT
+    assert kwargs["close_fds"] is True
+    if os.name == "nt":
+        assert "creationflags" in kwargs
+    else:
+        assert kwargs.get("start_new_session") is True
+
+
+def test_trigger_background_update_passes_changed_paths_as_argv(tmp_path, monkeypatch):
+    """Paths travel as argv, not templated into the child's source text, so a
+    path containing spaces/quotes can't break its syntax."""
+    from graphify.watch import trigger_background_update
+
+    calls = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: calls.append(cmd) or object())
+
+    changed = [tmp_path / "a weird name.py", tmp_path / "b.py"]
+    trigger_background_update(tmp_path, changed_paths=changed)
+
+    cmd = calls[0]
+    assert cmd[4:] == [str(p) for p in changed]
+
+
+def test_trigger_background_update_creates_log_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: object())
+
+    from graphify.watch import trigger_background_update
+    from graphify.paths import GRAPHIFY_OUT
+
+    trigger_background_update(tmp_path)
+    assert (tmp_path / GRAPHIFY_OUT).is_dir()
+
+
+def test_trigger_background_update_survives_spawn_failure(tmp_path, monkeypatch):
+    """A hook calling this must never fail the agent's tool call - a spawn
+    error (e.g. process-table exhaustion) is logged, not raised."""
+    from graphify.watch import trigger_background_update
+
+    def raising_popen(cmd, **kwargs):
+        raise OSError("mocked: no more processes")
+
+    monkeypatch.setattr(subprocess, "Popen", raising_popen)
+    trigger_background_update(tmp_path)  # must not raise
