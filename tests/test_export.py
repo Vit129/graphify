@@ -175,6 +175,55 @@ def test_to_html_contains_nodes_and_edges():
         assert "RAW_NODES" in content
         assert "RAW_EDGES" in content
 
+def test_to_html_contains_calls_lens():
+    # 'calls' lens: code-symbol-only, non-collapsed view (file_type != 'code'
+    # hidden, edges restricted to REL_WHITELIST) — distinct from the existing
+    # community/file/deps lenses.
+    G = make_graph()
+    communities = cluster(G)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.html"
+        to_html(G, communities, str(out))
+        content = out.read_text()
+        assert "lens-btn-calls" in content
+        assert "switchLens('calls')" in content
+        assert "REL_WHITELIST" in content
+        assert content.count("REL_WHITELIST = new Set(") == 1
+
+def test_to_html_search_respects_lens_and_has_type_filter():
+    # Search gaps closed together: (1) results must respect the active lens
+    # (isNodeHidden) so a hidden concept/rationale node in the Calls lens can't
+    # surface and then fail to focus, (2) label matching is tokenized
+    # (camelCase/snake_case split, same rule as the CLI's query.py _tokenize),
+    # (3) source_file is also searchable, (4) a file_type dropdown filter.
+    G = make_graph()
+    communities = cluster(G)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.html"
+        to_html(G, communities, str(out))
+        content = out.read_text()
+        assert "search-type-filter" in content
+        assert "function tokenize(text)" in content
+        assert "function runSearch()" in content
+        assert "if (isNodeHidden(n)) return;" in content
+        assert "typeFilter !== 'all' && n.file_type !== typeFilter" in content
+        assert "file.includes(q)" in content
+
+def test_to_html_calls_lens_legend_counts_code_only():
+    # Legend/select-all counts for the Calls lens must come from code-type
+    # nodes only (fileScopedNodes), or the displayed count wouldn't match what
+    # the lens actually shows (a file with only concept/rationale nodes has
+    # nothing visible in Calls, so it shouldn't inflate the file count/legend).
+    G = make_graph()
+    communities = cluster(G)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.html"
+        to_html(G, communities, str(out))
+        content = out.read_text()
+        assert "function fileScopedNodes()" in content
+        assert "fileScopedNodes().map(n => n.source_file" in content
+        assert "fileScopedNodes().forEach(n => { const f = n.source_file" in content
+
 
 def test_to_html_member_counts_accepted():
     """to_html accepts member_counts without raising."""

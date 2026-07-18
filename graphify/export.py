@@ -207,9 +207,13 @@ def _html_styles() -> str:
   #search-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; }
   #search { width: 100%; background: #0f0f1a; border: 1px solid #3a3a5e; color: #e0e0e0; padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; }
   #search:focus { border-color: #4E79A7; }
-  #search-results { max-height: 140px; overflow-y: auto; padding: 4px 12px; border-bottom: 1px solid #2a2a4e; display: none; }
-  .search-item { padding: 4px 6px; cursor: pointer; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #search-type-filter { width: 100%; margin-top: 6px; background: #0f0f1a; border: 1px solid #3a3a5e; color: #e0e0e0; padding: 5px 8px; border-radius: 6px; font-size: 12px; outline: none; }
+  #search-type-filter:focus { border-color: #4E79A7; }
+  #search-results { max-height: 160px; overflow-y: auto; padding: 4px 12px; border-bottom: 1px solid #2a2a4e; display: none; }
+  .search-item { padding: 4px 6px; cursor: pointer; border-radius: 4px; }
   .search-item:hover { background: #2a2a4e; }
+  .search-item-label { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-item-meta { font-size: 10px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #info-panel { padding: 14px; border-bottom: 1px solid #2a2a4e; min-height: 140px; }
   #info-panel h3 { font-size: 13px; color: #aaa; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
   #info-content { font-size: 13px; color: #ccc; line-height: 1.6; }
@@ -414,21 +418,59 @@ network.on('click', params => {{
   }}
 }});
 
+// Same identifier-splitting regex as the CLI's query.py _tokenize() (camelCase/
+// snake_case/digit-run boundaries) — ponytail: token-substring + tiered ranking
+// only, no BM25/typo-correction/synonym-expansion port; this list is at most 20
+// results per keystroke over data already in memory, not a scored corpus search.
+const CAMEL_SPLIT_RE = /[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+|[^\\W\\d_]+/g;
+// Combining-diacritics range (U+0300-U+036F), built via code points instead of
+// a unicode-escape literal to keep this file plain-ASCII and diff-clean.
+const COMBINING_MARKS_RE = new RegExp('[' + String.fromCodePoint(0x300) + '-' + String.fromCodePoint(0x36f) + ']', 'g');
+function tokenize(text) {{
+  return (text || '').normalize('NFKD').replace(COMBINING_MARKS_RE, '')
+    .match(CAMEL_SPLIT_RE)?.map(t => t.toLowerCase()) || [];
+}}
+
 const searchInput = document.getElementById('search');
+const searchTypeFilter = document.getElementById('search-type-filter');
 const searchResults = document.getElementById('search-results');
-searchInput.addEventListener('input', () => {{
-  const q = searchInput.value.toLowerCase().trim();
+function runSearch() {{
+  const raw = searchInput.value.trim();
+  const q = raw.toLowerCase();
+  const typeFilter = searchTypeFilter.value;
   searchResults.innerHTML = '';
   if (!q) {{ searchResults.style.display = 'none'; return; }}
-  const matches = RAW_NODES.filter(n => n.label.toLowerCase().includes(q)).slice(0, 20);
+
+  const qTokens = tokenize(raw);
+  const scored = [];
+  RAW_NODES.forEach(n => {{
+    if (isNodeHidden(n)) return; // respect the active lens (e.g. Calls hides concept/doc nodes)
+    if (typeFilter !== 'all' && n.file_type !== typeFilter) return;
+    const label = n.label.toLowerCase();
+    const file = (n.source_file || '').toLowerCase();
+    const labelTokens = tokenize(n.label);
+    const fileMatch = file.includes(q);
+    const tokenHit = qTokens.length > 0 && qTokens.every(qt => labelTokens.some(lt => lt.includes(qt)));
+    if (!label.includes(q) && !fileMatch && !tokenHit) return;
+    let score = 3; // substring-only fallback
+    if (label === q) score = 0;
+    else if (labelTokens.some(lt => qTokens.includes(lt))) score = 1;
+    else if (labelTokens.some(lt => qTokens.some(qt => lt.startsWith(qt)))) score = 2;
+    else if (fileMatch && !label.includes(q)) score = 2.5;
+    scored.push({{ n, score }});
+  }});
+  scored.sort((a, b) => a.score - b.score);
+  const matches = scored.slice(0, 20).map(s => s.n);
+
   if (!matches.length) {{ searchResults.style.display = 'none'; return; }}
   searchResults.style.display = 'block';
   matches.forEach(n => {{
     const el = document.createElement('div');
     el.className = 'search-item';
-    el.textContent = n.label;
     el.style.borderLeft = `3px solid ${{n.color.background}}`;
     el.style.paddingLeft = '8px';
+    el.innerHTML = `<div class="search-item-label">${{esc(n.label)}}</div>
+      <div class="search-item-meta">${{esc(n.file_type || 'unknown')}} · ${{esc(n.source_file || '-')}}</div>`;
     el.onclick = () => {{
       focusNode(n.id);
       searchResults.style.display = 'none';
@@ -436,7 +478,9 @@ searchInput.addEventListener('input', () => {{
     }};
     searchResults.appendChild(el);
   }});
-}});
+}}
+searchInput.addEventListener('input', runSearch);
+searchTypeFilter.addEventListener('change', runSearch);
 document.addEventListener('click', e => {{
   if (!searchResults.contains(e.target) && e.target !== searchInput)
     searchResults.style.display = 'none';
@@ -449,9 +493,14 @@ document.addEventListener('click', e => {{
 // computed lazily here in the browser from data already embedded above, so
 // building/updating the graph (`extract`, `update`, `cluster-only`) does no
 // extra work and graph.html isn't any bigger than before.
-let currentLens = 'community'; // 'community' | 'file' | 'deps'
+let currentLens = 'community'; // 'community' | 'file' | 'deps' | 'calls'
 const hiddenCommunities = new Set();
 const hiddenFiles = new Set();
+// Real relation vocabulary measured across Python/YAML, Swift, and JS/TS corpora (2026-07-04):
+// excludes structural/containment relations (contains, method, defines, case_of)
+// and doc-explains-code (rationale_for), which aren't call/dependency structure.
+// Shared by the 'deps' (file-collapsed) and 'calls' (per-symbol) lenses.
+const REL_WHITELIST = new Set(['calls', 'imports', 'imports_from', 'references', 'inherits', 'implements', 'indirect_call', 're_exports', 'uses', 'embeds']);
 let depNodesCache = null;
 let depEdgesCache = null;
 
@@ -470,12 +519,13 @@ function colorForFile(f) {{
 }}
 
 function isNodeHidden(n) {{
-  if (currentLens === 'file') return hiddenFiles.has(n.source_file || n._source_file || '(none)');
+  if (currentLens === 'calls' && (n.file_type || n._file_type) !== 'code') return true;
+  if (currentLens === 'file' || currentLens === 'calls') return hiddenFiles.has(n.source_file || n._source_file || '(none)');
   return hiddenCommunities.has(n.community !== undefined ? n.community : n._community);
 }}
 
 function nodeDisplayColor(n) {{
-  if (currentLens === 'file') return colorForFile(n.source_file || n._source_file || '(none)');
+  if (currentLens === 'file' || currentLens === 'calls') return colorForFile(n.source_file || n._source_file || '(none)');
   return n.color.background;
 }}
 
@@ -495,6 +545,13 @@ function applyVisibility() {{
   update3DGraphData();
 }}
 
+// File-legend scope for the current lens: Calls only counts/lists files
+// through their code-symbol nodes, so counts match what's actually visible
+// (a file with only concept/rationale nodes wouldn't show any node there anyway).
+function fileScopedNodes() {{
+  return currentLens === 'calls' ? RAW_NODES.filter(n => n.file_type === 'code') : RAW_NODES;
+}}
+
 function toggleAllGroups(hide) {{
   document.querySelectorAll('.legend-item').forEach(item => {{
     hide ? item.classList.add('dimmed') : item.classList.remove('dimmed');
@@ -503,11 +560,11 @@ function toggleAllGroups(hide) {{
   if (currentLens === 'community') {{
     LEGEND.forEach(c => {{ if (hide) hiddenCommunities.add(c.cid); else hiddenCommunities.delete(c.cid); }});
   }} else {{
-    const files = new Set(RAW_NODES.map(n => n.source_file || '(none)'));
+    const files = new Set(fileScopedNodes().map(n => n.source_file || '(none)'));
     files.forEach(f => {{ if (hide) hiddenFiles.add(f); else hiddenFiles.delete(f); }});
   }}
   applyVisibility();
-  const total = currentLens === 'community' ? LEGEND.length : new Set(RAW_NODES.map(n => n.source_file || '(none)')).size;
+  const total = currentLens === 'community' ? LEGEND.length : new Set(fileScopedNodes().map(n => n.source_file || '(none)')).size;
   const hidden = currentLens === 'community' ? hiddenCommunities.size : hiddenFiles.size;
   updateSelectAllState(total, hidden);
 }}
@@ -543,7 +600,7 @@ function renderFileLegend() {{
   legendTitleEl.textContent = currentLens === 'deps' ? 'Files' : 'Files (color)';
   legendEl.innerHTML = '';
   const counts = {{}};
-  RAW_NODES.forEach(n => {{ const f = n.source_file || '(none)'; counts[f] = (counts[f] || 0) + 1; }});
+  fileScopedNodes().forEach(n => {{ const f = n.source_file || '(none)'; counts[f] = (counts[f] || 0) + 1; }});
   const files = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
   files.forEach(f => {{
     const color = colorForFile(f);
@@ -587,10 +644,6 @@ function buildFileDependencyGraph() {{
     nodeToFile[n.id] = f;
     fileCounts[f] = (fileCounts[f] || 0) + 1;
   }});
-  // Real relation vocabulary measured across Python/YAML, Swift, and JS/TS corpora (2026-07-04):
-  // excludes structural/containment relations (contains, method, defines, case_of)
-  // and doc-explains-code (rationale_for), which aren't file-to-file coupling.
-  const REL_WHITELIST = new Set(['calls', 'imports', 'imports_from', 'references', 'inherits', 'implements', 'indirect_call', 're_exports', 'uses', 'embeds']);
   const edgeAgg = {{}};
   RAW_EDGES.forEach(e => {{
     const fa = nodeToFile[e.from], fb = nodeToFile[e.to];
@@ -652,7 +705,7 @@ function switchLens(lens) {{
     nodesDS.clear();
     nodesDS.add(RAW_NODES.map(n => ({{
       id: n.id, label: n.label,
-      color: lens === 'file'
+      color: (lens === 'file' || lens === 'calls')
         ? {{ background: colorForFile(n.source_file || '(none)'), border: colorForFile(n.source_file || '(none)'), highlight: {{ background: '#fff', border: colorForFile(n.source_file || '(none)') }} }}
         : n.color,
       size: n.size, font: n.font, title: n.title,
@@ -661,7 +714,7 @@ function switchLens(lens) {{
       hidden: isNodeHidden(n),
     }})));
     edgesDS.clear();
-    edgesDS.add(RAW_EDGES.map((e, i) => ({{
+    edgesDS.add(RAW_EDGES.filter(e => lens !== 'calls' || REL_WHITELIST.has((e.label || '').toLowerCase())).map((e, i) => ({{
       id: i, from: e.from, to: e.to, label: '', title: e.title,
       dashes: e.dashes, width: e.width, color: e.color,
       arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }},
@@ -826,7 +879,8 @@ function init3DGraph() {{
   const container = document.getElementById('graph-3d');
   const activeNodes = RAW_NODES.filter(n => !isNodeHidden(n));
   const activeNodeIds = new Set(activeNodes.map(n => n.id));
-  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to));
+  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to)
+    && (currentLens !== 'calls' || REL_WHITELIST.has((e.label || '').toLowerCase())));
 
   const gData = {{
     nodes: activeNodes.map(n => ({{
@@ -890,7 +944,8 @@ function update3DGraphData() {{
   if (!graph3DInstance) return;
   const activeNodes = RAW_NODES.filter(n => !isNodeHidden(n));
   const activeNodeIds = new Set(activeNodes.map(n => n.id));
-  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to));
+  const activeEdges = RAW_EDGES.filter(e => activeNodeIds.has(e.from) && activeNodeIds.has(e.to)
+    && (currentLens !== 'calls' || REL_WHITELIST.has((e.label || '').toLowerCase())));
 
   graph3DInstance.graphData({{
     nodes: activeNodes.map(n => ({{
@@ -1312,9 +1367,18 @@ def to_html(
     <button id="lens-btn-community" class="toggle-btn active lens-btn" onclick="switchLens('community')" title="Group/color by inferred community">Community</button>
     <button id="lens-btn-file" class="toggle-btn lens-btn" onclick="switchLens('file')" title="Group/color by source file">File</button>
     <button id="lens-btn-deps" class="toggle-btn lens-btn" onclick="switchLens('deps')" title="Collapse to one node per file, edges = calls/imports/references/extends between files">Dependencies</button>
+    <button id="lens-btn-calls" class="toggle-btn lens-btn" onclick="switchLens('calls')" title="Code symbols only (functions/classes/methods) — hides concept/rationale/document nodes, edges = real calls/imports/references between symbols">Calls</button>
   </div>
   <div id="search-wrap">
-    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
+    <input id="search" type="text" placeholder="Search nodes... (label, tokens, or file path)" autocomplete="off">
+    <select id="search-type-filter">
+      <option value="all">All types</option>
+      <option value="code">Code</option>
+      <option value="concept">Concept</option>
+      <option value="rationale">Rationale</option>
+      <option value="document">Document</option>
+      <option value="paper">Paper</option>
+    </select>
     <div id="search-results"></div>
   </div>
   <div id="info-panel">
