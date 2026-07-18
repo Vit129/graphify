@@ -209,6 +209,21 @@ def test_to_html_search_respects_lens_and_has_type_filter():
         assert "typeFilter !== 'all' && n.file_type !== typeFilter" in content
         assert "file.includes(q)" in content
 
+def test_to_html_calls_lens_legend_counts_code_only():
+    # Legend/select-all counts for the Calls lens must come from code-type
+    # nodes only (fileScopedNodes), or the displayed count wouldn't match what
+    # the lens actually shows (a file with only concept/rationale nodes has
+    # nothing visible in Calls, so it shouldn't inflate the file count/legend).
+    G = make_graph()
+    communities = cluster(G)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.html"
+        to_html(G, communities, str(out))
+        content = out.read_text()
+        assert "function fileScopedNodes()" in content
+        assert "fileScopedNodes().map(n => n.source_file" in content
+        assert "fileScopedNodes().forEach(n => { const f = n.source_file" in content
+
 
 def test_to_html_member_counts_accepted():
     """to_html accepts member_counts without raising."""

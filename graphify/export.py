@@ -545,6 +545,13 @@ function applyVisibility() {{
   update3DGraphData();
 }}
 
+// File-legend scope for the current lens: Calls only counts/lists files
+// through their code-symbol nodes, so counts match what's actually visible
+// (a file with only concept/rationale nodes wouldn't show any node there anyway).
+function fileScopedNodes() {{
+  return currentLens === 'calls' ? RAW_NODES.filter(n => n.file_type === 'code') : RAW_NODES;
+}}
+
 function toggleAllGroups(hide) {{
   document.querySelectorAll('.legend-item').forEach(item => {{
     hide ? item.classList.add('dimmed') : item.classList.remove('dimmed');
@@ -553,11 +560,11 @@ function toggleAllGroups(hide) {{
   if (currentLens === 'community') {{
     LEGEND.forEach(c => {{ if (hide) hiddenCommunities.add(c.cid); else hiddenCommunities.delete(c.cid); }});
   }} else {{
-    const files = new Set(RAW_NODES.map(n => n.source_file || '(none)'));
+    const files = new Set(fileScopedNodes().map(n => n.source_file || '(none)'));
     files.forEach(f => {{ if (hide) hiddenFiles.add(f); else hiddenFiles.delete(f); }});
   }}
   applyVisibility();
-  const total = currentLens === 'community' ? LEGEND.length : new Set(RAW_NODES.map(n => n.source_file || '(none)')).size;
+  const total = currentLens === 'community' ? LEGEND.length : new Set(fileScopedNodes().map(n => n.source_file || '(none)')).size;
   const hidden = currentLens === 'community' ? hiddenCommunities.size : hiddenFiles.size;
   updateSelectAllState(total, hidden);
 }}
@@ -593,7 +600,7 @@ function renderFileLegend() {{
   legendTitleEl.textContent = currentLens === 'deps' ? 'Files' : 'Files (color)';
   legendEl.innerHTML = '';
   const counts = {{}};
-  RAW_NODES.forEach(n => {{ const f = n.source_file || '(none)'; counts[f] = (counts[f] || 0) + 1; }});
+  fileScopedNodes().forEach(n => {{ const f = n.source_file || '(none)'; counts[f] = (counts[f] || 0) + 1; }});
   const files = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
   files.forEach(f => {{
     const color = colorForFile(f);
