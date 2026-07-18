@@ -21,6 +21,7 @@
 | [p14-obsidian-like-graph-control.md](p14-obsidian-like-graph-control.md) | P14 — Obsidian-like Graph Control & Automation | In Progress |
 | [p15-config-value-coupling.md](p15-config-value-coupling.md) | P15 — Opt-In Config Value-Coupling Edges (`shares_value`) | Done (2026-07-04) — gate passed ~96%, verified on HA (+1.6% edges) |
 | [p16-qualified-node-resolution.md](p16-qualified-node-resolution.md) | P16 — Qualified Node Resolution for `path`/`explain` (duplicate-name root cause) | Phase 1 Done (2026-07-04); Phase 2 rejected — no evidence needed |
+| [p17-post-competitor-audit-roadmap.md](p17-post-competitor-audit-roadmap.md) | P17 — Post-Competitor-Audit Roadmap (file-watcher auto-sync, PageRank ranking, 0.18.0 cut, `affected --relation` prefix match, content-as-data hold) | Planning (2026-07-18) — item 1 (auto-sync) handed to `dev-architect` next |
 
 ## Rejected Ideas (evaluated, decided against — not just deferred)
 
