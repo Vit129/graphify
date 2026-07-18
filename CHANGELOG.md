@@ -2,7 +2,7 @@
 
 Full release notes with details on each version: [GitHub Releases](https://github.com/Vit129/graphify/releases)
 
-## Unreleased
+## 0.17.0 (2026-07-18)
 
 - Feature: `.html`/`.htm` extraction now also runs a JS pass over inline `<script>` block bodies (`graphify/extract.py`'s `extract_html_with_scripts`, reusing the Vue SFC extractor's `_vue_mask_non_script` blank-and-preserve-newlines technique — that regex was already generic HTML script-tag matching, not Vue-specific). Previously only elements with an `id` attribute became nodes; a function/class defined inside a `<script>` block (the common single-file-app pattern) was invisible to the graph entirely — `graphify explain`/`query` could never find it. `<script src="...">` (external, no inline body) masks to an empty span and contributes nothing, unchanged.
 - Fix: `explain`/`get_neighbors`/`blast_radius`/`path` (`_find_node_core` in `graphify/query.py`) could return "No node matching" for a real, unambiguous node whose name spans two fields — e.g. `ClassName.methodName` where the class lives in `source_file` and the method is the `label` — because every existing tier (source-exact/exact/prefix/substring) only checks a single field for the *whole* query string. Added a last-resort BM25 cross-field fallback tier (same ranking `query`/`path` already use), only engaged when all single-field tiers come up completely empty, returning every near-tied top scorer (10% gap) so a genuine tie still surfaces through the existing `_find_node_tied_group` ambiguity warning instead of a silent pick.
