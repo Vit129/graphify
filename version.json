@@ -1,5 +1,5 @@
 {
-  "version": 2,
-  "updated": "2026-07-18",
-  "summary": "Cross-field node resolution fallback for explain/affected, inline <script> extraction for HTML, git-clone self-update notice, symlink containment fix"
+  "version": 3,
+  "updated": "2026-07-19",
+  "summary": "graph.html Calls lens + lens-aware search, PostToolUse auto-sync hook, opt-in PageRank query ranking"
 }
