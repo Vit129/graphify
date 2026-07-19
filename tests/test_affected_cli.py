@@ -60,6 +60,34 @@ def test_affected_cli_relation_filter_limits_reverse_traversal(monkeypatch, tmp_
     assert "__init__.py" not in out
 
 
+def test_affected_cli_relation_filter_prefix_matches_parameterized_relation(monkeypatch, tmp_path, capsys):
+    """A bare --relation filter (no ':') must also match P15-style parameterized
+    relation labels like 'shares_value:<value>', since the caller can't know the
+    exact value in advance (#P17 item 4).
+    """
+    graph = nx.DiGraph()
+    graph.add_node("target", label="Foo", source_file="pkg/foo.py", source_location="L1")
+    graph.add_node("coupled", label="Bar", source_file="pkg/bar.py", source_location="L2")
+    graph.add_node("caller", label="X()", source_file="app.py", source_location="L4")
+    graph.add_edge("coupled", "target", relation="shares_value:input_boolean.home_mode", context="config", confidence="EXTRACTED")
+    graph.add_edge("caller", "target", relation="calls", context="call", confidence="EXTRACTED")
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps(json_graph.node_link_data(graph, edges="links")), encoding="utf-8")
+
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(
+        mainmod.sys,
+        "argv",
+        ["graphify", "affected", "Foo", "--relation", "shares_value", "--graph", str(graph_path)],
+    )
+
+    mainmod.main()
+
+    out = capsys.readouterr().out
+    assert "Bar" in out
+    assert "X()" not in out
+
+
 def test_affected_cli_forces_directed_on_undirected_graph(monkeypatch, tmp_path, capsys):
     """A graph persisted with directed=false must still recover caller->callee
     direction (#1174): affected on the callee returns the caller, not the callee
