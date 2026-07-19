@@ -1,7 +1,8 @@
 # Dev Task Progress — PageRank-Style Ranking (P17 item 2)
 
-Last updated: 2026-07-19 01:30
-Status: In Progress
+Last updated: 2026-07-19 02:00
+Status: Done (implementation correct/shippable; the named motivating benchmark case was not fixed by
+this feature — see Task 7's honest write-up below, and the roadmap-note follow-up in "Next Step")
 
 ## Context
 - System: graphify
@@ -28,8 +29,8 @@ Status: In Progress
 
 ## Summary
 - Total tasks: 7
-- Completed: 6
-- Remaining: 1
+- Completed: 7
+- Remaining: 0
 
 ## Server Logic
 
@@ -146,25 +147,46 @@ Status: In Progress
   end-to-end checks aren't part of the pytest suite), confirming the `__main__.py` wiring introduced no
   breakage across any of the three touched command paths.
 
-- [ ] **Task 7 — live validation against the named motivating case**
-  Per the design doc's own acceptance bar: enable `pagerank_ranking` on kouen-terminal (already
-  graphified from this session's earlier work), rebuild, re-run the exact query from this session's
-  original benchmark ("where would I add a new keyboard shortcut to temporarily zoom/maximize the
-  focused pane" — scored 2/5 originally, landing on `MainWindowController.toggleVisibleFrameZoom()`
-  instead of the correct `SessionEditor`/`KouenCommands` pane-zoom path) and check whether the correct
-  result now ranks above the wrong-but-plausible one. This is a real user repo — confirm before
-  touching it whether to rebuild in place (reversible: `graphify.toml`/`graph.json` changes, easy to
-  revert) or in a scratch copy, and revert the `graphify.toml` opt-in afterward unless the user wants
-  to keep it enabled there.
-  - Blocked by Task 6.
-  - **Honest acceptance criterion**: if the boost genuinely doesn't move this specific case (e.g. the
-    correct node's pagerank isn't actually higher than the wrong one's — a real possibility this design
-    doc doesn't get to assume away), report that finding directly rather than declaring victory on
-    weaker evidence. The feature can still be correct/shippable (bounded, backward-compatible, opt-in)
-    even if this one motivating case turns out not to move — that would just mean the roadmap's
-    hypothesis about this specific failure needs revisiting, not that the implementation is wrong.
+- [x] **Task 7 — live validation against the named motivating case** — Done (2026-07-19), **honest
+  negative result on the named case, positive result on the implementation**
+  Enabled `pagerank_ranking = true` on kouen-terminal's `graphify.toml`, rebuilt (`795/795` files,
+  `15393` nodes, confirmed **100% of nodes carry a `pagerank` attribute**), re-ran the exact original
+  benchmark query verbatim. **The correct answer (`SessionEditor.zoomPane()`) did not surface in the
+  top results — the boost did not fix this specific case.**
+  Root-caused, not just observed, per this task's own honest-acceptance-criterion instruction:
+  - `SessionEditor.zoomPane()` DOES score >0 on the real (not hand-picked) query terms — it's a real
+    BM25 candidate, ranked **#7 of 1765** at raw score `11.86`.
+  - The actual top-ranked candidate, `.addNewTab()` (score `16.31`), is a genuine vocabulary-collision
+    false positive — "add"/"new"/"tab" from the query literally match this unrelated tab-creation
+    function's name components. This is exactly the class of failure this feature was meant to address.
+  - The gap between them (~27%) exceeds `_PAGERANK_BOOST_MAX`'s 15% ceiling by design — and
+    `SessionEditor.zoomPane()`'s actual pagerank (`4.5e-5`) isn't even the highest among the candidate
+    set (`.createTab()` has `1.4e-4`), so its real boost is well under the 15% cap, not enough to close
+    a 27% gap even in the best case.
+  - Confirmed against the CLI's own reported seeds (`Start: [...]` line), not just a manual
+    reproduction — `SessionEditor.zoomPane()` was not among the 5 actual seeds picked, matching the
+    score-gap math above.
+  - **Conclusion, stated plainly**: the implementation is correct and working exactly as designed
+    (bounded, tie-breaking-only boost) — Task 4's own test suite already proves this in isolation. What
+    didn't hold up is the *roadmap's hypothesis* that this specific failure was a near-tie a small boost
+    could fix. It's actually a genuine BM25 relevance gap (a keyword-collision false positive scoring
+    meaningfully *higher* than the correct answer, not just adjacent to it) — a different failure class
+    that a bounded re-ranking layer was never going to close, by design (a larger boost would risk
+    exactly the "irrelevant-but-central node outranks the real answer" failure this feature was built to
+    avoid, per the design doc's own Tactical Design reasoning).
+  - Cleaned up after testing: `graphify.toml` reverted to its original content, and the 4 git-tracked
+    `graphify-out/` files kouen-terminal happens to track (`.graphify_labels.json`, `GRAPH_REPORT.md`,
+    `GRAPH_SUMMARY.md`, `manifest.json` — this repo tracks more of `graphify-out/` than Home-Assistant/
+    Fitness-Tracker did earlier this session) restored via `git checkout -- graphify-out/`, scoped so it
+    didn't touch any of the repo's own unrelated in-progress work (UI changes, `DESIGN.md`/`PRODUCT.md`,
+    tests) sitting uncommitted there. Confirmed via `git status`/`git diff --stat` before and after.
 
 ## Next Step
 
-All tasks done + verified GREEN + live-validated → report back before merging, given this feature's
-higher regression-risk profile (touches every query's ranking) versus item 1's purely-additive shape.
+All 7 tasks done, verified GREEN, live-validated with an honest (not favorable-only) result. Per this
+task's own framing: the feature is correct/shippable as designed — bounded, backward-compatible,
+opt-in, zero regressions on the default path, real end-to-end proof it computes and composes correctly.
+The open item is the *roadmap*, not the *code*: P17 item 2's own motivating hypothesis (this specific
+kouen-terminal query was a near-tie fixable by a small ranking nudge) didn't hold up — it's a genuine
+relevance gap instead. Worth a note back in `p17-post-competitor-audit-roadmap.md` before merging, and
+worth surfacing to the user directly rather than reporting only the parts that went well.

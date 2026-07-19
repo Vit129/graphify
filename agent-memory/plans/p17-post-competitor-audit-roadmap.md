@@ -69,6 +69,21 @@ in a wrong-but-plausible-sounding subsystem — see P9/BM25 fallback work alread
   Semantic/Embedding Search").
 - Do after item 1 - item 1 is a workflow blocker affecting daily use; this is a quality polish.
 
+**Shipped (PR #15, all 7 tasks done) — but the named motivating case wasn't actually fixed by it, stated
+plainly**: see `pagerank-ranking/dev-task-progress.md` Task 7 for the full root-cause. The
+implementation itself is correct and verified (bounded, backward-compatible, opt-in, zero regressions,
+composes correctly with the existing concept/prose penalties) — Task 4's test suite proves this in
+isolation. What this session's *hypothesis* got wrong: the kouen-terminal "zoom/fullscreen" query's
+failure isn't a near-tie a small ranking nudge can fix. Root-caused live on the real repo: the correct
+answer (`SessionEditor.zoomPane()`) scores #7 of 1765 real BM25 candidates, ~27% behind the top
+(false-positive) match (`.addNewTab()`, a genuine "add"/"new"/"tab" keyword collision) — a real
+relevance gap, not a tie, and one whose size exceeds `_PAGERANK_BOOST_MAX`'s 15% ceiling by design (a
+larger cap would risk the opposite failure this feature exists to prevent). **If this specific class of
+fuzzy-query failure is still worth chasing, the right next hypothesis is a synonym/vocabulary fix (P9's
+own territory - `_SYNONYM_GROUPS`/`_PHRASE_SYNONYMS`) or accepting it as this session's benchmark
+already labeled it: a documented ceiling of the lightweight query-expansion approach, not something
+every subsequent feature is expected to close.**
+
 ### 3. Cut a 0.18.0 release for PR #12's content
 
 Small housekeeping, not a design task. CHANGELOG's `## Unreleased` section already holds PR #12's
