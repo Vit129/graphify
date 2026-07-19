@@ -1,4 +1,5 @@
 """Tests for watch.py - file watcher helpers (no watchdog required)."""
+import ast
 import json
 import os
 import subprocess
@@ -221,6 +222,67 @@ def test_rebuild_code_rank_by_pagerank_reaches_god_nodes(tmp_path):
 
     report = (corpus / "graphify-out" / "GRAPH_REPORT.md").read_text(encoding="utf-8")
     assert "## God Nodes" in report
+
+
+# --- pagerank_ranking (P17 item 2: PageRank-style query-scoring boost) ---
+# Distinct from rank_by="pagerank" above: that's the god_nodes report ranking
+# mode (unrelated, unaffected). pagerank_ranking persists a per-node pagerank
+# attribute in graph.json for query.py's _pick_seeds to consume.
+
+
+def test_rebuild_code_pagerank_ranking_true_adds_attribute(tmp_path):
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text(
+        "def a(): return b()\ndef b(): return c()\ndef c(): pass\n", encoding="utf-8"
+    )
+    assert _rebuild_code(corpus, acquire_lock=False, pagerank_ranking=True) is True
+
+    data = json.loads((corpus / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert all("pagerank" in n for n in data["nodes"])
+
+
+def test_rebuild_code_pagerank_ranking_false_omits_attribute(tmp_path):
+    """Default (pagerank_ranking=False) must not add the attribute at all -
+    the backward-compatible state every existing graph/user is in today."""
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text("def a(): pass\n", encoding="utf-8")
+    assert _rebuild_code(corpus, acquire_lock=False) is True
+
+    data = json.loads((corpus / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert all("pagerank" not in n for n in data["nodes"])
+
+
+def test_rebuild_code_pagerank_ranking_survives_missing_scipy(tmp_path, monkeypatch, capsys):
+    """scipy is an optional dependency (pyproject.toml's pagerank extra, not
+    bundled in `all`) - a missing-scipy environment must still build the
+    graph successfully, just without the pagerank attribute, and print the
+    shared install-instructions message rather than raising."""
+    import builtins
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "networkx":
+            raise ImportError("mocked missing scipy (networkx.pagerank needs it)")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text("def a(): pass\n", encoding="utf-8")
+    assert _rebuild_code(corpus, acquire_lock=False, pagerank_ranking=True) is True
+
+    data = json.loads((corpus / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert all("pagerank" not in n for n in data["nodes"])
+    assert "requires scipy" in capsys.readouterr().err
 
 
 def test_rebuild_code_evicts_nodes_from_deleted_files(tmp_path):
@@ -1025,4 +1087,93 @@ def test_rebuild_code_no_viz_removes_stale_graph_html(tmp_path):
     )
     assert _rebuild_code(corpus, force=True, no_viz=True, acquire_lock=False) is True
     assert not html_path.exists()
+
+
+
+# --- trigger_background_update (P17 item 1: file-watcher auto-sync) ---
+
+
+def test_trigger_body_is_valid_python():
+    """_TRIGGER_BODY is passed as a subprocess -c argument, not imported - a
+    syntax error in it would only surface at spawn time, silently, in a
+    detached child whose stderr nobody's watching. Parse it standalone."""
+    from graphify.watch import _TRIGGER_BODY
+    ast.parse(_TRIGGER_BODY)
+
+
+def test_trigger_background_update_spawns_detached(tmp_path, monkeypatch):
+    from graphify.watch import trigger_background_update
+
+    calls = []
+
+    def fake_popen(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return object()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    trigger_background_update(tmp_path)
+
+    assert len(calls) == 1
+    cmd, kwargs = calls[0]
+    assert cmd[0] == sys.executable
+    assert cmd[1] == "-c"
+    assert cmd[3] == str(tmp_path)
+    assert kwargs["stdin"] == subprocess.DEVNULL
+    assert kwargs["stderr"] == subprocess.STDOUT
+    assert kwargs["close_fds"] is True
+    if os.name == "nt":
+        assert "creationflags" in kwargs
+    else:
+        assert kwargs.get("start_new_session") is True
+
+
+def test_trigger_background_update_passes_changed_paths_as_argv(tmp_path, monkeypatch):
+    """Paths travel as argv, not templated into the child's source text, so a
+    path containing spaces/quotes can't break its syntax."""
+    from graphify.watch import trigger_background_update
+
+    calls = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: calls.append(cmd) or object())
+
+    changed = [tmp_path / "a weird name.py", tmp_path / "b.py"]
+    trigger_background_update(tmp_path, changed_paths=changed)
+
+    cmd = calls[0]
+    assert cmd[4:] == [str(p) for p in changed]
+
+
+def test_trigger_background_update_creates_log_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: object())
+
+    from graphify.watch import trigger_background_update
+    from graphify.paths import GRAPHIFY_OUT
+
+    trigger_background_update(tmp_path)
+    assert (tmp_path / GRAPHIFY_OUT).is_dir()
+
+
+def test_trigger_background_update_survives_spawn_failure(tmp_path, monkeypatch):
+    """A hook calling this must never fail the agent's tool call - a spawn
+    error (e.g. process-table exhaustion) is logged, not raised."""
+    from graphify.watch import trigger_background_update
+
+    def raising_popen(cmd, **kwargs):
+        raise OSError("mocked: no more processes")
+
+    monkeypatch.setattr(subprocess, "Popen", raising_popen)
+    trigger_background_update(tmp_path)  # must not raise
+
+
+def test_cli_trigger_flag_returns_fast(tmp_path):
+    """Running python -m graphify.watch --trigger <path> exits fast and doesn't hang."""
+    start_time = time.monotonic()
+    proc = subprocess.run(
+        [sys.executable, "-m", "graphify.watch", "--trigger", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=5.0
+    )
+    assert proc.returncode == 0
+    duration = time.monotonic() - start_time
+    assert duration < 3.0
 

@@ -43,6 +43,30 @@ def test_to_json_nodes_have_community():
         for node in data["nodes"]:
             assert "community" in node
 
+def test_to_json_writes_pagerank_when_provided():
+    G = make_graph()
+    communities = cluster(G)
+    any_node_id = next(iter(G.nodes()))
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.json"
+        to_json(G, communities, str(out), pagerank_scores={any_node_id: 0.5})
+        data = json.loads(out.read_text())
+        by_id = {n["id"]: n for n in data["nodes"]}
+        assert by_id[any_node_id]["pagerank"] == 0.5
+
+def test_to_json_omits_pagerank_key_by_default():
+    """No pagerank_scores arg (every pre-existing call site) must not add a
+    pagerank key at all - not even None - so old-shape graph.json consumers
+    are unaffected."""
+    G = make_graph()
+    communities = cluster(G)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.json"
+        to_json(G, communities, str(out))
+        data = json.loads(out.read_text())
+        for node in data["nodes"]:
+            assert "pagerank" not in node
+
 def test_to_cypher_creates_file():
     G = make_graph()
     with tempfile.TemporaryDirectory() as tmp:

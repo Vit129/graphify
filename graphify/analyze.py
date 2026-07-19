@@ -110,6 +110,17 @@ def _is_json_key_node(G: nx.Graph, node_id: str) -> bool:
     return label in _JSON_NOISE_LABELS
 
 
+# Shared install instructions for nx.pagerank()'s optional scipy dependency
+# (pyproject.toml's `pagerank = ["scipy"]` extra - not bundled in `all`).
+# Single source of truth so god_nodes and any other pagerank consumer (e.g.
+# the query-ranking pagerank attribute, watch.py's _rebuild_code) don't drift
+# into different wordings for the same install instructions over time.
+_PAGERANK_SCIPY_MISSING_MSG = (
+    "requires scipy - install with `pip install graphifyy[pagerank]` "
+    "or `uv tool install --with scipy graphifyy`"
+)
+
+
 def god_nodes(G: nx.Graph, top_n: int = 10, by: str = "degree") -> list[dict]:
     """Return the top_n most-connected real entities - the core abstractions.
 
@@ -126,8 +137,7 @@ def god_nodes(G: nx.Graph, top_n: int = 10, by: str = "degree") -> list[dict]:
             score = nx.pagerank(G)
         except ImportError as exc:
             raise ImportError(
-                "god_nodes(by='pagerank') requires scipy - install with "
-                "`pip install graphifyy[pagerank]` or `uv tool install --with scipy graphifyy`"
+                f"god_nodes(by='pagerank') {_PAGERANK_SCIPY_MISSING_MSG}"
             ) from exc
     elif by == "degree":
         score = dict(G.degree())

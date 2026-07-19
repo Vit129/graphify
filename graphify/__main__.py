@@ -524,6 +524,48 @@ _READ_SETTINGS_HOOK = {
     ],
 }
 
+_POST_EDIT_HOOK = {
+    "matcher": "Edit|Write|MultiEdit",
+    "hooks": [
+        {
+            "type": "command",
+            "command": (
+                "python3 -c \"\n"
+                "import json, os, sys, subprocess\n"
+                "from pathlib import Path\n"
+                "try:\n"
+                "    from graphify.watch import _WATCHED_EXTENSIONS\n"
+                "    d = json.load(sys.stdin)\n"
+                "    t = d.get('tool_input', d)\n"
+                "    fp = t.get('file_path') or t.get('path') or t.get('target_file') or t.get('TargetFile')\n"
+                "    if fp:\n"
+                "        p = Path(fp)\n"
+                "        try:\n"
+                "            p = p.resolve().relative_to(Path.cwd().resolve())\n"
+                "        except Exception:\n"
+                "            pass\n"
+                "        if p.suffix.lower() in _WATCHED_EXTENSIONS:\n"
+                "            parts = p.parts\n"
+                "            if not (any(part.startswith('.') for part in parts) or 'graphify-out' in parts):\n"
+                "                if os.path.exists('graphify-out/graph.json'):\n"
+                "                    cmd = [sys.executable, '-m', 'graphify.watch', '--trigger', '.']\n"
+                "                    kw = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, close_fds=True)\n"
+                "                    if os.name == 'nt':\n"
+                "                        flags = 0x00000008 | 0x00000200\n"
+                "                        try:\n"
+                "                            subprocess.Popen(cmd, creationflags=flags | 0x01000000, **kw)\n"
+                "                        except OSError:\n"
+                "                            subprocess.Popen(cmd, creationflags=flags, **kw)\n"
+                "                    else:\n"
+                "                        subprocess.Popen(cmd, start_new_session=True, **kw)\n"
+                "except Exception:\n"
+                "    pass\n"
+                "\" 2>/dev/null || true"
+            ),
+        }
+    ],
+}
+
 def _skill_registration(skill_path: str = "~/.claude/skills/graphify/SKILL.md") -> str:
     return (
         "\n# graphify\n"
@@ -1982,7 +2024,7 @@ def claude_install(project_dir: Path | None = None) -> None:
 
 
 def _install_claude_hook(project_dir: Path) -> None:
-    """Add graphify PreToolUse hook to .claude/settings.json."""
+    """Add graphify PreToolUse and PostToolUse hooks to .claude/settings.json."""
     settings_path = project_dir / ".claude" / "settings.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1996,16 +2038,21 @@ def _install_claude_hook(project_dir: Path) -> None:
 
     hooks = settings.setdefault("hooks", {})
     pre_tool = hooks.setdefault("PreToolUse", [])
+    post_tool = hooks.setdefault("PostToolUse", [])
 
     hooks["PreToolUse"] = [h for h in pre_tool if not (h.get("matcher") in ("Glob|Grep", "Bash", "Read|Glob") and "graphify" in str(h))]
     hooks["PreToolUse"].append(_SETTINGS_HOOK)
     hooks["PreToolUse"].append(_READ_SETTINGS_HOOK)
+
+    hooks["PostToolUse"] = [h for h in post_tool if not (h.get("matcher") in ("Edit|Write|MultiEdit",) and "graphify" in str(h))]
+    hooks["PostToolUse"].append(_POST_EDIT_HOOK)
+
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    print(f"  .claude/settings.json  ->  PreToolUse hooks registered (Bash search + Read/Glob)")
+    print(f"  .claude/settings.json  ->  PreToolUse + PostToolUse hooks registered")
 
 
 def _uninstall_claude_hook(project_dir: Path) -> None:
-    """Remove graphify PreToolUse hook from .claude/settings.json."""
+    """Remove graphify PreToolUse and PostToolUse hooks from .claude/settings.json."""
     settings_path = project_dir / ".claude" / "settings.json"
     if not settings_path.exists():
         return
@@ -2013,13 +2060,24 @@ def _uninstall_claude_hook(project_dir: Path) -> None:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return
-    pre_tool = settings.get("hooks", {}).get("PreToolUse", [])
-    filtered = [h for h in pre_tool if not (h.get("matcher") in ("Glob|Grep", "Bash", "Read|Glob") and "graphify" in str(h))]
-    if len(filtered) == len(pre_tool):
+    
+    hooks = settings.get("hooks", {})
+    pre_tool = hooks.get("PreToolUse", [])
+    filtered_pre = [h for h in pre_tool if not (h.get("matcher") in ("Glob|Grep", "Bash", "Read|Glob") and "graphify" in str(h))]
+    
+    post_tool = hooks.get("PostToolUse", [])
+    filtered_post = [h for h in post_tool if not (h.get("matcher") in ("Edit|Write|MultiEdit",) and "graphify" in str(h))]
+    
+    if len(filtered_pre) == len(pre_tool) and len(filtered_post) == len(post_tool):
         return
-    settings["hooks"]["PreToolUse"] = filtered
+        
+    if "PreToolUse" in hooks:
+        settings["hooks"]["PreToolUse"] = filtered_pre
+    if "PostToolUse" in hooks:
+        settings["hooks"]["PostToolUse"] = filtered_post
+        
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    print(f"  .claude/settings.json  ->  PreToolUse hook removed")
+    print(f"  .claude/settings.json  ->  PreToolUse + PostToolUse hooks removed")
 
 
 def uninstall_all(project_dir: Path | None = None, purge: bool = False) -> None:
@@ -3966,6 +4024,7 @@ def main() -> None:
                             no_viz=no_viz,
                             wiki=wiki,
                             value_coupling=proj_config.get("value_coupling", False),
+                            pagerank_ranking=proj_config.get("pagerank_ranking", False),
                         )
                         if ok:
                             success_count += 1
@@ -4050,6 +4109,7 @@ def main() -> None:
             no_viz=proj_config.get("no_viz"),
             wiki=proj_config.get("wiki"),
             value_coupling=proj_config.get("value_coupling", False),
+            pagerank_ranking=proj_config.get("pagerank_ranking", False),
         )
         if ok:
             print("Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.")
@@ -4757,6 +4817,7 @@ def main() -> None:
         cli_cargo: bool = proj_config.get("cargo", False)
         no_cluster = proj_config.get("no_cluster", False)
         value_coupling = proj_config.get("value_coupling", False)  # P15 opt-in
+        pagerank_ranking = proj_config.get("pagerank_ranking", False)  # P17 item 2 opt-in
         dedup_llm = proj_config.get("dedup_llm", False)
         google_workspace = proj_config.get("google_workspace", False)
         global_merge = proj_config.get("global", False)
@@ -4827,6 +4888,8 @@ def main() -> None:
                 no_cluster = True; i += 1
             elif a == "--value-coupling":
                 value_coupling = True; i += 1
+            elif a == "--pagerank-ranking":
+                pagerank_ranking = True; i += 1
             elif a == "--dedup-llm":
                 dedup_llm = True; i += 1
             elif a == "--google-workspace":
@@ -5354,7 +5417,10 @@ def main() -> None:
         )
         from graphify.cluster import cluster as _cluster, score_all as _score_all
         from graphify.export import to_json as _to_json
-        from graphify.analyze import god_nodes as _god_nodes, cross_cutting_nodes as _cross_cutting, surprising_connections as _surprising
+        from graphify.analyze import (
+            god_nodes as _god_nodes, cross_cutting_nodes as _cross_cutting,
+            surprising_connections as _surprising, _PAGERANK_SCIPY_MISSING_MSG,
+        )
         dedup_backend = backend if dedup_llm else None
         if incremental_mode:
             G = _build_merge(
@@ -5396,7 +5462,17 @@ def main() -> None:
 
         from graphify.export import backup_if_protected as _backup
         _backup(graphify_out)
-        _to_json(G, communities, str(graph_json_path), force=True)
+        pagerank_scores = None
+        if pagerank_ranking:
+            try:
+                import networkx as _nx
+                pagerank_scores = _nx.pagerank(G)
+            except ImportError:
+                print(
+                    f"[graphify extract] pagerank_ranking {_PAGERANK_SCIPY_MISSING_MSG}",
+                    file=sys.stderr,
+                )
+        _to_json(G, communities, str(graph_json_path), force=True, pagerank_scores=pagerank_scores)
         stages.mark("export")
         if merged.get("output_tokens", 0) > 0:
             (graphify_out / ".graphify_semantic_marker").write_text(

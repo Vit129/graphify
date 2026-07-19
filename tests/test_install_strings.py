@@ -147,3 +147,26 @@ def test_how_it_works_clarifies_code_only_semantic_extraction():
     assert "Code files are not sent to the LLM semantic extractor" in doc
     assert "code files, Pass 3 is skipped entirely" in doc
     assert "docs, papers, images, and transcripts" in doc
+
+
+def test_post_edit_hook_structure_and_syntax():
+    """Assert the structure of _POST_EDIT_HOOK and that its embedded Python code is valid."""
+    import ast
+    from graphify.__main__ import _POST_EDIT_HOOK
+    
+    assert _POST_EDIT_HOOK["matcher"] == "Edit|Write|MultiEdit"
+    assert len(_POST_EDIT_HOOK["hooks"]) == 1
+    hook = _POST_EDIT_HOOK["hooks"][0]
+    assert hook["type"] == "command"
+    cmd = hook["command"]
+    assert cmd.startswith('python3 -c "')
+    assert cmd.endswith('" 2>/dev/null || true')
+    
+    # Extract the Python script
+    start = cmd.find('python3 -c "') + 12
+    end = cmd.rfind('" 2>/dev/null || true')
+    script = cmd[start:end]
+    
+    # Verify it compiles as syntactically valid Python
+    ast.parse(script)
+

@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -429,6 +430,7 @@ def _rebuild_code(
     no_viz: bool | None = None,
     wiki: bool | None = None,
     value_coupling: bool = False,
+    pagerank_ranking: bool = False,
 ) -> bool:
     """Re-run AST extraction + build + optional cluster + report for code files. No LLM needed.
 
@@ -494,6 +496,7 @@ def _rebuild_code(
                 no_viz=no_viz,
                 wiki=wiki,
                 value_coupling=value_coupling,
+                pagerank_ranking=pagerank_ranking,
             )
             # Late-arrival drain: another hook may have queued work while we
             # were rebuilding. Loop up to _PENDING_DRAIN_MAX_PASSES times so a
@@ -517,6 +520,7 @@ def _rebuild_code(
                         no_viz=no_viz,
                         wiki=wiki,
                         value_coupling=value_coupling,
+                        pagerank_ranking=pagerank_ranking,
                     ) and ok
             return ok
 
@@ -533,7 +537,10 @@ def _rebuild_code(
         from graphify.detect import detect
         from graphify.build import build_from_json, _norm_source_file as _nsf
         from graphify.cluster import cluster, remap_communities_to_previous, score_all
-        from graphify.analyze import god_nodes, cross_cutting_nodes, surprising_connections, suggest_questions
+        from graphify.analyze import (
+            god_nodes, cross_cutting_nodes, surprising_connections, suggest_questions,
+            _PAGERANK_SCIPY_MISSING_MSG,
+        )
         from graphify.report import generate
         from graphify.export import to_json, to_html
         from graphify.security import check_graph_file_size_cap
@@ -857,7 +864,21 @@ def _rebuild_code(
         report_path = out / "GRAPH_REPORT.md"
         labels_json = json.dumps({str(k): v for k, v in sorted(labels.items())}, ensure_ascii=False, indent=2) + "\n"
         graph_tmp = out / ".graph.tmp.json"
-        json_written = to_json(G, communities, str(graph_tmp), force=True, built_at_commit=commit)
+        pagerank_scores = None
+        if pagerank_ranking:
+            try:
+                import networkx as _nx
+                pagerank_scores = _nx.pagerank(G)
+            except ImportError:
+                import sys as _sys
+                print(
+                    f"[graphify update] pagerank_ranking {_PAGERANK_SCIPY_MISSING_MSG}",
+                    file=_sys.stderr,
+                )
+        json_written = to_json(
+            G, communities, str(graph_tmp), force=True, built_at_commit=commit,
+            pagerank_scores=pagerank_scores,
+        )
         if not json_written:
             return False
         candidate_graph_data = json.loads(graph_tmp.read_text(encoding="utf-8"))
@@ -1007,6 +1028,79 @@ def _has_non_code(changed_paths: list[Path]) -> bool:
     return any(p.suffix.lower() not in _CODE_EXTENSIONS for p in changed_paths)
 
 
+# Passed as argv, not templated into source text, so a path containing spaces/
+# quotes can't break the child's syntax - same rebuild call hooks.py's git
+# post-commit hook makes (_REBUILD_BODY_COMMIT), reached here via argv instead
+# of an env var since there's no shell layer in between to carry one.
+_TRIGGER_BODY = (
+    "import sys; from pathlib import Path; "
+    "from graphify.watch import _rebuild_code, _apply_resource_limits; "
+    "_apply_resource_limits(); "
+    "_rebuild_code(Path(sys.argv[1]), changed_paths=[Path(p) for p in sys.argv[2:]] or None)"
+)
+
+
+def trigger_background_update(project_root: Path, changed_paths: list[Path] | None = None) -> None:
+    """Spawn a detached, non-blocking background rebuild for ``project_root``.
+
+    For an AI-agent session editing files: covers the window neither existing
+    auto-rebuild mechanism does - graphify_watch's foreground daemon (must be
+    started by hand) and hooks.py's git post-commit hook (fires only on
+    commit) both miss uncommitted, mid-session edits. Meant to be called once
+    per agent write (see the PostToolUse hook), not from a long-running loop.
+
+    Coalescing is not reimplemented here - _rebuild_code's own non-blocking
+    lock (_rebuild_lock, acquire_lock=True/block_on_lock=False, the default)
+    already queues changed_paths and returns immediately if a rebuild is in
+    progress; the lock-holder drains the queue before finishing, so a burst of
+    edits collapses into the fewest rebuilds necessary without a separate
+    debounce timer here.
+
+    Detach technique mirrors hooks.py's `_LAUNCHER_TEMPLATE` exactly (POSIX
+    `start_new_session`, Windows `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`
+    with a `CREATE_BREAKAWAY_FROM_JOB` attempt first) - proven cross-platform
+    in that hook already; not reused directly because that template is built
+    to be embedded inside a shell `-c` argument (single-quote-only source),
+    a constraint this function - already running as plain Python - doesn't have.
+
+    Never raises: spawn failures are logged to `graphify-out/.update.log`
+    (falling back to discarding output if even that can't be opened) rather
+    than surfaced to the caller, since a rebuild trigger firing from a hook
+    must never fail an agent's tool call.
+    """
+    out_dir = project_root / _GRAPHIFY_OUT
+    log_path = out_dir / ".update.log"
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        log_fh = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")
+    except OSError:
+        log_fh = subprocess.DEVNULL
+
+    cmd = [sys.executable, "-c", _TRIGGER_BODY, str(project_root)]
+    cmd.extend(str(p) for p in (changed_paths or []))
+    kwargs = dict(
+        stdout=log_fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        cwd=str(project_root), close_fds=True,
+    )
+    try:
+        if os.name == "nt":
+            flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+            try:
+                subprocess.Popen(cmd, creationflags=flags | 0x01000000, **kwargs)  # + CREATE_BREAKAWAY_FROM_JOB
+            except OSError:
+                subprocess.Popen(cmd, creationflags=flags, **kwargs)
+        else:
+            subprocess.Popen(cmd, start_new_session=True, **kwargs)
+    except OSError as exc:
+        if log_fh is not subprocess.DEVNULL:
+            with contextlib.suppress(OSError):
+                log_fh.write(f"[graphify] trigger_background_update failed to spawn: {exc}\n")
+    finally:
+        if log_fh is not subprocess.DEVNULL:
+            with contextlib.suppress(OSError):
+                log_fh.close()
+
+
 def watch(watch_path: Path, debounce: float = 3.0) -> None:
     """
     Watch watch_path for new or modified files and auto-update the graph.
@@ -1103,5 +1197,9 @@ if __name__ == "__main__":
     parser.add_argument("path", nargs="?", default=".", help="Folder to watch (default: .)")
     parser.add_argument("--debounce", type=float, default=3.0,
                         help="Seconds to wait after last change before updating (default: 3)")
+    parser.add_argument("--trigger", help="Trigger a background update for the given project path and exit immediately")
     args = parser.parse_args()
+    if args.trigger:
+        trigger_background_update(Path(args.trigger))
+        sys.exit(0)
     watch(Path(args.path), debounce=args.debounce)
