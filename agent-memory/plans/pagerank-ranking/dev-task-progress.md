@@ -1,6 +1,6 @@
 # Dev Task Progress — PageRank-Style Ranking (P17 item 2)
 
-Last updated: 2026-07-19 00:20
+Last updated: 2026-07-19 00:45
 Status: In Progress
 
 ## Context
@@ -28,8 +28,8 @@ Status: In Progress
 
 ## Summary
 - Total tasks: 7
-- Completed: 1
-- Remaining: 6
+- Completed: 3
+- Remaining: 4
 
 ## Server Logic
 
@@ -46,33 +46,37 @@ Status: In Progress
     unchanged — neither asserted on the exact error string, so this was a safe refactor, not just a
     lucky one. Full suite: 3006 passed, 0 failed, 0 regressions.
 
-- [ ] **Task 2 — `_rebuild_code` computes + passes PageRank (`graphify/watch.py`)**
-  New `pagerank_ranking: bool = False` parameter on `_rebuild_code` (`watch.py:417-432`), mirroring
-  `value_coupling`'s exact shape. When `True`: `try: import scipy` (probe only) `except ImportError:`
-  print Task 1's shared message to stderr, continue without pagerank (graph still builds normally) —
-  else `pr_scores = nx.pagerank(G)`. Pass `pr_scores` (or `None`) to `to_json` as the new
-  `pagerank_scores` parameter (Task 3) at the call site (`watch.py:861`).
-  - Blocked by Task 1.
-  - Verify: extend `tests/test_watch.py` — `_rebuild_code(pagerank_ranking=True)` on a real tmp_path
-    corpus with scipy available asserts nodes end up with a `pagerank` attribute in the written
-    `graph.json`; `pagerank_ranking=False` (default) asserts the attribute is absent (backward-compat);
-    a mocked `ImportError` on the scipy probe asserts the build still succeeds with no `pagerank`
-    attribute and no exception raised (mirrors `test_watch_raises_without_watchdog`'s style for the
-    equivalent guarantee on a different optional dependency).
+- [x] **Task 2 — `_rebuild_code` computes + passes PageRank (`graphify/watch.py`)** — Done (2026-07-19)
+  **Implemented together with Task 3**: Task 2's call site can't be completed or tested without Task
+  3's `to_json` parameter existing, so both landed in this pass rather than leaving Task 2 in a
+  syntactically-incomplete state — noting this the same way item 1's Task 1 documented its own
+  deviation. Added `pagerank_ranking: bool = False` to `_rebuild_code`'s signature, forwarded through
+  **both** recursive `acquire_lock=False` self-call sites (`watch.py:485-499` and `508-524`) — caught
+  myself missing the second one on the first pass via `grep` verification before moving on, which is
+  exactly the bug class P15's `value_coupling` shipped once already (a hand-listed forwarded-kwargs
+  site silently reverting to the default). Right before the existing `to_json` call, guarded by
+  `if pagerank_ranking:` — `import networkx as _nx; pagerank_scores = _nx.pagerank(G)`, wrapped in
+  `try/except ImportError:` printing Task 1's shared message via stderr and leaving `pagerank_scores =
+  None` on failure (graph still builds normally either way).
+  - Verify: **3 new tests** in `tests/test_watch.py` — `pagerank_ranking=True` real end-to-end (scipy
+    available) asserts every node gets a `pagerank` attribute; default (`False`) asserts none do;
+    mocked `ImportError` (mirrors `test_watch_raises_without_watchdog`'s style) asserts the build still
+    succeeds, no attribute, no exception, and the shared message reaches stderr. **Plus a real
+    (non-mocked) end-to-end smoke test**: a 5-function corpus with a real call-graph shape (one hub,
+    one shared leaf) produced sensible relative PageRank values (hub/leaf ranked above the individual
+    branch functions) — not just "a number appeared," a structurally correct one.
 
-- [ ] **Task 3 — `to_json` writes the `pagerank` node attribute (`graphify/export.py`)**
-  New `pagerank_scores: dict[str, float] | None = None` keyword parameter on `to_json`
-  (`export.py:1001`). Inside the existing `for node in data["nodes"]:` loop that already does
-  `node["community"] = ...` (`export.py:1033-1038`), add: `if pagerank_scores is not None:
-  node["pagerank"] = pagerank_scores.get(node["id"])`. Omitted entirely (no key at all, not even
-  `null`) when `pagerank_scores` is `None` — keeps old-shape `graph.json` byte-identical for every
-  caller that doesn't pass it, zero risk of an unexpected key breaking a downstream JSON consumer.
-  - Blocked by Task 2 (needs the parameter to exist to pass through it correctly), but implementable
-    in parallel and merged before Task 2's call-site wiring lands.
-  - Verify: extend `tests/test_export.py` — `to_json(G, communities, path, pagerank_scores={"a": 0.5})`
-    asserts node `"a"` in the written JSON has `"pagerank": 0.5`; `to_json(...)` with no
-    `pagerank_scores` arg (existing call sites, unchanged) asserts no node has a `pagerank` key at all
-    (regression guard against accidentally always adding the key).
+- [x] **Task 3 — `to_json` writes the `pagerank` node attribute (`graphify/export.py`)** — Done
+  (2026-07-19, same pass as Task 2, see above)
+  New `pagerank_scores: dict[str, float] | None = None` keyword parameter on `to_json`. Inside the
+  existing `for node in data["nodes"]:` loop that already does `node["community"] = ...`
+  (`export.py:1033-1038`): `if pagerank_scores is not None: node["pagerank"] =
+  pagerank_scores.get(node["id"])`. Omitted entirely (no key at all) when `None` — every pre-existing
+  call site is unaffected.
+  - Verify: **2 new tests** in `tests/test_export.py` — `pagerank_scores={node_id: 0.5}` asserts that
+    exact node gets `"pagerank": 0.5` in the written JSON; no `pagerank_scores` arg (every pre-existing
+    call site) asserts **no** node has a `pagerank` key at all (regression guard against accidentally
+    always adding the key). Full suite: 3011 passed, 0 failed, 0 regressions.
 
 - [ ] **Task 4 — `_seed_penalty`/`_pick_seeds` composes the boost (`graphify/query.py`)**
   New module constant `_PAGERANK_BOOST_MAX = 0.15` near `_CONCEPT_SEED_PENALTY`/`_PROSE_SEED_PENALTY`

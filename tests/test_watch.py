@@ -224,6 +224,67 @@ def test_rebuild_code_rank_by_pagerank_reaches_god_nodes(tmp_path):
     assert "## God Nodes" in report
 
 
+# --- pagerank_ranking (P17 item 2: PageRank-style query-scoring boost) ---
+# Distinct from rank_by="pagerank" above: that's the god_nodes report ranking
+# mode (unrelated, unaffected). pagerank_ranking persists a per-node pagerank
+# attribute in graph.json for query.py's _pick_seeds to consume.
+
+
+def test_rebuild_code_pagerank_ranking_true_adds_attribute(tmp_path):
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text(
+        "def a(): return b()\ndef b(): return c()\ndef c(): pass\n", encoding="utf-8"
+    )
+    assert _rebuild_code(corpus, acquire_lock=False, pagerank_ranking=True) is True
+
+    data = json.loads((corpus / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert all("pagerank" in n for n in data["nodes"])
+
+
+def test_rebuild_code_pagerank_ranking_false_omits_attribute(tmp_path):
+    """Default (pagerank_ranking=False) must not add the attribute at all -
+    the backward-compatible state every existing graph/user is in today."""
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text("def a(): pass\n", encoding="utf-8")
+    assert _rebuild_code(corpus, acquire_lock=False) is True
+
+    data = json.loads((corpus / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert all("pagerank" not in n for n in data["nodes"])
+
+
+def test_rebuild_code_pagerank_ranking_survives_missing_scipy(tmp_path, monkeypatch, capsys):
+    """scipy is an optional dependency (pyproject.toml's pagerank extra, not
+    bundled in `all`) - a missing-scipy environment must still build the
+    graph successfully, just without the pagerank attribute, and print the
+    shared install-instructions message rather than raising."""
+    import builtins
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "networkx":
+            raise ImportError("mocked missing scipy (networkx.pagerank needs it)")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "lib.py").write_text("def a(): pass\n", encoding="utf-8")
+    assert _rebuild_code(corpus, acquire_lock=False, pagerank_ranking=True) is True
+
+    data = json.loads((corpus / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert all("pagerank" not in n for n in data["nodes"])
+    assert "requires scipy" in capsys.readouterr().err
+
+
 def test_rebuild_code_evicts_nodes_from_deleted_files(tmp_path):
     """#1007: graphify update (_rebuild_code with no changed_paths) must remove
     nodes and edges from files deleted since the last run."""

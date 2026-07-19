@@ -430,6 +430,7 @@ def _rebuild_code(
     no_viz: bool | None = None,
     wiki: bool | None = None,
     value_coupling: bool = False,
+    pagerank_ranking: bool = False,
 ) -> bool:
     """Re-run AST extraction + build + optional cluster + report for code files. No LLM needed.
 
@@ -495,6 +496,7 @@ def _rebuild_code(
                 no_viz=no_viz,
                 wiki=wiki,
                 value_coupling=value_coupling,
+                pagerank_ranking=pagerank_ranking,
             )
             # Late-arrival drain: another hook may have queued work while we
             # were rebuilding. Loop up to _PENDING_DRAIN_MAX_PASSES times so a
@@ -518,6 +520,7 @@ def _rebuild_code(
                         no_viz=no_viz,
                         wiki=wiki,
                         value_coupling=value_coupling,
+                        pagerank_ranking=pagerank_ranking,
                     ) and ok
             return ok
 
@@ -534,7 +537,10 @@ def _rebuild_code(
         from graphify.detect import detect
         from graphify.build import build_from_json, _norm_source_file as _nsf
         from graphify.cluster import cluster, remap_communities_to_previous, score_all
-        from graphify.analyze import god_nodes, cross_cutting_nodes, surprising_connections, suggest_questions
+        from graphify.analyze import (
+            god_nodes, cross_cutting_nodes, surprising_connections, suggest_questions,
+            _PAGERANK_SCIPY_MISSING_MSG,
+        )
         from graphify.report import generate
         from graphify.export import to_json, to_html
         from graphify.security import check_graph_file_size_cap
@@ -858,7 +864,21 @@ def _rebuild_code(
         report_path = out / "GRAPH_REPORT.md"
         labels_json = json.dumps({str(k): v for k, v in sorted(labels.items())}, ensure_ascii=False, indent=2) + "\n"
         graph_tmp = out / ".graph.tmp.json"
-        json_written = to_json(G, communities, str(graph_tmp), force=True, built_at_commit=commit)
+        pagerank_scores = None
+        if pagerank_ranking:
+            try:
+                import networkx as _nx
+                pagerank_scores = _nx.pagerank(G)
+            except ImportError:
+                import sys as _sys
+                print(
+                    f"[graphify update] pagerank_ranking {_PAGERANK_SCIPY_MISSING_MSG}",
+                    file=_sys.stderr,
+                )
+        json_written = to_json(
+            G, communities, str(graph_tmp), force=True, built_at_commit=commit,
+            pagerank_scores=pagerank_scores,
+        )
         if not json_written:
             return False
         candidate_graph_data = json.loads(graph_tmp.read_text(encoding="utf-8"))
