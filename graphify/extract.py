@@ -2463,6 +2463,122 @@ def _js_member_assignment_target(left, source: bytes):
     return None
 
 
+# Keys that mark a JS/TS array element as structured content (lesson/course/quiz
+# entries, etc.) rather than opaque bulk data or a dispatch registry (array of bare
+# identifiers). Checked in label-preference order. Mirrors _is_config_json's
+# shape-probe style (#1224: gate narrowly, don't AST-walk arbitrary data and flood
+# the graph with orphan nodes) — the P17 item-6 counterpart for JS content arrays.
+_JS_CONTENT_DATA_KEYS = ("title", "name", "label", "description", "id")
+
+
+def _js_pair_key_text(pair_node, source: bytes) -> str:
+    key_node = pair_node.child_by_field_name("key")
+    if key_node is None:
+        return ""
+    if key_node.type == "string":
+        content = key_node.child_by_field_name("string_content")
+        return _read_text(content, source) if content else _read_text(key_node, source).strip("'\"")
+    return _read_text(key_node, source)
+
+
+def _js_pair_value_text(pair_node, source: bytes) -> str | None:
+    """String/template-literal value text, or None for any other value shape
+    (function, number, nested object, ...) — content labels are plain text only."""
+    value_node = pair_node.child_by_field_name("value")
+    if value_node is None or value_node.type not in ("string", "template_string"):
+        return None
+    text = _read_text(value_node, source).strip("'\"`")
+    return text or None
+
+
+def _is_content_data_array(array_node, source: bytes) -> bool:
+    """True if a JS/TS array literal looks like structured content data worth
+    indexing per-item (each element becomes a lightweight node), rather than
+    opaque bulk data or a dispatch registry.
+
+    Gate: 3+ sibling `object` elements, each with 3+ properties, and each
+    carrying at least one key in _JS_CONTENT_DATA_KEYS. Requiring every element
+    to match (not just one) keeps the gate narrow, same lesson as
+    _is_config_json's filename/key probe for data JSON (#1224)."""
+    objects = [c for c in array_node.children if c.type == "object"]
+    if len(objects) < 3:
+        return False
+    for obj in objects:
+        pairs = [c for c in obj.children if c.type == "pair"]
+        if len(pairs) < 3:
+            return False
+        keys = {_js_pair_key_text(p, source) for p in pairs}
+        if not keys.intersection(_JS_CONTENT_DATA_KEYS):
+            return False
+    return True
+
+
+def _js_emit_content_data_items(array_node, source: bytes, parent_nid: str,
+                                add_node_fn, add_edge_fn) -> None:
+    """Emit one node per content-data array item, labeled by its title/name/
+    label/description/id value and contained by the array's own const node.
+    Item bodies (nested functions like a `validate` callback) are deliberately
+    NOT walked — this indexes the *content*, not code."""
+    for index, obj in enumerate(array_node.children):
+        if obj.type != "object":
+            continue
+        pairs_by_key = {}
+        for pair in obj.children:
+            if pair.type != "pair":
+                continue
+            key = _js_pair_key_text(pair, source)
+            if key:
+                pairs_by_key[key] = pair
+
+        label = None
+        for key in _JS_CONTENT_DATA_KEYS:
+            pair = pairs_by_key.get(key)
+            if pair is None:
+                continue
+            value = _js_pair_value_text(pair, source)
+            if value:
+                label = value[:120]
+                break
+        if label is None:
+            continue
+
+        id_pair = pairs_by_key.get("id")
+        id_value = _js_pair_value_text(id_pair, source) if id_pair else None
+        item_nid = _make_id(parent_nid, id_value or str(index))
+        line = obj.start_point[0] + 1
+        add_node_fn(item_nid, label, line, node_type="content_item")
+        add_edge_fn(parent_nid, item_nid, "contains", line)
+
+
+# Wrapper node types climbed while recognizing a top-level self-invoking
+# function expression, e.g. (function(){...})(), (()=>{...})(), !function(){...}().
+_JS_IIFE_WRAPPER_TYPES = frozenset({"parenthesized_expression", "call_expression", "unary_expression"})
+
+
+def _is_top_level_iife_function(fn_node) -> bool:
+    """True if fn_node (a function_expression/arrow_function) is the callee of a
+    self-invoking function expression sitting directly at the top of the file —
+    (function(){...})(), (()=>{...})(), !function(){...}(), etc. A whole-file
+    IIFE is the common module-scoping idiom (avoid polluting globals while still
+    being "the top level of this file"), distinct from an arbitrary nested
+    callback (describe(() => {...}), setTimeout(fn), ...) which stays out of
+    scope per the #1077 guard this feeds into. Climbing stops (and returns
+    False) the moment an unrecognized ancestor type is hit, so a function
+    passed as an argument deeper inside an IIFE's body naturally fails here —
+    it would first hit an "arguments" node type, not one of the wrapper types.
+    """
+    node = fn_node.parent
+    saw_call = False
+    while node is not None and node.type in _JS_IIFE_WRAPPER_TYPES:
+        if node.type == "call_expression":
+            saw_call = True
+        node = node.parent
+    if not saw_call or node is None or node.type != "expression_statement":
+        return False
+    stmt_parent = node.parent
+    return stmt_parent is not None and stmt_parent.type == "program"
+
+
 def _js_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
                    nodes: list, edges: list, seen_ids: set, function_bodies: list,
                    parent_class_nid: str | None, add_node_fn, add_edge_fn,
@@ -2577,6 +2693,13 @@ def _js_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
             or (parent.type == "export_statement"
                 and parent.parent is not None
                 and parent.parent.type == "program")
+            # Whole-file IIFE, e.g. (function(){ const LESSONS = [...]; })() —
+            # a common module-scoping idiom (P17 item 6's motivating case), not
+            # an arbitrary nested callback the #1077 guard exists to reject.
+            or (parent.type == "statement_block"
+                and parent.parent is not None
+                and parent.parent.type in ("function_expression", "arrow_function")
+                and _is_top_level_iife_function(parent.parent))
         )
 
         # Arrow function declarations and module-level const literals (lexical_declaration only)
@@ -2614,6 +2737,9 @@ def _js_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
                             const_nid = _make_id(stem, const_name)
                             add_node_fn(const_nid, const_name, line)
                             add_edge_fn(file_nid, const_nid, "contains", line)
+                            if value.type == "array" and _is_content_data_array(value, source):
+                                _js_emit_content_data_items(value, source, const_nid,
+                                                            add_node_fn, add_edge_fn)
                             const_found = True
         if arrow_found:
             return True
