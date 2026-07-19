@@ -660,6 +660,12 @@ def _score_nodes(G: nx.Graph, terms: list[str]) -> list[tuple[float, str]]:
 
 _CONCEPT_SEED_PENALTY = 0.85
 _PROSE_SEED_PENALTY = 0.9
+# P17 item 2: bounded multiplicative boost for a node's build-time-precomputed
+# "pagerank" attribute (graphify/watch.py's pagerank_ranking opt-in, absent on
+# every graph built without it - see _pick_seeds below for the zero-attribute
+# no-op guarantee). Small on purpose: this only ever nudges a near-tie, it
+# must never let a peripheral-but-central node out-rank a clear BM25 winner.
+_PAGERANK_BOOST_MAX = 0.15
 
 
 def _is_concept_node_for_seeding(G: nx.Graph, nid: str) -> bool:
@@ -719,16 +725,39 @@ def _pick_seeds(
     deliberately unifies docs and code in one graph, so a doc heading is a
     legitimate answer and should still win when it's clearly the better
     match, just not on a near-tie against an equally-plausible code symbol.
+
+    When any candidate carries a `pagerank` node attribute (P17 item 2,
+    `graphify.toml`'s opt-in `pagerank_ranking`, precomputed at build time -
+    see `graphify/watch.py`), a bounded multiplicative boost up to
+    `_PAGERANK_BOOST_MAX` is layered on top of the concept/prose penalty
+    above, scaled relative to the highest `pagerank` value among THESE
+    candidates only (not a full-graph scan - `scored` is already the
+    BM25-narrowed candidate set every other part of this function operates
+    on). A node with no `pagerank` attribute contributes 0 and gets boost
+    factor exactly 1.0 (no-op). When NO candidate carries the attribute at
+    all (every graph built without `pagerank_ranking`, i.e. the default
+    today), the boost step is skipped entirely and this function's behavior
+    is unchanged from before this feature existed.
     """
     if not scored:
         return []
     if G is not None:
+        max_pagerank = max(
+            (G.nodes[nid].get("pagerank") or 0.0 for _, nid in scored),
+            default=0.0,
+        )
+
         def _seed_penalty(nid: str) -> float:
             if _is_concept_node_for_seeding(G, nid):
-                return _CONCEPT_SEED_PENALTY
-            if _is_prose_node_for_seeding(G, nid):
-                return _PROSE_SEED_PENALTY
-            return 1.0
+                penalty = _CONCEPT_SEED_PENALTY
+            elif _is_prose_node_for_seeding(G, nid):
+                penalty = _PROSE_SEED_PENALTY
+            else:
+                penalty = 1.0
+            if max_pagerank > 0:
+                node_pagerank = G.nodes[nid].get("pagerank") or 0.0
+                penalty *= 1.0 + _PAGERANK_BOOST_MAX * (node_pagerank / max_pagerank)
+            return penalty
 
         scored = [(score * _seed_penalty(nid), nid) for score, nid in scored]
         scored.sort(key=lambda s: (-s[0], len(G.nodes[s[1]].get("label") or s[1]), s[1]))

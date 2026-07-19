@@ -1039,6 +1039,58 @@ def test_pick_seeds_doc_penalty_gentler_than_concept_penalty():
     assert _pick_seeds([(10.0, "concept"), (8.9, "symbol")], max_k=1, G=G) == ["symbol"]
 
 
+# --- pagerank boost (P17 item 2) -----------------------------------------------
+
+def test_pick_seeds_pagerank_breaks_a_near_tie():
+    """On a genuine near-tie, the higher-pagerank node wins - the boost acts
+    as a tiebreaker, same shape as the concept/prose penalties above."""
+    G = nx.Graph()
+    G.add_node("central", label="handleRequest", source_file="src/core.py", pagerank=0.9)
+    G.add_node("peripheral", label="handleRequestOnce", source_file="src/misc.py", pagerank=0.05)
+    scored = [(10.0, "peripheral"), (9.9, "central")]  # peripheral scores marginally higher raw
+    seeds = _pick_seeds(scored, max_k=1, G=G)
+    assert seeds == ["central"]
+
+
+def test_pick_seeds_pagerank_boost_is_bounded_not_dominant():
+    """A much-lower-BM25 high-pagerank node must NOT out-rank a clearly
+    better BM25 match - the boost (max +15%) can only ever tiebreak, never
+    override a real relevance gap, same guarantee the concept/prose penalty
+    tests above assert for their own factor."""
+    G = nx.Graph()
+    G.add_node("central", label="unrelatedButCentral", source_file="src/core.py", pagerank=1.0)
+    G.add_node("relevant", label="ExactQueryMatch", source_file="src/target.py", pagerank=0.01)
+    scored = [(10.0, "relevant"), (1.0, "central")]
+    seeds = _pick_seeds(scored, max_k=1, G=G)
+    assert seeds == ["relevant"]
+
+
+def test_pick_seeds_no_pagerank_attributes_unchanged_from_before_feature():
+    """Every graph built without pagerank_ranking (the default, today's
+    entire installed base) must produce byte-for-byte identical seed
+    selection to before this feature existed - critical regression guard,
+    not just a nice-to-have. Reuses the exact concept-penalty near-tie case
+    above with no pagerank attribute on either node."""
+    G = nx.Graph()
+    G.add_node("concept", label="Authentication Flow", source_file="")
+    G.add_node("symbol", label="AuthService", source_file="src/auth.py")
+    scored = [(10.0, "concept"), (9.0, "symbol")]
+    seeds = _pick_seeds(scored, max_k=1, G=G)
+    assert seeds == ["symbol"]
+
+
+def test_pick_seeds_pagerank_missing_on_some_nodes_does_not_crash():
+    """A mixed graph - some nodes carry `pagerank` (built with the feature
+    on), some don't (e.g. a node added by a partial/incremental rebuild) -
+    must not raise on the missing attribute, treating it as 0."""
+    G = nx.Graph()
+    G.add_node("has_pr", label="a", source_file="src/a.py", pagerank=0.5)
+    G.add_node("no_pr", label="b", source_file="src/b.py")
+    scored = [(5.0, "has_pr"), (5.0, "no_pr")]
+    seeds = _pick_seeds(scored, max_k=2, G=G)
+    assert set(seeds) == {"has_pr", "no_pr"}
+
+
 def test_pick_seeds_multi_term_diversifies_across_communities():
     """A coincidental exact match (e.g. a test variable literally named
     "holdings") shouldn't crowd out a node in another community that

@@ -1,6 +1,6 @@
 # Dev Task Progress — PageRank-Style Ranking (P17 item 2)
 
-Last updated: 2026-07-19 00:45
+Last updated: 2026-07-19 01:05
 Status: In Progress
 
 ## Context
@@ -28,8 +28,8 @@ Status: In Progress
 
 ## Summary
 - Total tasks: 7
-- Completed: 3
-- Remaining: 4
+- Completed: 4
+- Remaining: 3
 
 ## Server Logic
 
@@ -78,29 +78,25 @@ Status: In Progress
     call site) asserts **no** node has a `pagerank` key at all (regression guard against accidentally
     always adding the key). Full suite: 3011 passed, 0 failed, 0 regressions.
 
-- [ ] **Task 4 — `_seed_penalty`/`_pick_seeds` composes the boost (`graphify/query.py`)**
-  New module constant `_PAGERANK_BOOST_MAX = 0.15` near `_CONCEPT_SEED_PENALTY`/`_PROSE_SEED_PENALTY`
-  (`query.py:661-662`). Extend `_seed_penalty` (`query.py:726-731`, currently returns a flat
-  0.85/0.9/1.0 multiplier) to multiply its existing result by a pagerank boost factor:
-  `1.0 + _PAGERANK_BOOST_MAX * (node_pagerank / max_pagerank_in_candidates)`, where
-  `max_pagerank_in_candidates` is computed **once per `_pick_seeds` call, over only the `scored`
-  candidate list already passed in** (NOT a full graph scan — `scored` is already the BM25-narrowed
-  candidate set every other part of `_pick_seeds` operates on; scanning the whole graph on every seed
-  pick would undo Task 2's build-time-precompute performance win). A node with no `pagerank` attribute
-  (old graph, or feature was off at build time) contributes `0` to that max computation and gets boost
-  factor exactly `1.0` (no-op) — must not crash on `None`/absent.
-  - Blocked by Task 3 (needs real `pagerank`-attributed test graphs to verify against).
-  - Verify: **confirmed location** — `tests/test_serve.py:938+` ("`--- _pick_seeds tests (#897) ---`"),
-    already has the exact precedent pattern to mirror:
-    `test_pick_seeds_prefers_ast_node_over_near_tied_concept_node`/
-    `test_pick_seeds_concept_node_still_wins_when_genuinely_dominant` (same shape of test — a modifier
-    that should tie-break but not override a clear winner — just for the concept-penalty factor instead
-    of pagerank). Add analogous cases: (a)
-    synthetic graph, one node high-pagerank + near-equal BM25 score to a lower-pagerank node → higher-
-    pagerank node wins the tie; (b) a much-lower-BM25 high-pagerank node must NOT out-rank a clearly-
-    better BM25 match → asserts the boost is bounded, not dominant; (c) a graph with zero `pagerank`
-    attributes anywhere → `_pick_seeds` behavior is byte-for-byte identical to before this change
-    (critical regression guard, since this is the default state for every existing graph/user).
+- [x] **Task 4 — `_seed_penalty`/`_pick_seeds` composes the boost (`graphify/query.py`)** — Done
+  (2026-07-19)
+  Added `_PAGERANK_BOOST_MAX = 0.15` next to `_CONCEPT_SEED_PENALTY`/`_PROSE_SEED_PENALTY`. `_seed_penalty`
+  now computes `max_pagerank` once per `_pick_seeds` call (`max(G.nodes[nid].get("pagerank") or 0.0 for
+  _, nid in scored)` — over the `scored` candidate list only, confirmed NOT a full-graph scan) before
+  its inner closure is defined, then multiplies the existing concept/prose penalty result by
+  `1.0 + _PAGERANK_BOOST_MAX * (node_pagerank / max_pagerank)` whenever `max_pagerank > 0`. When
+  `max_pagerank == 0` (no candidate carries the attribute — every graph built without
+  `pagerank_ranking`, i.e. the default today), the boost multiplication is skipped entirely — not just
+  bounded to a no-op, literally the same code path as before this feature existed.
+  - Verify: **4 new tests** in `tests/test_serve.py` (added `nx.Graph` node kwarg `pagerank=`, same
+    fixture style as the existing concept/prose tests) — near-tie tiebreak (higher-pagerank wins),
+    boundedness (a 15%-max boost cannot close a 10x raw BM25 gap — verified the math by hand: bounded
+    case scores 1.15 vs. 10.015, no contest), zero-pagerank-anywhere regression guard (byte-identical
+    seed selection to the pre-existing concept-penalty test case), and a mixed-graph case (some nodes
+    carry `pagerank`, some don't) confirming no crash on the missing attribute. **All 19 `_pick_seeds`
+    tests pass** — the 15 pre-existing ones unchanged, confirming zero regression on the concept/prose
+    penalty behavior this change composes with. Full suite: **3015 passed, 0 failed, 0 regressions** —
+    the critical result for this task, given its higher-regression-risk profile versus items 1-3.
 
 ## Integration
 
