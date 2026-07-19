@@ -172,6 +172,9 @@ def affected_nodes(
     depth: int = 2,
 ) -> list[AffectedHit]:
     relation_set = set(relations)
+    # Parameterized relations (P15's shares_value:<value>-style labels) can't be passed
+    # exact-value in advance, so a bare filter (no ':') also prefix-matches relation:*.
+    relation_prefixes = tuple(f"{r}:" for r in relation_set if ":" not in r)
     seen = {seed}
     queue: deque[tuple[str, int]] = deque([(seed, 0)])
     hits: list[AffectedHit] = []
@@ -190,7 +193,7 @@ def affected_nodes(
             )
         for source, _target, data in incoming:
             relation = str(data.get("relation", ""))
-            if relation not in relation_set:
+            if relation not in relation_set and not relation.startswith(relation_prefixes):
                 continue
             source = str(source)
             if source in seen:
