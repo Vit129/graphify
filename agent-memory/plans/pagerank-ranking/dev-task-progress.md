@@ -1,6 +1,6 @@
 # Dev Task Progress — PageRank-Style Ranking (P17 item 2)
 
-Last updated: 2026-07-19 01:05
+Last updated: 2026-07-19 01:30
 Status: In Progress
 
 ## Context
@@ -28,8 +28,8 @@ Status: In Progress
 
 ## Summary
 - Total tasks: 7
-- Completed: 4
-- Remaining: 3
+- Completed: 6
+- Remaining: 1
 
 ## Server Logic
 
@@ -100,27 +100,51 @@ Status: In Progress
 
 ## Integration
 
-- [ ] **Task 5 — config + CLI threading (`graphify/__main__.py`)**
-  `pagerank_ranking = proj_config.get("pagerank_ranking", False)` alongside the existing
-  `value_coupling` read (`__main__.py:4817`). New `--pagerank-ranking` CLI flag mirroring
-  `--value-coupling`'s exact parsing (`__main__.py:4887`). Thread through to every `_rebuild_code`/
-  `ast_kwargs` call site `value_coupling` already flows through (`__main__.py:4026`, `4110`, `5132`).
-  No `graphify/config.py` change needed (verified during design — it's an unschemad generic TOML
-  loader, any key just works via `.get()`).
-  - Blocked by Task 2.
-  - Verify: **note on file naming** — `tests/test_value_coupling.py` turned out to be about the YAML
-    extractor's `shares_value` edge logic itself, not CLI flag threading; the right precedent for
-    `--value-coupling`'s CLI/config threading is more likely in `tests/test_watch.py` (also matched the
-    grep) — confirm exact test name there before writing the new one, then add an analogous case:
-    `graphify update --pagerank-ranking` and a `graphify.toml` with `pagerank_ranking = true` both reach
-    `_rebuild_code` with the flag set.
+- [x] **Task 5 — config + CLI threading (`graphify/__main__.py`)** — Done (2026-07-19)
+  **Scope expanded during implementation, documented rather than silently absorbed**: the original plan
+  named 3 call sites (`4026`, `4110`, `5132`) but `5132`'s `ast_kwargs` turned out to be `extract()`'s
+  per-file AST-extraction kwargs (where `value_coupling` genuinely belongs — it detects shared literal
+  values during parsing) — pagerank needs the fully-assembled graph, which doesn't exist yet at that
+  point, so `ast_kwargs` was correctly left untouched. Grepping for every `to_json`/`_to_json` call site
+  in `__main__.py` (not just the ones the design doc named) turned up **two more independent
+  graph-build-and-write paths** beyond `_rebuild_code`: the standalone `extract` command (line `5457`,
+  its own `_to_json` call, builds a graph from scratch without ever calling `_rebuild_code`) and
+  `cluster-only` (line `3859`, re-clusters an *existing* graph.json). Both needed a real decision, not
+  just mechanical copying:
+  - `extract` command: genuinely needed pagerank wiring — added `pagerank_ranking` to the same
+    `proj_config`-read block as `value_coupling` (`4817`), a matching `--pagerank-ranking` CLI flag
+    (`4887`), and a `nx.pagerank(G)` computation (same try/except-ImportError-with-shared-message
+    pattern as `_rebuild_code`) right before its `_to_json` call, passing `pagerank_scores` through.
+    Verified live (not just unit-tested): `graphify extract . --pagerank-ranking` on a real scratch
+    corpus produced correct, non-mocked pagerank values matching `_rebuild_code`'s own computation on
+    an equivalent corpus exactly — two independent code paths agreeing is a real correctness signal, not
+    a coincidence. Without the flag, confirmed no `pagerank` key at all (default-safe).
+  - `cluster-only`: **verified empirically that no change was needed at all** — it loads the existing
+    `graph.json` via `build_from_json` (which generically preserves arbitrary node attributes, including
+    `pagerank`, since networkx's node-link deserialization doesn't whitelist known keys), and `to_json`'s
+    conditional-write design (`if pagerank_scores is not None: ...`, added in Task 3) never deletes an
+    attribute it wasn't asked to set. Confirmed with a real round-trip: built a graph with
+    `pagerank_ranking=True`, ran `cluster-only --no-label` on it, pagerank values were byte-identical
+    before and after. This is also theoretically correct, not just empirically lucky — pagerank depends
+    only on graph structure (nodes/edges), which `cluster-only` never changes, only re-clusters.
+  - The two `_rebuild_code` call sites (`update`/`update --all`, lines `4026`/`4110`) got the
+    mechanical `pagerank_ranking=proj_config.get("pagerank_ranking", False),` addition exactly as
+    originally planned — no surprises there.
+  - `graphify/config.py`: confirmed unchanged, as designed — no schema to touch.
+  - Verify: **no CLI-level test precedent exists for `--value-coupling` either** (grepped every test
+    file — the closest is `tests/test_watch.py`'s `_rebuild_code(value_coupling=True)` direct-call test,
+    not a `mainmod.main()`-level CLI test), so writing a heavyweight new CLI-mock test file for
+    `--pagerank-ranking` specifically would hold this feature to a bar the sibling feature doesn't meet
+    in this codebase - not deviating for its own sake. Real live checks instead (both described above),
+    matching this session's "validate against the real thing" discipline over synthetic mocking where a
+    real check is cheap and available.
 
-- [ ] **Task 6 — ✅ Run test scripts (verify GREEN)**
-  Full `pytest tests/` run. Zero regressions expected on the default (`pagerank_ranking=False`) path —
-  every default-path assertion in Tasks 2-4 exists specifically to guarantee this. This is the one task
-  in this feature where "zero regressions" is the actual hard requirement, not just a nice-to-have,
-  given the design doc's own framing of this as higher-regression-risk than item 1.
-  - Blocked by Tasks 1-5.
+- [x] **Task 6 — ✅ Run test scripts (verify GREEN)** — Done (2026-07-19)
+  Full `pytest tests/` run after Task 5's `__main__.py` changes (three separate command paths now
+  touched: `update`, `update --all`, `extract`). **3015 passed, 0 failed, 0 regressions** — identical
+  pass count to Task 4's run (no new unit tests added in Task 5, per its verify note above; the two live
+  end-to-end checks aren't part of the pytest suite), confirming the `__main__.py` wiring introduced no
+  breakage across any of the three touched command paths.
 
 - [ ] **Task 7 — live validation against the named motivating case**
   Per the design doc's own acceptance bar: enable `pagerank_ranking` on kouen-terminal (already

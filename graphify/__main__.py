@@ -4024,6 +4024,7 @@ def main() -> None:
                             no_viz=no_viz,
                             wiki=wiki,
                             value_coupling=proj_config.get("value_coupling", False),
+                            pagerank_ranking=proj_config.get("pagerank_ranking", False),
                         )
                         if ok:
                             success_count += 1
@@ -4108,6 +4109,7 @@ def main() -> None:
             no_viz=proj_config.get("no_viz"),
             wiki=proj_config.get("wiki"),
             value_coupling=proj_config.get("value_coupling", False),
+            pagerank_ranking=proj_config.get("pagerank_ranking", False),
         )
         if ok:
             print("Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.")
@@ -4815,6 +4817,7 @@ def main() -> None:
         cli_cargo: bool = proj_config.get("cargo", False)
         no_cluster = proj_config.get("no_cluster", False)
         value_coupling = proj_config.get("value_coupling", False)  # P15 opt-in
+        pagerank_ranking = proj_config.get("pagerank_ranking", False)  # P17 item 2 opt-in
         dedup_llm = proj_config.get("dedup_llm", False)
         google_workspace = proj_config.get("google_workspace", False)
         global_merge = proj_config.get("global", False)
@@ -4885,6 +4888,8 @@ def main() -> None:
                 no_cluster = True; i += 1
             elif a == "--value-coupling":
                 value_coupling = True; i += 1
+            elif a == "--pagerank-ranking":
+                pagerank_ranking = True; i += 1
             elif a == "--dedup-llm":
                 dedup_llm = True; i += 1
             elif a == "--google-workspace":
@@ -5412,7 +5417,10 @@ def main() -> None:
         )
         from graphify.cluster import cluster as _cluster, score_all as _score_all
         from graphify.export import to_json as _to_json
-        from graphify.analyze import god_nodes as _god_nodes, cross_cutting_nodes as _cross_cutting, surprising_connections as _surprising
+        from graphify.analyze import (
+            god_nodes as _god_nodes, cross_cutting_nodes as _cross_cutting,
+            surprising_connections as _surprising, _PAGERANK_SCIPY_MISSING_MSG,
+        )
         dedup_backend = backend if dedup_llm else None
         if incremental_mode:
             G = _build_merge(
@@ -5454,7 +5462,17 @@ def main() -> None:
 
         from graphify.export import backup_if_protected as _backup
         _backup(graphify_out)
-        _to_json(G, communities, str(graph_json_path), force=True)
+        pagerank_scores = None
+        if pagerank_ranking:
+            try:
+                import networkx as _nx
+                pagerank_scores = _nx.pagerank(G)
+            except ImportError:
+                print(
+                    f"[graphify extract] pagerank_ranking {_PAGERANK_SCIPY_MISSING_MSG}",
+                    file=sys.stderr,
+                )
+        _to_json(G, communities, str(graph_json_path), force=True, pagerank_scores=pagerank_scores)
         stages.mark("export")
         if merged.get("output_tokens", 0) > 0:
             (graphify_out / ".graphify_semantic_marker").write_text(
