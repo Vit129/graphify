@@ -1,6 +1,6 @@
 # Dev Task Progress — PageRank-Style Ranking (P17 item 2)
 
-Last updated: 2026-07-19 00:05
+Last updated: 2026-07-19 00:20
 Status: In Progress
 
 ## Context
@@ -28,22 +28,23 @@ Status: In Progress
 
 ## Summary
 - Total tasks: 7
-- Completed: 0
-- Remaining: 7
+- Completed: 1
+- Remaining: 6
 
 ## Server Logic
 
-- [ ] **Task 1 — shared scipy-missing message constant**
-  Factor `god_nodes`'s existing ImportError message ("god_nodes(by='pagerank') requires scipy - install
-  with `pip install graphifyy[pagerank]`...", `analyze.py:128-131`) into a shared module-level constant
-  (e.g. `_PAGERANK_SCIPY_MISSING_MSG` in `analyze.py`, imported by both `analyze.py` and `watch.py`) so
-  the two call sites (existing `god_nodes`, new `_rebuild_code` path) don't drift into two different
-  wordings for the same install instructions over time.
-  - Not blocked by anything — pure refactor of existing code, zero behavior change. Do first since
-    Task 2 imports from it.
-  - Verify: **confirmed existing tests** — `tests/test_analyze.py` and `tests/test_watch.py` both have
-    `by="pagerank"` cases; run them (or the full suite) and confirm unchanged pass, message text
-    identical before/after the refactor.
+- [x] **Task 1 — shared scipy-missing message constant** — Done (2026-07-19)
+  Added `_PAGERANK_SCIPY_MISSING_MSG` in `graphify/analyze.py` (right above `god_nodes`), holding just
+  the reusable install-instructions half of the message ("requires scipy - install with `pip install
+  graphifyy[pagerank]` or `uv tool install --with scipy graphifyy`"). `god_nodes`'s `raise ImportError`
+  now does `f"god_nodes(by='pagerank') {_PAGERANK_SCIPY_MISSING_MSG}"` — kept the context-specific
+  prefix ("god_nodes(by='pagerank')") local to `god_nodes` itself, only the actual install instructions
+  are shared, so Task 2's `_rebuild_code` call site can prepend its own natural context instead of
+  reusing an oddly-`god_nodes`-flavored sentence.
+  - Verify: byte-identical message text confirmed via direct string comparison (old concatenation vs.
+    new f-string). Existing `tests/test_analyze.py`/`tests/test_watch.py` pagerank tests (3 total) pass
+    unchanged — neither asserted on the exact error string, so this was a safe refactor, not just a
+    lucky one. Full suite: 3006 passed, 0 failed, 0 regressions.
 
 - [ ] **Task 2 — `_rebuild_code` computes + passes PageRank (`graphify/watch.py`)**
   New `pagerank_ranking: bool = False` parameter on `_rebuild_code` (`watch.py:417-432`), mirroring
