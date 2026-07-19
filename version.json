@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "updated": "2026-07-19",
-  "summary": "graph.html Calls lens + lens-aware search, PostToolUse auto-sync hook, opt-in PageRank query ranking"
+  "summary": "affected --relation prefix-match for parameterized relations, JS/TS content-data array indexing"
 }
