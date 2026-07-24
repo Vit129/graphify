@@ -40,3 +40,6 @@ paper/
 
 # macOS Finder metadata
 .DS_Store
+
+# Kouen terminal worktree scratch dirs
+.kouen-worktrees/

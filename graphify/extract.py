@@ -14,6 +14,8 @@ from typing import Any, Callable
 from .cache import load_cached, save_cached
 from .mcp_ingest import extract_mcp_config, is_mcp_config_path
 from .manifest_ingest import extract_package_manifest, is_package_manifest_path
+from .extractors.dockerfile import extract_dockerfile, is_dockerfile_path
+from .extractors.kustomization import extract_kustomization
 from .resolver_registry import (
     LanguageResolver,
     register as register_language_resolver,
@@ -2463,6 +2465,171 @@ def _js_member_assignment_target(left, source: bytes):
     return None
 
 
+# Google Apps Script `doGet`/`doPost` action-dispatch arm parsing (Feature 2,
+# iac-http-linking Task 6). Apps Script web apps commonly route everything
+# through one handler via `?action=<value>`, dispatched with an if/else-if
+# chain (`action === '<value>'`) rather than path-based routing - a narrow,
+# real pattern (My-Investment-Port's syncLocalStorageToGoogleSheets.gs),
+# not a generic Express/Flask route matcher.
+_JS_FUNCTION_BOUNDARY_TYPES = frozenset({
+    "function_declaration", "function_expression", "arrow_function",
+    "method_definition", "generator_function", "generator_function_declaration",
+})
+
+
+def _gas_binary_string_literal(binary_node, source: bytes) -> tuple[str | None, str | None]:
+    """For a `<binary_expression>` shaped `identifier === 'literal'` (either
+    operand order), return (identifier_text, literal_text). Anything else -
+    a non-`===` operator, a non-identifier/non-string operand, an
+    interpolated/computed value - returns (None, None): skipped, not guessed.
+    """
+    if not any(c.type == "===" for c in binary_node.children if not c.is_named):
+        return None, None
+    operands = [c for c in binary_node.children if c.is_named]
+    if len(operands) != 2:
+        return None, None
+
+    def _string_literal_text(n):
+        if n.type != "string":
+            return None
+        frag = next((c for c in n.children if c.type == "string_fragment"), None)
+        return _read_text(frag, source) if frag is not None else None
+
+    left, right = operands
+    if left.type == "identifier" and right.type == "string":
+        lit = _string_literal_text(right)
+        return (_read_text(left, source), lit) if lit is not None else (None, None)
+    if right.type == "identifier" and left.type == "string":
+        lit = _string_literal_text(left)
+        return (_read_text(right, source), lit) if lit is not None else (None, None)
+    return None, None
+
+
+def _iter_nodes(node, skip_types: frozenset = frozenset()):
+    """Yield every node in a subtree (node included), not descending into
+    any type in `skip_types` (e.g. nested function bodies - a chain inside a
+    callback isn't part of the enclosing function's own dispatch logic)."""
+    if node is None or node.type in skip_types:
+        return
+    yield node
+    for child in node.children:
+        yield from _iter_nodes(child, skip_types)
+
+
+def _find_first_bare_call_expression(node):
+    """First `call_expression` in a subtree whose callee is a plain
+    identifier (`getHoldings()`, not `e.parameter.tickers.split(',')`) - not
+    descending into a nested function's own body (a call inside a callback
+    belongs to that callback, not to the arm that defines it).
+
+    Skips member-expression calls (`.split(',')`) that commonly appear in
+    setup code before the real target call, e.g. `var tickers =
+    e.parameter.tickers ? e.parameter.tickers.split(',') : [];
+    data = getStockPrices(tickers);` - correctly finds `getStockPrices`.
+
+    ponytail: still "first BARE call in document order," not "the call whose
+    result actually flows into `data`" - a real arm confirmed on
+    My-Investment-Port's syncLocalStorageToGoogleSheets.gs breaks this:
+    `var year = ... parseInt(e.parameter.year) ...; var all =
+    getArchivedDividends(); data = year ? all.filter(...) : all;` matches
+    `parseInt` first (also a bare-identifier call, appearing earlier), never
+    reaching the real target `getArchivedDividends`. Upgrade path: track
+    local variable definitions within the arm and follow the one actually
+    assigned to `data` - real local data-flow analysis, out of scope for this
+    round. Not chased further because it's the only unresolved arm out of 20
+    real ones checked against the actual target repo - a narrow, confirmed
+    ceiling, not a guess.
+    """
+    if node is None:
+        return None
+    if node.type == "call_expression":
+        callee = node.child_by_field_name("function")
+        if callee is not None and callee.type == "identifier":
+            return node
+    if node.type in _JS_FUNCTION_BOUNDARY_TYPES:
+        return None
+    for child in node.children:
+        found = _find_first_bare_call_expression(child)
+        if found is not None:
+            return found
+    return None
+
+
+def _gas_collect_action_arms(if_node, source: bytes) -> list[tuple[str, str, int]]:
+    """Walk an `if`/`else if` chain, yielding `(action_literal, callee_name,
+    line)` for each arm shaped `if (X === 'literal') { ...bareCall()... }`.
+    A final plain `else` (no condition) ends the chain, contributing nothing.
+    """
+    arms: list[tuple[str, str, int]] = []
+    cur = if_node
+    while cur is not None and cur.type == "if_statement":
+        cond = cur.child_by_field_name("condition")
+        binary = next((c for c in cond.children if c.type == "binary_expression"), None) if cond else None
+        if binary is not None:
+            _ident, literal = _gas_binary_string_literal(binary, source)
+            if literal is not None:
+                call_node = _find_first_bare_call_expression(cur.child_by_field_name("consequence"))
+                if call_node is not None:
+                    callee = call_node.child_by_field_name("function")
+                    arms.append((literal, _read_text(callee, source), cur.start_point[0] + 1))
+        alt = cur.child_by_field_name("alternative")
+        nxt = None
+        if alt is not None and alt.type == "else_clause":
+            nxt = next((c for c in alt.children if c.is_named), None)
+        cur = nxt if nxt is not None and nxt.type == "if_statement" else None
+    return arms
+
+
+_GAS_ACTION_QUERY_RE = re.compile(r"action=([^&\x00]*)")
+
+
+def _js_flatten_string_segments(node, source: bytes) -> list[tuple[str, str | None]]:
+    """Flatten a `string` / `template_string` / `+`-concatenation expression
+    into ordered `("literal", text)` / `("dynamic", None)` segments - the
+    building block for detecting whether a value embedded in a fetch() URL
+    argument is a compile-time literal or came from a variable."""
+    if node is None:
+        return [("dynamic", None)]
+    if node.type == "string":
+        frag = next((c for c in node.children if c.type == "string_fragment"), None)
+        return [("literal", _read_text(frag, source) if frag is not None else "")]
+    if node.type == "template_string":
+        segments: list[tuple[str, str | None]] = []
+        for child in node.children:
+            if child.type == "string_fragment":
+                segments.append(("literal", _read_text(child, source)))
+            elif child.type == "template_substitution":
+                segments.append(("dynamic", None))
+        return segments or [("dynamic", None)]
+    if node.type == "binary_expression":
+        operands = [c for c in node.children if c.is_named]
+        is_concat = any(c.type == "+" for c in node.children if not c.is_named)
+        if is_concat and len(operands) == 2:
+            left, right = operands
+            return (_js_flatten_string_segments(left, source)
+                    + _js_flatten_string_segments(right, source))
+        return [("dynamic", None)]
+    return [("dynamic", None)]
+
+
+def _js_extract_literal_action(node, source: bytes) -> str | None:
+    """Extract a literal `action=<value>` query-string value from a fetch()
+    URL argument, or None if the value isn't fully a compile-time literal
+    (came from a variable/interpolation anywhere in its span) - skipped, not
+    guessed, per the design's explicit scope."""
+    segments = _js_flatten_string_segments(node, source)
+    combined = "".join(text if kind == "literal" else "\x00" for kind, text in segments)
+    m = _GAS_ACTION_QUERY_RE.search(combined)
+    if not m:
+        return None
+    value = m.group(1)
+    if not value:
+        return None
+    if m.end() < len(combined) and combined[m.end()] == "\x00":
+        return None  # value's span runs into a dynamic segment - not fully literal
+    return value
+
+
 # Keys that mark a JS/TS array element as structured content (lesson/course/quiz
 # entries, etc.) rather than opaque bulk data or a dispatch registry (array of bare
 # identifiers). Checked in label-preference order. Mirrors _is_config_json's
@@ -3388,6 +3555,11 @@ def _extract_generic(
     namespace_stack: list[str] = []
     scope_stack: list[str] = []
     function_bodies: list[tuple[str, object]] = []
+    # Google Apps Script `doGet`/`doPost` action-dispatch arms (P17/iac-http-linking
+    # Task 6): raw `{"handler_nid", "action", "callee_name", "line"}` records,
+    # resolved to real node ids once `label_to_nid` exists (same-file resolution
+    # only, same reasoning as `raw_calls` - reuse, don't reimplement).
+    gas_action_arms_raw: list[dict] = []
     # nids of function / method / class definitions in this file. The indirect-
     # dispatch guard (Python) resolves a call-argument identifier to an edge only
     # when it names one of these callable defs — never an arbitrary same-named
@@ -4629,6 +4801,26 @@ def _extract_generic(
                                      line, context=ctx)
 
             body = _find_body(node, config)
+            if (body is not None and func_name in ("doGet", "doPost")
+                    and config.ts_module in ("tree_sitter_javascript", "tree_sitter_typescript")):
+                # Real Apps Script doGet handlers commonly have MORE THAN ONE
+                # if-chain (e.g. an outer `if (payload) { if (action ===
+                # 'save_x') ... }` write-dispatch block, followed by a
+                # separate top-level `if (action === 'holdings') ...` read
+                # chain) - scan every if_statement in the body, not just the
+                # first one found. Redundant re-collection of the same chain
+                # from a mid-chain else-if node is harmless (idempotent dict
+                # writes downstream), not incorrect.
+                for if_node in _iter_nodes(body, skip_types=_JS_FUNCTION_BOUNDARY_TYPES):
+                    if if_node.type != "if_statement":
+                        continue
+                    for action_literal, callee_name, arm_line in _gas_collect_action_arms(if_node, source):
+                        gas_action_arms_raw.append({
+                            "handler_nid": func_nid,
+                            "action": action_literal,
+                            "callee_name": callee_name,
+                            "line": arm_line,
+                        })
             # JS/TS: capture `this.X = () => {}` / `this.X = function(){}`
             # assigned directly in this function/constructor body. They live
             # inside the body (otherwise only walked for calls), so without this
@@ -4724,6 +4916,73 @@ def _extract_generic(
         normalised = raw.strip("()").lstrip(".")
         label_to_nid[normalised] = n["id"]
         label_to_nid_ci[normalised.lower()] = n["id"]
+
+    # Resolve GAS doGet/doPost action arms (same-file only, mirroring how a
+    # bare `raw_calls` call resolves via label_to_nid below) - one entry per
+    # handler, {"holdings": <nid>, "dividends": <nid>, ...}. Also carries the
+    # raw callee name + this file's own source_file: ids captured here are
+    # pre-remap (see `_file_stem`'s docstring - extract()'s later id-remap
+    # pass re-derives the canonical form from source_file), so the *cross-file*
+    # http_calls resolver (Task 8) can't trust `actions`' ids directly once
+    # this file joins a multi-file corpus - it re-resolves via
+    # (source_file, callee_name) against the final node set instead.
+    gas_action_handlers: list[dict] = []
+    if gas_action_arms_raw:
+        handlers_by_nid: dict[str, dict[str, str]] = {}
+        names_by_nid: dict[str, dict[str, str]] = {}
+        for arm in gas_action_arms_raw:
+            callee_nid = label_to_nid.get(arm["callee_name"])
+            if callee_nid is None:
+                continue
+            handlers_by_nid.setdefault(arm["handler_nid"], {})[arm["action"]] = callee_nid
+            names_by_nid.setdefault(arm["handler_nid"], {})[arm["action"]] = arm["callee_name"]
+        gas_action_handlers = [
+            {
+                "handler_nid": handler_nid,
+                "actions": actions,
+                "handler_source_file": str_path,
+                "actions_by_name": names_by_nid.get(handler_nid, {}),
+            }
+            for handler_nid, actions in handlers_by_nid.items()
+        ]
+
+    # fetch() call-sites with a literal `action=<value>` (Task 7): the SOURCE
+    # side of a cross-file http_calls edge, correlated later (Task 8) against
+    # gas_action_handlers from a *different* file by action-string match, not
+    # by any file-to-file reference (there is none - a .js frontend and a .gs
+    # backend are unrelated files at the AST level). A node is created here
+    # per literal call-site so that edge has somewhere real to point from.
+    gas_fetch_calls: list[dict] = []
+    if config.ts_module in ("tree_sitter_javascript", "tree_sitter_typescript"):
+        def _scan_fetch_calls(n, owner_nid: str) -> None:
+            if n.type == "call_expression":
+                callee = n.child_by_field_name("function")
+                if (callee is not None and callee.type == "identifier"
+                        and _read_text(callee, source) == "fetch"):
+                    args_node = n.child_by_field_name("arguments")
+                    first_arg = (next((c for c in args_node.children if c.is_named), None)
+                                 if args_node is not None else None)
+                    literal_action = (_js_extract_literal_action(first_arg, source)
+                                      if first_arg is not None else None)
+                    if literal_action is not None:
+                        call_line = n.start_point[0] + 1
+                        call_nid = _make_id(owner_nid, "fetch", str(call_line))
+                        call_label = f"fetch(action={literal_action})"
+                        add_node(call_nid, call_label, call_line)
+                        add_edge(owner_nid, call_nid, "contains", call_line)
+                        # source_file/label ride along so Task 8's cross-file
+                        # resolver can re-resolve this call-site's current id
+                        # post-remap, same reason handler actions carry
+                        # actions_by_name instead of trusting call_nid as-is.
+                        gas_fetch_calls.append({
+                            "call_nid": call_nid, "action": literal_action, "line": call_line,
+                            "source_file": str_path, "label": call_label,
+                        })
+            for child in n.children:
+                _scan_fetch_calls(child, owner_nid)
+
+        for owner_nid, fn_body in function_bodies:
+            _scan_fetch_calls(fn_body, owner_nid)
 
     seen_call_pairs: set[tuple[str, str]] = set()
     seen_indirect_pairs: set[tuple[str, str]] = set()  # Python indirect_call dedup
@@ -5473,6 +5732,10 @@ def _extract_generic(
             clean_edges.append(edge)
 
     result = {"nodes": nodes, "edges": clean_edges, "raw_calls": raw_calls}
+    if gas_action_handlers:
+        result["gas_action_handlers"] = gas_action_handlers
+    if gas_fetch_calls:
+        result["gas_fetch_calls"] = gas_fetch_calls
     if callable_def_nids:
         # Mark function / method / class defs with a `_callable` attribute so the
         # cross-file indirect_call pass can resolve a by-name callback only to a real
@@ -15460,6 +15723,14 @@ def _get_extractor(path: Path) -> Any | None:
     # (#1377). apm.yml would otherwise be a .yml document handled by the LLM.
     if is_package_manifest_path(path):
         return extract_package_manifest
+    # Dockerfile has no suffix - route by filename, same as the two checks above.
+    if is_dockerfile_path(path):
+        return extract_dockerfile
+    # kustomization.yaml/.yml is Kustomize-specific (Module node + cross-file
+    # `imports` edges) - route by filename before generic .yaml/.yml dispatch,
+    # same pattern as the checks above.
+    if path.name in ("kustomization.yaml", "kustomization.yml"):
+        return extract_kustomization
     # `.h` is C/C++/ObjC-ambiguous; route Objective-C headers to extract_objc
     # (the suffix map sends `.h` to extract_c, which can't read @interface etc.).
     # ObjC sniffing has priority over the C++ sniff: an Objective-C++ header can
@@ -15774,6 +16045,158 @@ def _resolve_value_coupling(
                     "weight": 0.3,
                 })
     return edges
+
+
+def _resolve_kustomize_imports(per_file: list[dict], all_nodes: list[dict], all_edges: list[dict]) -> None:
+    """Resolve `extractors/kustomization.py`'s raw `kustomize_targets` facts
+    into `imports` edges once the final, post-remap file-node ids are known.
+
+    Same reason this can't be resolved eagerly at extraction time as
+    `_resolve_value_coupling`: a kustomization file only knows the path
+    string it constructed for a referenced manifest, not that manifest's
+    final node id in the assembled graph. Resolved by source_file (exact,
+    then basename fallback) against `all_nodes`' file-level nodes
+    (`source_location == "L1"`) - identical matching strategy, reused.
+    """
+    from pathlib import Path as _P
+
+    sf_to_fileid: dict[str, str] = {}
+    base_to_fileid: dict[str, str] = {}
+    for n in all_nodes:
+        if str(n.get("source_location", "")) != "L1":
+            continue
+        sf = str(n.get("source_file", ""))
+        if not sf:
+            continue
+        sf_to_fileid.setdefault(sf, n["id"])
+        base_to_fileid.setdefault(_P(sf).name, n["id"])
+
+    for result in per_file:
+        if not result:
+            continue
+        for target in result.get("kustomize_targets") or []:
+            module_source_file = target.get("source_file") or ""
+            target_path = target.get("target_path") or ""
+            if not module_source_file or not target_path:
+                continue
+            # Resolve the kustomization file's OWN current node id too - not
+            # the id captured at extraction time (`module_nid`). Node ids get
+            # remapped after per-file extraction (same reason
+            # `_resolve_value_coupling` never trusts a captured id either),
+            # so using the captured id directly would silently point the edge
+            # at a stale/dropped id.
+            module_nid = (sf_to_fileid.get(module_source_file)
+                          or base_to_fileid.get(_P(module_source_file).name))
+            target_nid = sf_to_fileid.get(target_path) or base_to_fileid.get(_P(target_path).name)
+            if module_nid is None or target_nid is None or target_nid == module_nid:
+                continue
+            all_edges.append({
+                "source": module_nid,
+                "target": target_nid,
+                "relation": "imports",
+                "confidence": "EXTRACTED",
+                "source_file": module_source_file,
+                "source_location": f"L{target.get('line', 1)}",
+                "weight": 1.0,
+            })
+
+
+register_language_resolver(
+    LanguageResolver("kustomize_imports", frozenset({".yaml", ".yml"}), _resolve_kustomize_imports)
+)
+
+
+def _resolve_http_calls(per_file: list[dict], all_nodes: list[dict], all_edges: list[dict]) -> None:
+    """Cross-file link (Task 8): a fetch() call-site with a literal
+    `action=<value>` (Task 7's `gas_fetch_calls`) -> the matching doGet/
+    doPost arm's target function, in a *different* file's GAS handler
+    (Task 6's `gas_action_handlers`). Correlated purely by action-string
+    match - there is no file-to-file reference between a JS frontend and its
+    Apps Script backend, unlike Kustomize's literal path reference.
+
+    Resolves both sides via (source_file, label) against the FINAL node set,
+    never the ids captured at per-file extraction time - same discipline as
+    `_resolve_kustomize_imports` (see `_file_stem`'s docstring: ids get
+    remapped once the corpus has more than one file).
+    """
+    if not any(
+        (result or {}).get("gas_action_handlers") for result in per_file
+    ):
+        return  # no GAS handlers anywhere in this corpus - no-op, cheap exit
+
+    # Exact (source_file, label) plus a basename-keyed fallback tier - a
+    # relative final path (post-remap) won't string-match the absolute path
+    # captured at per-file extraction time, same tolerance
+    # `_resolve_value_coupling`/`_resolve_kustomize_imports` already need.
+    from pathlib import Path as _P
+    label_by_sf: dict[tuple[str, str], str] = {}
+    label_by_base: dict[tuple[str, str], str] = {}
+    for n in all_nodes:
+        sf = str(n.get("source_file", ""))
+        if not sf:
+            continue
+        label = str(n.get("label", "")).strip().strip("()").lstrip(".")
+        if not label:
+            continue
+        label_by_sf.setdefault((sf, label), n["id"])
+        label_by_base.setdefault((_P(sf).name, label), n["id"])
+
+    def _resolve_label(sf: str, label: str) -> str | None:
+        # Same normalization as the keys were built with (and as label_to_nid
+        # uses during same-file resolution) - .strip("()") only trims from
+        # the string's ends, so "fetch(action=x)" -> "fetch(action=x" (the
+        # opening paren stays); callers must match that exactly, not guess.
+        norm = label.strip().strip("()").lstrip(".")
+        return label_by_sf.get((sf, norm)) or label_by_base.get((_P(sf).name, norm))
+
+    action_targets: dict[str, set[str]] = {}
+    for result in per_file:
+        if not result:
+            continue
+        for handler in result.get("gas_action_handlers") or []:
+            sf = handler.get("handler_source_file") or ""
+            for action, callee_name in (handler.get("actions_by_name") or {}).items():
+                target_nid = _resolve_label(sf, callee_name)
+                if target_nid is not None:
+                    action_targets.setdefault(action, set()).add(target_nid)
+
+    if not action_targets:
+        return
+
+    for result in per_file:
+        if not result:
+            continue
+        for call in result.get("gas_fetch_calls") or []:
+            action = call.get("action")
+            targets = action_targets.get(action) if action else None
+            if not targets:
+                continue
+            call_sf = call.get("source_file") or ""
+            call_label = call.get("label") or ""
+            call_nid = _resolve_label(call_sf, call_label)
+            if call_nid is None:
+                continue
+            for target_nid in targets:
+                if target_nid == call_nid:
+                    continue
+                all_edges.append({
+                    "source": call_nid,
+                    "target": target_nid,
+                    "relation": "http_calls",
+                    "confidence": "INFERRED",
+                    "source_file": call_sf,
+                    "source_location": f"L{call.get('line', 1)}",
+                    "weight": 1.0,
+                })
+
+
+register_language_resolver(
+    LanguageResolver(
+        "http_calls_linking",
+        frozenset({".js", ".jsx", ".ts", ".tsx", ".gs"}),
+        _resolve_http_calls,
+    )
+)
 
 
 def extract(

@@ -85,6 +85,85 @@ def test_extract_yaml_empty_file_produces_only_file_node(tmp_path):
     assert result.get("error") is None
 
 
+def test_extract_yaml_multi_document_extracts_both_documents(tmp_path):
+    """`---`-separated multi-document YAML (the shape Kubernetes manifests
+    commonly use to bundle multiple resources in one file) must extract every
+    document, not just the first. Regression test for the bug found while
+    designing K8s Resource-node typing (agent-memory/plans/iac-http-linking/).
+    """
+    f = tmp_path / "multi.yaml"
+    f.write_text("first_key: 1\n---\nsecond_key: 2\n")
+    result = extract_yaml(f)
+    labels = [n["label"] for n in result["nodes"]]
+    assert "first_key" in labels
+    assert "second_key" in labels
+
+
+def test_extract_yaml_multi_document_with_shared_keys_does_not_collide(tmp_path):
+    """Kubernetes manifests routinely repeat `apiVersion`/`kind`/`spec` across
+    documents in the same file - both documents' nodes must exist
+    independently, not collapse into one shared node."""
+    f = tmp_path / "k8s.yaml"
+    f.write_text("kind: Deployment\nspec:\n  replicas: 1\n---\nkind: Service\nspec:\n  port: 80\n")
+    result = extract_yaml(f)
+    kind_nodes = [n for n in result["nodes"] if n["label"] == "kind"]
+    spec_nodes = [n for n in result["nodes"] if n["label"] == "spec"]
+    assert len(kind_nodes) == 2
+    assert len(spec_nodes) == 2
+    assert kind_nodes[0]["id"] != kind_nodes[1]["id"]
+    assert spec_nodes[0]["id"] != spec_nodes[1]["id"]
+    # each document's spec sub-key (replicas vs port) must exist, proving the
+    # second document's nested content was extracted too, not just its top key
+    labels = [n["label"] for n in result["nodes"]]
+    assert "replicas" in labels
+    assert "port" in labels
+
+
+def test_extract_yaml_k8s_manifest_gets_typed_resource_node(tmp_path):
+    """apiVersion + kind at top level -> additive Resource node, alongside
+    the existing generic per-key nodes (not replacing them)."""
+    f = tmp_path / "deployment.yaml"
+    f.write_text(
+        "apiVersion: apps/v1\n"
+        "kind: Deployment\n"
+        "metadata:\n"
+        "  name: my-app\n"
+    )
+    result = extract_yaml(f)
+    resource_nodes = [n for n in result["nodes"] if n.get("type") == "resource"]
+    assert len(resource_nodes) == 1
+    assert resource_nodes[0]["label"] == "Deployment my-app"
+    assert resource_nodes[0]["metadata"]["kind"] == "Deployment"
+    assert resource_nodes[0]["metadata"]["api_version"] == "apps/v1"
+    # generic per-key nodes must still exist (additive, not replaced)
+    labels = [n["label"] for n in result["nodes"]]
+    assert "apiVersion" in labels
+    assert "kind" in labels
+    assert "metadata" in labels
+
+
+def test_extract_yaml_non_k8s_yaml_gets_no_resource_node(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text("automation:\n  - alias: Turn on lights\n")
+    result = extract_yaml(f)
+    resource_nodes = [n for n in result["nodes"] if n.get("type") == "resource"]
+    assert resource_nodes == []
+
+
+def test_extract_yaml_multi_doc_k8s_gets_one_resource_node_per_document(tmp_path):
+    f = tmp_path / "bundle.yaml"
+    f.write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n"
+        "---\n"
+        "apiVersion: v1\nkind: Service\nmetadata:\n  name: web-svc\n"
+    )
+    result = extract_yaml(f)
+    resource_nodes = [n for n in result["nodes"] if n.get("type") == "resource"]
+    assert len(resource_nodes) == 2
+    labels = {n["label"] for n in resource_nodes}
+    assert labels == {"Deployment web", "Service web-svc"}
+
+
 def test_extract_yaml_dispatches_from_extract_module(tmp_path):
     """.yaml/.yml must actually be wired into the main dispatch table, not
     just exist as a standalone function nobody calls."""
