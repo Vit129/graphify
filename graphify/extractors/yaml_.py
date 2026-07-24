@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from graphify.extractors.base import _file_stem, _make_id, _read_text
+from graphify.security import sanitize_metadata
 
 _LABEL_KEYS = ("alias", "name", "id", "description", "summary", "title")
 
@@ -56,11 +57,17 @@ def extract_yaml(path: Path) -> dict:
     edges: list[dict] = []
     seen_ids: set[str] = set()
 
-    def add_node(nid: str, label: str, line: int) -> None:
+    def add_node(nid: str, label: str, line: int, *, node_type: str | None = None,
+                 metadata: dict | None = None) -> None:
         if nid not in seen_ids:
             seen_ids.add(nid)
-            nodes.append({"id": nid, "label": label, "file_type": "code",
-                          "source_file": str_path, "source_location": f"L{line}"})
+            node = {"id": nid, "label": label, "file_type": "code",
+                    "source_file": str_path, "source_location": f"L{line}"}
+            if node_type:
+                node["type"] = node_type
+            if metadata:
+                node["metadata"] = sanitize_metadata(metadata)
+            nodes.append(node)
 
     def add_edge(src: str, tgt: str, relation: str, line: int) -> None:
         edges.append({"source": src, "target": tgt, "relation": relation,
@@ -144,41 +151,84 @@ def extract_yaml(path: Path) -> dict:
             cur = named[0]
         return cur
 
-    root_mapping = _find_root_mapping(root)
-    for key_text, value_node, line in _mapping_pairs(root_mapping):
-        if not key_text:
-            continue
-        key_nid = _make_id(stem, key_text)
-        add_node(key_nid, key_text, line)
-        add_edge(file_nid, key_nid, "contains", line)
+    # A `---`-separated multi-document file (the shape Kubernetes manifests
+    # commonly use to bundle several resources in one file) has multiple
+    # `document` children under the `stream` root — descending from `root`
+    # directly (the old behavior) only ever reached the first one, silently
+    # dropping the rest. Iterate documents explicitly; fall back to treating
+    # `root` itself as the one document for grammar shapes with no explicit
+    # `document` wrapper.
+    documents = [c for c in root.children if c.type == "document"]
+    if not documents:
+        documents = [root]
 
-        child = _unwrap(value_node)
-        if child is None:
-            continue
-        if child.type == "block_sequence":
-            for i, item in enumerate(child.children):
-                if item.type != "block_sequence_item":
-                    continue
-                item_named = [c for c in item.children if c.is_named]
-                item_value = _unwrap(item_named[0]) if item_named else None
-                label = _find_label(item_value) if item_value and item_value.type == "block_mapping" else None
-                label = label or f"{key_text}[{i}]"
-                item_line = item.start_point[0] + 1
-                item_nid = _make_id(key_nid, str(i))
-                add_node(item_nid, label, item_line)
-                add_edge(key_nid, item_nid, "contains", item_line)
-        elif child.type == "block_mapping":
-            for sub_key, sub_value, sub_line in _mapping_pairs(child):
-                if not sub_key:
-                    continue
-                sub_child = _unwrap(sub_value)
-                label = sub_key
-                if sub_child is not None and sub_child.type == "block_mapping":
-                    found = _find_label(sub_child)
-                    if found:
-                        label = found
-                sub_nid = _make_id(key_nid, sub_key)
-                add_node(sub_nid, label, sub_line)
-                add_edge(key_nid, sub_nid, "contains", sub_line)
+    for doc_idx, doc in enumerate(documents):
+        root_mapping = _find_root_mapping(doc)
+        # Disambiguate node IDs across documents only when there's more than
+        # one - keeps the single-document ID scheme byte-identical to before
+        # (K8s manifests routinely repeat keys like `apiVersion`/`kind`/`spec`
+        # across documents in the same file; without this, the second
+        # document's nodes would collide into the first's).
+        key_stem = stem if len(documents) == 1 else _make_id(stem, str(doc_idx))
+        pairs = list(_mapping_pairs(root_mapping))
+
+        # K8s Resource-node typing: additive, layered on top of the generic
+        # per-key nodes below (not replacing them) - a document counts as a
+        # Kubernetes manifest when both `apiVersion` and `kind` are top-level
+        # keys, the same shape check kubectl itself relies on.
+        top_level = {k: v for k, v, _line in pairs if k}
+        if "apiVersion" in top_level and "kind" in top_level:
+            kind_text = _scalar_text(top_level["kind"])
+            api_version_text = _scalar_text(top_level["apiVersion"])
+            resource_name = None
+            metadata_mapping = _unwrap(top_level.get("metadata"))
+            if metadata_mapping is not None and metadata_mapping.type == "block_mapping":
+                for meta_key, meta_value, _meta_line in _mapping_pairs(metadata_mapping):
+                    if meta_key == "name" and meta_value is not None:
+                        resource_name = _scalar_text(meta_value)
+                        break
+            resource_label = f"{kind_text} {resource_name}" if resource_name else kind_text
+            resource_line = root_mapping.start_point[0] + 1
+            resource_nid = _make_id(key_stem, "resource")
+            add_node(resource_nid, resource_label, resource_line, node_type="resource",
+                     metadata={"kind": kind_text, "api_version": api_version_text,
+                               "name": resource_name})
+            add_edge(file_nid, resource_nid, "contains", resource_line)
+
+        for key_text, value_node, line in pairs:
+            if not key_text:
+                continue
+            key_nid = _make_id(key_stem, key_text)
+            add_node(key_nid, key_text, line)
+            add_edge(file_nid, key_nid, "contains", line)
+
+            child = _unwrap(value_node)
+            if child is None:
+                continue
+            if child.type == "block_sequence":
+                for i, item in enumerate(child.children):
+                    if item.type != "block_sequence_item":
+                        continue
+                    item_named = [c for c in item.children if c.is_named]
+                    item_value = _unwrap(item_named[0]) if item_named else None
+                    label = _find_label(item_value) if item_value and item_value.type == "block_mapping" else None
+                    label = label or f"{key_text}[{i}]"
+                    item_line = item.start_point[0] + 1
+                    item_nid = _make_id(key_nid, str(i))
+                    add_node(item_nid, label, item_line)
+                    add_edge(key_nid, item_nid, "contains", item_line)
+            elif child.type == "block_mapping":
+                for sub_key, sub_value, sub_line in _mapping_pairs(child):
+                    if not sub_key:
+                        continue
+                    sub_child = _unwrap(sub_value)
+                    label = sub_key
+                    if sub_child is not None and sub_child.type == "block_mapping":
+                        found = _find_label(sub_child)
+                        if found:
+                            label = found
+                    sub_nid = _make_id(key_nid, sub_key)
+                    add_node(sub_nid, label, sub_line)
+                    add_edge(key_nid, sub_nid, "contains", sub_line)
 
     return {"nodes": nodes, "edges": edges, "values": values}

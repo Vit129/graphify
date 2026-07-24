@@ -397,6 +397,12 @@ def classify_file(path: Path) -> FileType | None:
     from graphify.manifest_ingest import is_package_manifest_path
     if is_package_manifest_path(path):
         return FileType.CODE
+    # Dockerfile has no suffix, so the shebang fallback below (extensionless
+    # files only) would otherwise be the only path to classify it, and
+    # Dockerfiles have no shebang - route by filename first.
+    from graphify.extractors.dockerfile import is_dockerfile_path
+    if is_dockerfile_path(path):
+        return FileType.CODE
     # Compound extensions must be checked before simple suffix lookup
     if path.name.lower().endswith(".blade.php"):
         return FileType.CODE

@@ -137,6 +137,25 @@ this exist and what did we look at before building it."
   semantically different from any word in the code" problems. Revisit only if a real query gap
   surfaces that P3/P4/P5-style fixes provably can't close.
 
+## Rejected: TF-IDF Fallback Search Tier
+
+- Proposed (external `~/.claude/plans/quizzical-soaring-stream.md` Feature B, itself inspired by
+  `DeusData/codebase-memory-mcp`'s hybrid search) as a fallback scoring tier in `_score_nodes`,
+  activating only when the (then-current) exact/prefix/substring/trigram+IDF tiers returned no/weak
+  match.
+- Confirmed moot once checked against the actual current code, not the stale plan doc: `_score_nodes`
+  (`graphify/query.py:607`) had already been rewritten to real BM25 (see "Real BM25 Scoring" below,
+  landed via the P1 reopen) — `_bm25_idf()` already computes IDF, and BM25's saturating-TF +
+  document-length normalization strictly supersedes plain TF-IDF's raw/log-TF weighting. Building a
+  TF-IDF fallback on top would only re-score the same lexical-overlap cases BM25 already scores, with
+  a weaker formula — no case it uniquely rescues.
+- Doesn't reopen the semantic-search question either: TF-IDF, like BM25, is still lexical
+  (requires shared tokens between query and label) — it was never going to close the
+  zero-word-overlap gap that only real embeddings solve, and that gap is the one already declined
+  above under "Rejected: Full Semantic/Embedding Search".
+- Revisit only if BM25 itself is found to have a real, distinct precision gap that a second lexical
+  scoring pass (not embeddings) could close — not as a generic "add more search tiers" default.
+
 ## Real BM25 Scoring (P1 reopen, superseding two earlier fix attempts)
 
 - The original P1 doc's "ceiling closed" claim (IDF-coverage weighting fixes multi-term seed
