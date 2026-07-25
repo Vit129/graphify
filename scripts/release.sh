@@ -66,3 +66,21 @@ if [[ $? -ne 0 ]]; then
 fi
 
 echo "Released $TAG"
+
+# Sync the globally-installed uv tool CLI to match, closing the version-drift
+# window that causes the installed skill to get wiped: a stale CLI + fresh
+# skill triggers _check_skill_version's mismatch warning, and a concurrent/
+# interrupted `graphify install` racing against that drift can delete the
+# skill (references/ cleared before SKILL.md is (re)written) with zero
+# warning once .graphify_version is gone too. See feature-provenance.md,
+# "Recurring graphify-skill deletion" (2026-07-25) for the full root cause.
+if command -v uv &>/dev/null && uv tool list 2>/dev/null | grep -q "^graphifyy "; then
+  echo "Syncing global CLI tool to ${TAG}..."
+  if uv tool upgrade --reinstall graphifyy; then
+    graphify install || echo "warning: 'graphify install' failed after CLI upgrade — run it manually to refresh the skill" >&2
+  else
+    echo "warning: 'uv tool upgrade --reinstall graphifyy' failed — the global CLI is still on an older version than ${TAG}. Run it manually to avoid a version-drift skill deletion." >&2
+  fi
+else
+  echo "note: global 'graphifyy' uv tool not found, skipping CLI sync" >&2
+fi
