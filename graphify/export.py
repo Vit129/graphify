@@ -912,6 +912,8 @@ function init3DGraph() {{
   const speed = parseFloat(document.getElementById('slide-speed-3d').value);
 
   graph3DInstance = ForceGraph3D({{ controlType: 'orbit' }})(container)
+    .width(container.clientWidth)
+    .height(container.clientHeight)
     .backgroundColor('#0f0f1a')
     .graphData(gData)
     .nodeLabel(node => `<div style="padding: 6px; background: rgba(26,26,46,0.9); border: 1px solid #3a3a5e; border-radius: 4px; color: #fff; font-family: sans-serif; font-size: 12px;"><b>${{esc(node.label)}}</b><br/>Type: ${{esc(node.file_type || 'unknown')}}<br/>Community: ${{esc(node.community_name)}}</div>`)
@@ -1361,7 +1363,11 @@ def to_html(
 <div id="graph"></div>
 <div id="graph-3d"></div>
 <div id="sidebar">
-  <div id="mode-toggle-wrap">
+  <!-- 3D view disabled: sidebar-covering bug (missing explicit width/height on
+       ForceGraph3D) fixed in init3DGraph() but couldn't be visually re-verified
+       this session, and 2D is the preferred view anyway. Re-enable by removing
+       this display:none once verified. -->
+  <div id="mode-toggle-wrap" style="display: none;">
     <button id="btn-2d" class="toggle-btn active" onclick="switchMode('2d')">2D View</button>
     <button id="btn-3d" class="toggle-btn" onclick="switchMode('3d')">3D View</button>
   </div>
