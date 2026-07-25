@@ -1230,6 +1230,112 @@ def _swift_pre_scan(root_node, source: bytes) -> tuple[set[str], set[str]]:
     return protocols, classes
 
 
+def _swift_function_bare_name(fn_node, source: bytes) -> str | None:
+    """Return a Swift function/method/init/subscript node's bare name (no labels)."""
+    if fn_node.type == "deinit_declaration":
+        return "deinit"
+    if fn_node.type == "subscript_declaration":
+        return "subscript"
+    name_node = fn_node.child_by_field_name("name")
+    if name_node is None:
+        for c in fn_node.children:
+            if c.type in ("simple_identifier", "type_identifier", "user_type"):
+                name_node = c
+                break
+    return _read_text(name_node, source) if name_node else None
+
+
+def _swift_param_labels(fn_node, source: bytes) -> list[str]:
+    """Return each parameter's external (call-site) label for a Swift function/init
+    declaration, in order. A parameter with no external label (``_ x: T``) reports
+    ``"_"``, matching Swift's own selector notation (``foo(_:bar:)``). Used to build
+    an overload-disambiguating selector alongside ``_swift_function_bare_name``."""
+    labels: list[str] = []
+    for c in fn_node.children:
+        if c.type != "parameter":
+            continue
+        ext = c.child_by_field_name("external_name")
+        nm = c.child_by_field_name("name")
+        label_node = ext if ext is not None else nm
+        labels.append(_read_text(label_node, source) if label_node is not None else "_")
+    return labels
+
+
+def _swift_overloaded_method_names(root_node, source: bytes, stem: str) -> dict[str, set[str]]:
+    """Pre-scan a Swift file for method/init/subscript names declared 2+ times under
+    the same type (#1356 cont'd — real overloads, e.g. multiple ``func rasterize``).
+
+    Returns ``{type_nid: {bare_name, ...}}`` for names that collide within one type
+    body. class_declaration is reused by tree-sitter-swift for both a real type and
+    an ``extension X { ... }`` block (same computed nid, see the `extension` child
+    check at the class-handling call site), so a class+same-file-extension split is
+    also covered. A same-name overload split across DIFFERENT files (class in one
+    file, extension in another) is not visible to a single-file pre-scan and stays
+    on the pre-#1356-cont'd fallback path — a documented ceiling, not a crash risk.
+    """
+    counts: dict[str, dict[str, int]] = {}
+    _FUNC_TYPES = ("function_declaration", "init_declaration",
+                   "deinit_declaration", "subscript_declaration")
+
+    def visit(node) -> None:
+        if node.type in ("class_declaration", "protocol_declaration"):
+            name_node = node.child_by_field_name("name")
+            if name_node is None:
+                for c in node.children:
+                    if c.type in ("simple_identifier", "type_identifier", "user_type"):
+                        name_node = c
+                        break
+            if name_node is not None:
+                class_name = _read_text(name_node, source)
+                if class_name:
+                    type_nid = _make_id(stem, class_name)
+                    body = None
+                    for c in node.children:
+                        if c.type in ("class_body", "protocol_body"):
+                            body = c
+                            break
+                    if body is not None:
+                        bucket = counts.setdefault(type_nid, {})
+                        for c in body.children:
+                            if c.type in _FUNC_TYPES:
+                                nm = _swift_function_bare_name(c, source)
+                                if nm:
+                                    bucket[nm] = bucket.get(nm, 0) + 1
+        for c in node.children:
+            visit(c)
+
+    visit(root_node)
+    return {nid: {n for n, cnt in names.items() if cnt > 1} for nid, names in counts.items()}
+
+
+def _swift_call_arg_labels(call_node, source: bytes) -> list[str] | None:
+    """Return the argument labels at a Swift call site (``f.bar(1, with: 2)`` ->
+    ``["_", "with"]``), in the same ``"_"``-for-unlabeled convention as
+    ``_swift_param_labels``, for exact-overload matching in
+    ``_resolve_swift_member_calls``. Returns ``None`` when the call has no
+    parenthesized argument list to read (e.g. a trailing-closure-only call
+    ``f.bar { ... }``) — the caller falls back to bare-name resolution.
+    """
+    for child in call_node.children:
+        if child.type != "call_suffix":
+            continue
+        value_args = None
+        for c in child.children:
+            if c.type == "value_arguments":
+                value_args = c
+                break
+        if value_args is None:
+            return None
+        labels: list[str] = []
+        for arg in value_args.children:
+            if arg.type != "value_argument":
+                continue
+            nm = arg.child_by_field_name("name")
+            labels.append(_read_text(nm, source) if nm is not None else "_")
+        return labels
+    return None
+
+
 def _swift_classify_base(name: str, kind: str | None, is_first: bool,
                           protocols: set[str], classes: set[str]) -> str:
     """Classify a Swift inheritance_specifier entry as `inherits` or `implements`."""
@@ -3591,8 +3697,10 @@ def _extract_generic(
 
     swift_protocol_names: set[str] = set()
     swift_class_names: set[str] = set()
+    swift_overload_names: dict[str, set[str]] = {}
     if config.ts_module == "tree_sitter_swift":
         swift_protocol_names, swift_class_names = _swift_pre_scan(root, source)
+        swift_overload_names = _swift_overloaded_method_names(root, source, stem)
 
     def add_node(nid: str, label: str, line: int, *, node_type: str | None = None,
                  metadata: dict | None = None) -> None:
@@ -4484,8 +4592,24 @@ def _extract_generic(
 
             line = node.start_point[0] + 1
             if parent_class_nid:
-                func_nid = _make_id(parent_class_nid, func_name)
-                add_node(func_nid, f".{func_name}()", line)
+                if (config.ts_module == "tree_sitter_swift"
+                        and func_name in swift_overload_names.get(parent_class_nid, ())):
+                    # Real overload (#1356 cont'd): the bare name collides with a
+                    # sibling method under the same type, so `_make_id` on the bare
+                    # name alone would collapse every candidate onto one node
+                    # (add_node is first-write-wins — later overloads silently
+                    # vanish, and their call-graph edges get misattributed to the
+                    # first). Qualify the id/label with the full Swift selector
+                    # (parameter external labels) so each overload is its own node.
+                    param_labels = _swift_param_labels(node, source)
+                    selector = func_name + "(" + "".join(l + ":" for l in param_labels) + ")"
+                    func_nid = _make_id(parent_class_nid, selector)
+                    add_node(func_nid, f".{selector}", line,
+                             metadata={"swift_bare_name": func_name,
+                                       "swift_param_labels": param_labels})
+                else:
+                    func_nid = _make_id(parent_class_nid, func_name)
+                    add_node(func_nid, f".{func_name}()", line)
                 add_edge(parent_class_nid, func_nid, "method", line)
             else:
                 func_nid = _make_id(stem, func_name)
@@ -5411,6 +5535,13 @@ def _extract_generic(
                     # type table (#1609).
                     if config.ts_module == "tree_sitter_c_sharp":
                         rc_entry["lang"] = "csharp"
+                    # Swift: capture the call site's argument labels so the cross-file
+                    # resolver can pick the exact overload when the receiver's type
+                    # declares more than one method by this bare name (#1356 cont'd).
+                    # None when there's no parenthesized argument list to read (e.g. a
+                    # trailing-closure-only call) — the resolver falls back from there.
+                    if config.ts_module == "tree_sitter_swift" and is_member_call:
+                        rc_entry["arg_labels"] = _swift_call_arg_labels(node, source)
                     raw_calls.append(rc_entry)
 
             # Indirect dispatch: a function passed BY NAME as a call argument
@@ -11418,15 +11549,25 @@ def _resolve_swift_member_calls(
         if n.get("source_file") and n.get("id") in contained and _is_type_like_definition(n):
             type_def_nids.setdefault(_key(n.get("label", "")), []).append(n["id"])
 
-    # (type_node_id, method_key) -> method_node_id, from `method` edges.
-    method_index: dict[tuple[str, str], str] = {}
+    # (type_node_id, bare_method_key) -> [method_node_id, ...]. Keyed by the node's
+    # `swift_bare_name` metadata when present (overloaded methods, whose label is
+    # qualified with the full selector so distinct overloads get distinct nodes —
+    # see the extractor's `swift_overload_names` pass) and falling back to the
+    # label otherwise (non-overloaded methods, one candidate, unchanged behavior).
+    # A list (not a single value) because an overloaded name legitimately maps to
+    # several candidate nodes that must be disambiguated by argument labels below.
+    method_index: dict[tuple[str, str], list[str]] = {}
     for e in all_edges:
         if e.get("relation") != "method":
             continue
         src, tgt = e.get("source"), e.get("target")
         tnode = node_by_id.get(tgt)
         if tnode is not None:
-            method_index[(src, _key(tnode.get("label", "")))] = tgt
+            meta = tnode.get("metadata") or {}
+            bare_key = _key(meta.get("swift_bare_name") or tnode.get("label", ""))
+            method_index.setdefault((src, bare_key), [])
+            if tgt not in method_index[(src, bare_key)]:
+                method_index[(src, bare_key)].append(tgt)
 
     all_raw_calls: list[dict] = []
     for result in per_file:
@@ -11458,7 +11599,26 @@ def _resolve_swift_member_calls(
         caller = rc.get("caller_nid")
         if not caller:
             continue
-        method_nid = method_index.get((type_nid, _key(callee)))
+        candidates = method_index.get((type_nid, _key(callee)), [])
+        method_nid: str | None = None
+        if len(candidates) == 1:
+            method_nid = candidates[0]
+        elif len(candidates) > 1:
+            # Real overload: only bind when the call site's argument labels are
+            # known AND match exactly one candidate's declared parameter labels.
+            # Unknown labels (e.g. a trailing-closure-only call) or an ambiguous/
+            # no-match comparison fall back to the type-level `references` edge
+            # below rather than guessing which overload was meant (#1356 cont'd).
+            arg_labels = rc.get("arg_labels")
+            if arg_labels is not None:
+                matches = [
+                    nid for nid in candidates
+                    if (node_by_id.get(nid, {}).get("metadata") or {}).get(
+                        "swift_param_labels"
+                    ) == arg_labels
+                ]
+                if len(matches) == 1:
+                    method_nid = matches[0]
         target = method_nid or type_nid
         relation = "calls" if method_nid else "references"
         if target == caller or (caller, target) in existing_pairs:

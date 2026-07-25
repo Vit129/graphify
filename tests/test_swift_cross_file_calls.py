@@ -154,6 +154,74 @@ def test_swift_unknown_receiver_emits_no_edge(tmp_path: Path):
     assert (".run()", "calls", ".help()") not in edges
 
 
+def test_swift_overloaded_methods_resolve_to_distinct_definitions(tmp_path: Path):
+    """#1356 cont'd: a bare method name declared 2+ times in the same type
+    (real Swift overloads, e.g. GlyphRasterizer.rasterize(codepoint:...) /
+    .rasterize(cluster:...) / .rasterize(glyph:font:) in kouen-terminal) must
+    keep one node PER overload and route each cross-file call to its own
+    signature-matched definition — not collapse onto a single first-declared
+    node (the extractor's node id was previously keyed on the bare name alone,
+    so `add_node`'s first-write-wins guard silently dropped overloads #2/#3 and
+    every call site resolved to whichever overload happened to be declared
+    first, regardless of the arguments actually passed)."""
+    base = tmp_path / "src"
+    _write(base / "Rasterizer.swift", (
+        "class Rasterizer {\n"
+        "    func rasterize(codepoint: UInt32, bold: Bool) -> Int { return 1 }\n"
+        "    func rasterize(cluster: String, bold: Bool) -> Int { return 2 }\n"
+        "    func rasterize(glyph: Int, font: Int) -> Int { return 3 }\n"
+        "}\n"
+    ))
+    _write(base / "Atlas.swift", (
+        "class Atlas {\n"
+        "    var rasterizer: Rasterizer\n"
+        "    func fillByCodepoint() { rasterizer.rasterize(codepoint: 1, bold: false) }\n"
+        "    func fillByCluster() { rasterizer.rasterize(cluster: \"x\", bold: false) }\n"
+        "    func fillByGlyph() { rasterizer.rasterize(glyph: 1, font: 2) }\n"
+        "}\n"
+    ))
+    files = sorted(base.glob("*.swift"))
+    result = extract(files, cache_root=tmp_path / "cache", parallel=False)
+
+    overload_nodes = {
+        n["id"]: n["label"] for n in result["nodes"]
+        if n["label"].startswith(".rasterize(")
+    }
+    # Three distinct definition nodes, one per overload — not one merged node.
+    assert len(overload_nodes) == 3
+    assert set(overload_nodes.values()) == {
+        ".rasterize(codepoint:bold:)",
+        ".rasterize(cluster:bold:)",
+        ".rasterize(glyph:font:)",
+    }
+
+    calls = {
+        (_label(result, e["source"]), _label(result, e["target"]))
+        for e in result["edges"]
+        if e.get("relation") == "calls" and e["target"] in overload_nodes
+    }
+    # Each caller resolves to its OWN signature-matched overload, not all three
+    # collapsing onto the first-declared `.rasterize(codepoint:bold:)`.
+    assert (".fillByCodepoint()", ".rasterize(codepoint:bold:)") in calls
+    assert (".fillByCluster()", ".rasterize(cluster:bold:)") in calls
+    assert (".fillByGlyph()", ".rasterize(glyph:font:)") in calls
+    assert len(calls) == 3  # no extra/misrouted edge
+
+
+def test_swift_non_overloaded_method_id_and_label_unchanged(tmp_path: Path):
+    """Overload disambiguation must be additive: a type with only one method by a
+    given name keeps today's plain `.method()` node id/label (no selector
+    qualification), so the vast majority of Swift methods are unaffected."""
+    base = tmp_path / "src"
+    _write(base / "Plain.swift", "class Plain {\n    func run(x: Int) {}\n}\n")
+    files = sorted(base.glob("*.swift"))
+    result = extract(files, cache_root=tmp_path / "cache", parallel=False)
+
+    labels = {n["label"] for n in result["nodes"]}
+    assert ".run()" in labels
+    assert not any(l.startswith(".run(") for l in labels if l != ".run()")
+
+
 def test_deferred_singleton_local_var_resolves(tmp_path):
     """#1604: `let x = Type.shared` cached into a local var, then `x.method()` on a
     later line, must resolve to Type's method. This static-member (navigation) init
