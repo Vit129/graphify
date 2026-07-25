@@ -368,6 +368,32 @@ def _build_server(graph_path: str):
                 },
             ),
             types.Tool(
+                name="save_result",
+                description=(
+                    "Close the feedback loop: record whether a prior query_graph/get_node/etc. "
+                    "result was actually useful, a dead end, or needed correcting. Call this once "
+                    "you know the outcome (e.g. after editing the file the query pointed at, or "
+                    "after finding the answer was wrong) — 'graphify reflect' aggregates these into "
+                    "decayed, corroboration-gated node weights that future queries are ranked by. "
+                    "Skipping this means the graph never learns from real usage."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string", "description": "The question that was asked (verbatim, so it can be matched back to the query)"},
+                        "answer": {"type": "string", "description": "The answer/result that was given"},
+                        "outcome": {"type": "string", "enum": ["useful", "dead_end", "corrected"], "description": "useful=the returned nodes were actually used; dead_end=they led nowhere; corrected=the answer was wrong and correction explains why"},
+                        "correction": {"type": "string", "description": "Required context when outcome=corrected: what the right answer actually was"},
+                        "source_nodes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Node ids/labels the result centered on, if known (lets reflect() attribute the signal to specific nodes)",
+                        },
+                    },
+                    "required": ["question", "answer", "outcome"],
+                },
+            ),
+            types.Tool(
                 name="list_prs",
                 description=(
                     "List open GitHub PRs with CI status, review state, and graph impact "
@@ -428,6 +454,24 @@ def _build_server(graph_path: str):
                 ),
             }
         return _tools
+
+    def _tool_save_result(arguments: dict) -> str:
+        from graphify.ingest import save_query_result
+        outcome = arguments["outcome"]
+        memory_dir = Path(active_graph_path).parent / "memory"
+        out_path = save_query_result(
+            question=arguments["question"],
+            answer=arguments["answer"],
+            memory_dir=memory_dir,
+            query_type="mcp_result",
+            outcome=outcome,
+            correction=arguments.get("correction"),
+            source_nodes=arguments.get("source_nodes"),
+        )
+        return (
+            f"Saved outcome={outcome} -> {out_path}. Run 'graphify reflect' (or let the "
+            "commit/checkout hook do it) to fold this into node ranking weights."
+        )
 
     def _tool_query_graph(arguments: dict) -> str:
         import time as _time
@@ -724,6 +768,7 @@ def _build_server(graph_path: str):
 
     _handlers = {
         "query_graph": _tool_query_graph,
+        "save_result": _tool_save_result,
         "get_node": _tool_get_node,
         "get_neighbors": _tool_get_neighbors,
         "blast_radius": _tool_blast_radius,
