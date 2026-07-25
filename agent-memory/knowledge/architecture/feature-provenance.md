@@ -406,3 +406,19 @@ this exist and what did we look at before building it."
   decisions in this doc (P9's `type_table` discovery, TF-IDF's BM25-supersession). Always trace
   the real call graph before scoping a "build new subsystem" task, especially when the request
   originates from another agent's design rather than direct code reading.
+
+## `affected --git-diff` (2026-07-25) — real competitor concept, cross-validated
+
+- Re-audited against GitNexus and codebase-memory-mcp's real READMEs (fetched directly, not
+  secondhand). Both independently ship a `detect_changes`-style tool mapping uncommitted git
+  changes to affected symbols with risk classification — same concept in two unrelated codebases
+  is a real signal, not a one-off idea worth copying blind.
+- graphify had zero of this (confirmed by grep before building) despite already having every piece
+  needed: `affected_nodes`' BFS impact traversal and per-node `source_location`. Built as a thin
+  new front-end (`_parse_git_diff_hunks` + `changed_seeds` + `format_git_diff_affected`) reusing
+  the existing traversal untouched, not a new subsystem.
+- `source_location` is a single start line (no end range) — mapping a diff hunk to "the enclosing
+  symbol" uses nearest-preceding-node-per-file via `bisect`, the standard diff-to-symbol heuristic
+  when full AST ranges aren't stored. Risk is a plain dependent-count tier (isolated/contained/HIGH),
+  deliberately not a fake ML score — matches this file's existing bias toward deterministic,
+  explainable output over invented confidence numbers.
