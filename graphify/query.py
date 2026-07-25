@@ -19,6 +19,7 @@ from pathlib import Path
 import networkx as nx
 from graphify.security import sanitize_label
 from graphify.detect import DOC_EXTENSIONS
+from graphify.build import edge_data
 
 try:
     import jieba as _jieba  # type: ignore[import-untyped]
@@ -957,27 +958,38 @@ def _dfs(G: nx.Graph, start_nodes: list[str], depth: int) -> tuple[set[str], lis
 
 def _blast_radius_hops(
     G: nx.Graph, nid: str, max_hops: int, direction: str, node_cap: int = 200
-) -> tuple[list[list[str]], bool, int]:
+) -> tuple[list[list[str]], bool, int, dict[str, str]]:
     """Walk outward from `nid` hop by hop, direction-aware (callers/callees/both).
-    Returns (hops, truncated, node_cap). node_cap stops runaway on a
-    highly-connected god-node; truncation trims the tail of the last hop
-    reached deterministically.
+    Returns (hops, truncated, node_cap, node_confidence). node_cap stops
+    runaway on a highly-connected god-node; truncation trims the tail of the
+    last hop reached deterministically.
+
+    node_confidence maps each discovered node to the `confidence`
+    (EXTRACTED/INFERRED) of the edge that first reached it - BFS-first-parent,
+    deterministic. A node reachable via multiple edges keeps whichever
+    confidence its first-visited parent's edge carries, not an aggregate
+    (matches how `_tool_get_neighbors` already renders one edge's confidence
+    per line, not a merged score across parallel edges).
     """
     visited = {nid}
     hops: list[list[str]] = []
     frontier = [nid]
+    node_confidence: dict[str, str] = {}
     for _ in range(max_hops):
         next_frontier: list[str] = []
         for n in frontier:
-            neighbors: list[str] = []
+            neighbors: list[tuple[str, str]] = []
             if direction in ("callees", "both"):
-                neighbors += list(G.successors(n))
+                for nb in G.successors(n):
+                    neighbors.append((nb, str(edge_data(G, n, nb).get("confidence", ""))))
             if direction in ("callers", "both"):
-                neighbors += list(G.predecessors(n))
-            for nb in neighbors:
+                for nb in G.predecessors(n):
+                    neighbors.append((nb, str(edge_data(G, nb, n).get("confidence", ""))))
+            for nb, conf in neighbors:
                 if nb not in visited:
                     visited.add(nb)
                     next_frontier.append(nb)
+                    node_confidence[nb] = conf
         if not next_frontier:
             break
         hops.append(next_frontier)
@@ -996,7 +1008,7 @@ def _blast_radius_hops(
             trimmed.append(h[:keep])
             keep -= len(h)
         hops = trimmed
-    return hops, truncated, node_cap
+    return hops, truncated, node_cap, node_confidence
 
 
 def _hop_distances(nodes: set[str], edges: list[tuple], seeds: list[str]) -> dict[str, int]:

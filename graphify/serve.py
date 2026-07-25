@@ -541,7 +541,7 @@ def _build_server(graph_path: str):
             if len(tied) >= 2 else ""
         )
 
-        hops, truncated, node_cap = _blast_radius_hops(G, nid, max_hops, direction)
+        hops, truncated, node_cap, node_confidence = _blast_radius_hops(G, nid, max_hops, direction)
         total = sum(len(h) for h in hops)
         label_str = sanitize_label(G.nodes[nid].get("label", nid))
         lines = [warn_prefix + f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
@@ -549,7 +549,11 @@ def _build_server(graph_path: str):
             lines.append(f"\nHop {i} ({len(hop_nodes)} node(s)):")
             for n in hop_nodes:
                 d = G.nodes[n]
-                lines.append(f"  {sanitize_label(d.get('label', n))} [{sanitize_label(str(d.get('source_file', '')))}]")
+                conf = sanitize_label(node_confidence.get(n, ""))
+                lines.append(
+                    f"  {sanitize_label(d.get('label', n))} [{sanitize_label(str(d.get('source_file', '')))}]"
+                    f"{f' [{conf}]' if conf else ''}"
+                )
         if truncated:
             lines.append(f"\n... capped at {node_cap} nodes total, output may be incomplete. Narrow max_hops or direction for full coverage.")
         return "\n".join(lines)

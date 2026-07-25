@@ -1374,27 +1374,27 @@ def test_community_header_sanitizes_name():
 
 def test_blast_radius_hops_callees_direction():
     G = _make_call_chain()
-    hops, truncated, cap = _blast_radius_hops(G, "main", 2, "callees")
+    hops, truncated, cap, conf = _blast_radius_hops(G, "main", 2, "callees")
     assert hops == [["a"], ["b"]]
     assert truncated is False
 
 
 def test_blast_radius_hops_callers_direction():
     G = _make_call_chain()
-    hops, truncated, cap = _blast_radius_hops(G, "c", 3, "callers")
+    hops, truncated, cap, conf = _blast_radius_hops(G, "c", 3, "callers")
     assert hops == [["b"], ["a"], ["main"]]
     assert truncated is False
 
 
 def test_blast_radius_hops_both_directions():
     G = _make_call_chain()
-    hops, truncated, cap = _blast_radius_hops(G, "a", 1, "both")
+    hops, truncated, cap, conf = _blast_radius_hops(G, "a", 1, "both")
     assert set(hops[0]) == {"b", "main"}
 
 
 def test_blast_radius_hops_stops_when_no_more_neighbors():
     G = _make_call_chain()
-    hops, truncated, cap = _blast_radius_hops(G, "c", 5, "callees")
+    hops, truncated, cap, conf = _blast_radius_hops(G, "c", 5, "callees")
     assert hops == []
     assert truncated is False
 
@@ -1405,9 +1405,24 @@ def test_blast_radius_hops_respects_node_cap():
     for i in range(300):
         G.add_node(f"n{i}", label=f"n{i}")
         G.add_edge("root", f"n{i}")
-    hops, truncated, cap = _blast_radius_hops(G, "root", 3, "callees", node_cap=200)
+    hops, truncated, cap, conf = _blast_radius_hops(G, "root", 3, "callees", node_cap=200)
     assert sum(len(h) for h in hops) == 200
     assert truncated is True
+
+
+def test_blast_radius_hops_reports_edge_confidence_per_node():
+    """GitNexus-style depth-grouped blast radius annotates confidence per
+    node - each discovered node carries the confidence of the edge that
+    first reached it (EXTRACTED/INFERRED), not just its label/file."""
+    G = nx.DiGraph()
+    G.add_node("root", label="root()", source_file="root.py")
+    G.add_node("solid", label="solid()", source_file="solid.py")
+    G.add_node("guess", label="guess()", source_file="guess.py")
+    G.add_edge("root", "solid", relation="calls", confidence="EXTRACTED")
+    G.add_edge("root", "guess", relation="indirect_call", confidence="INFERRED")
+    hops, truncated, cap, conf = _blast_radius_hops(G, "root", 1, "callees")
+    assert conf["solid"] == "EXTRACTED"
+    assert conf["guess"] == "INFERRED"
 
 
 # --- query path scoping (--path / --exclude-path) --------------------------
