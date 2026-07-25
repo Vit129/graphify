@@ -136,6 +136,16 @@ this exist and what did we look at before building it."
   vocabulary-representation and extraction-completeness problems, not "the query means something
   semantically different from any word in the code" problems. Revisit only if a real query gap
   surfaces that P3/P4/P5-style fixes provably can't close.
+- **Reopened and reconfirmed (2026-07-25), user-directed:** re-evaluated specifically against
+  `grepai`'s Ollama-local embedding approach (optional local runtime, no bundled model, no
+  cloud/API-key cost — a materially different tradeoff than the DeusData/SocratiCode options
+  above). This is a user-directed reopen of the decision, not new evidence of a gap: no concrete
+  query surfaced this session (or since P9 shipped) that P9's synonym-expansion table provably
+  can't close. Same verdict as "Rejected: TF-IDF Fallback Search Tier" below — no case it uniquely
+  rescues, so adding an Ollama dependency now would be speculative infra against an unconfirmed
+  gap. Kept rejected. If ever revisited, an Ollama-local fallback (opt-in, no-ops when the model
+  isn't available locally — never a hard dependency) is the shape to build, per the tradeoff
+  actually found here; only build it once a real failing query is in hand.
 
 ## Rejected: TF-IDF Fallback Search Tier
 

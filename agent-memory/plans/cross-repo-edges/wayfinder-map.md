@@ -1,6 +1,6 @@
 # Wayfinder Map — Cross-Repo Edges
 
-Status: Charting only — no ticket resolved yet
+Status: Ticket 1 resolved (no real need found) — track reclassified to Out of scope, Tickets 2-5 not pursued
 Tracker: local (`agent-memory/plans/`, matching every other plan in this repo — p1 through p18/
 iac-http-linking are all local docs, no GitHub Issues used for planning in this repo)
 Origin: descoped from `agent-memory/plans/iac-http-linking/` round (see that design.md's Tactical
@@ -35,14 +35,22 @@ surfaces"*).
 
 ## Tickets
 
-### Ticket 1 — grilling (HITL): does a concrete cross-repo need actually exist?
+### Ticket 1 — RESOLVED (2026-07-25): no concrete cross-repo need found
 Advisor flagged this during `iac-http-linking`: the user's actual projects (kouen-terminal,
 My-Investment-Port, Home-Assistant, Fitness-Tracker, graphify itself) are mostly single-repo. Before
 designing anything, confirm: is there a REAL pair of repos the user references together often
 enough to want a graph edge between them (e.g. a shared library repo + an app consuming it)? If no
 concrete case exists, this whole track should be re-classified as Out of scope, not sit as an open
 ticket indefinitely.
-Blocks: everything below.
+
+**Verdict: no.** Scanned every repo under `~/Git/Personal/` (12 repos) for actual cross-repo
+dependency evidence — `package.json` local/`file:`/`link:` deps and `.gitmodules` — zero hits
+across the board. No repo consumes another as a library, no submodules, no shared-package
+reference. Confirms the "mostly single-repo" suspicion with real evidence, not just the prior
+assumption. Track reclassified to **Out of scope** — Tickets 2-5 not pursued. Revisit only if a
+real cross-repo case actually appears (e.g. a shared library repo gets extracted from an existing
+project).
+Blocks: everything below (now moot).
 
 ### Ticket 2 — research (AFK): what does "cross-repo edge" actually need to answer?
 Once Ticket 1 confirms a real case, research what query the user actually wants answered
@@ -82,4 +90,6 @@ Blocked by: Ticket 3, Ticket 4.
 
 ## Out of scope
 
-(none yet — nothing has been ruled out beyond what iac-http-linking's design.md already recorded)
+- **Entire cross-repo-edges track (2026-07-25)** — Ticket 1 found zero real cross-repo dependency
+  evidence across all 12 personal repos. No shared-library-consumer pair exists today. Revisit if
+  that changes.

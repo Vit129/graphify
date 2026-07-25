@@ -1,6 +1,6 @@
 # Wayfinder Map — LSP-Style Semantic Type Resolution
 
-Status: Charting only — no ticket resolved yet
+Status: Ticket 1 resolved (real gap confirmed, Swift-only) — Ticket 2 (language scope) up next, needs user's HITL call
 Tracker: local (`agent-memory/plans/`, matching every other plan in this repo)
 Origin: descoped from `agent-memory/plans/iac-http-linking/` round — flagged as reimplementing a
 language-server-grade inference engine, not an additive patch.
@@ -41,7 +41,7 @@ language.
 
 ## Tickets
 
-### Ticket 1 — research (AFK): find real, confirmed resolution failures
+### Ticket 1 — RESOLVED (2026-07-25): real gap confirmed, Swift-only
 Before any design work: audit real queries against the user's actual repos (kouen-terminal/Swift,
 My-Investment-Port/TS+JS, graphify itself/Python) for cases where the CURRENT resolver (tree-sitter
 + existing type_table) gives a wrong or missing `calls`/`references` edge specifically because of
@@ -49,14 +49,37 @@ missing generics/overload/polymorphism handling - not a hypothetical gap. Mirror
 `agent-memory/knowledge/architecture/feature-provenance.md`'s BM25/P3/P5 work was scoped (real
 benchmark failures, not assumed gaps). If zero real failures are found, this whole track should be
 re-classified Out of scope, not sit open.
-Blocks: everything below.
+
+**Verdict: yes, one real confirmed failure, Swift only.** `kouen-terminal`'s `GlyphRasterizer`
+(`Packages/KouenTerminalRenderer/Sources/KouenTerminalRenderer/GlyphRasterizer.swift`) declares 3
+real overloads of `rasterize` (L234/266/277). `GlyphAtlas.swift` calls all 3 on the same
+`rasterizer: GlyphRasterizer` typed field (L156/173/187). Checked the actual graph
+(`graphify-out/2026-07-23/graph.json`): only the L156 call resolves to a `calls` edge — L173 and
+L187 produce **zero edges anywhere**, not misdirected edges, silently dropped. Root cause: all 3
+overloads merge into one graph node keyed by name only, not full signature; `_resolve_swift_member_calls`
+only manages to link 1 of 3 real call sites. Reproducible, not hypothetical.
+- **My-Investment-Port (TS/JS): no candidate exists.** Actual source (143 `.js` + 132 `.jsx` + 30
+  `.ts`, first-party only) has zero generic functions/methods and zero overloaded signatures
+  anywhere — it's effectively untyped JS. The claimed gap has no surface to trigger here.
+- **graphify itself (Python): mechanism not applicable.** No `@overload`, no `Generic[...]`
+  anywhere in `graphify/`. Python has no compile-time name+arity overload dispatch — nothing
+  analogous to resolve.
+Blocks: everything below (now unblocked, narrowed to Swift).
 
 ### Ticket 2 — grilling (HITL): which language(s), if any real gap is confirmed
 graphify already invests per-language (Swift/Python/Ruby/TS/C++/ObjC/C#) - a full LSP-grade engine
 across all of them is out of realistic scope. If Ticket 1 finds real gaps, narrow to the 1-2
 languages the user's actual projects hit most (likely TS/JS given My-Investment-Port, or Python
 given graphify's own codebase) rather than chasing parity with the competitor's 10-language claim.
-Blocked by: Ticket 1.
+
+**Ticket 1's evidence already narrows this far more than expected: Swift is the only language with
+a confirmed real failure** (kouen-terminal's overload-drop case above) — TS/JS and Python both came
+back with zero candidates, not just zero confirmed failures. This makes Ticket 2's own question
+close to self-answering (Swift, scoped to overload resolution specifically — not generics, not
+polymorphism, since only the overload case was found), but the actual go/no-go on spending build
+effort here is still the user's call, not mine to presume. Surfacing for that decision rather than
+proceeding into Ticket 3.
+Blocked by: Ticket 1 (now clear).
 
 ### Ticket 3 — research (AFK): build vs. adopt
 A genuinely different architecture option, not yet evaluated: shell out to a REAL existing language
