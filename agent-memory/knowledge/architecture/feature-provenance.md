@@ -486,3 +486,26 @@ Not building an auto-repair mechanism for this (would be speculative scope beyon
 mismatch warning, not re-investigated from scratch. If this recurs a 4th time, worth considering:
 have `scripts/release.sh` also `uv tool upgrade --reinstall graphifyy` as its last step, since the
 CLI/package version drift is what creates the race window in the first place.
+
+## Correction: PLAYBOOK.md casing fix was backwards (2026-07-25)
+
+Earlier this session, an audit found `agent-memory/playbook.md` (lowercase, real file) vs
+`PLAYBOOK.md` (uppercase, referenced in code/tests) as a "casing drift" bug, and fixed it by
+lowering the references to match the file. That was backwards. Checked real evidence across every
+project on this machine before assuming the file was ground truth: 5/6 real `agent-memory/
+PLAYBOOK.md` instances (kouen-terminal, My-Investment-Port, Accountant-Learning,
+QA-Automation-Coding-Course, .kiro) are uppercase, and `scripts/setup/setupMemory.sh` has created
+it uppercase across its entire git history. Only `~/.claude` and `Home-Assistant` had it lowercase
+— those two files were the actual anomaly, not the many correct uppercase references. Reverted:
+renamed `~/.claude/agent-memory/playbook.md` back to `PLAYBOOK.md`, reverted the graphify
+(`llm.py`, `test_analyze.py`) and `.claude/CLAUDE.md` references back to uppercase.
+
+`index.md` (lowercase) was NOT reverted — that one's casing direction was correct.
+`setupMemory.sh`'s own git history shows lowercase `index.md` was a deliberate, singled-out choice
+(kept lowercase while everything else in the same file list — PLAYBOOK.md/SKILL-LOG.md/
+EVAL-STATE.md/CONTEXT.md/MEMORY.md — stayed uppercase across both script versions), and
+`~/.claude`'s own file already matched that. Only PLAYBOOK.md was the wrong-direction fix.
+
+Lesson: when a "casing drift" finding is just "file says X, code says Y," don't assume the file on
+disk is ground truth — check the wider established convention (other real instances of the same
+file across other projects, the actual creation script) before deciding which side to change.
