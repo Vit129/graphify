@@ -458,3 +458,31 @@ Presented both options plus "keep as documented limitation" to the user; user ch
 documented limitation — no new infra, no privacy risk. Cross-session search and `save_result`
 learning both reset to zero on a new machine; `graph.json` itself (the actual portable artifact)
 already transfers fine via normal git. Not revisiting without a new explicit request.
+
+## Recurring graphify-skill deletion — root cause finally confirmed (2026-07-25)
+
+Third occurrence this session (previous two were fixed but not conclusively root-caused).
+Confirmed mechanism this time: `_copy_skill_file` (`graphify/__main__.py:347`) clears the
+`references/` sidecar dir BEFORE writing `SKILL.md`, by deliberate design (its own comment:
+"An install that is interrupted partway then leaves no SKILL.md rather than a SKILL.md that
+points at an absent references/ dir" — crash-safety tradeoff, not a bug). If a `graphify install`
+run gets interrupted mid-sequence (a concurrent session's install racing, a killed process), the
+result is exactly what was found: `SKILL.md`, `references/`, AND `.graphify_version` all gone.
+
+The reason it goes unnoticed: `_check_skill_version` (`__main__.py:155`) is the only mismatch
+detector, and it returns silently at its first line when `.graphify_version` doesn't exist
+(`if not version_file.exists(): return`) — so a fully-wiped skill produces zero warning on any
+subsequent `graphify` invocation, unlike a partial mismatch which does warn loudly.
+
+This occurrence's trigger: releasing v0.21.0 (this session's own `scripts/release.sh minor` run)
+bumped the package version but did not touch the separately-installed global `uv tool` (`graphify`
+CLI stayed on 0.20.0 while the skill content was regenerated at 0.21.0) — very likely another
+concurrent Claude Code session (multiple `claude` processes were observed running throughout this
+session) ran `graphify install` against the stale 0.20.0 CLI at the same moment, got interrupted,
+and left the skill wiped.
+
+Not building an auto-repair mechanism for this (would be speculative scope beyond what was asked)
+— documenting so the next occurrence is diagnosed in seconds via `graphify --version`'s own
+mismatch warning, not re-investigated from scratch. If this recurs a 4th time, worth considering:
+have `scripts/release.sh` also `uv tool upgrade --reinstall graphifyy` as its last step, since the
+CLI/package version drift is what creates the race window in the first place.
