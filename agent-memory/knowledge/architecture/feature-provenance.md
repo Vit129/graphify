@@ -383,3 +383,26 @@ this exist and what did we look at before building it."
     tree, the same category of noise as `node_modules`/`Sparkle.framework` from earlier sessions.
     Caught by inspecting the actual query output before reporting it, not assumed clean because the
     extraction step itself succeeded with 0 errors.
+
+## `save_result` MCP Tool (2026-07-25) — closing a real gap in an already-shipped loop
+
+- Origin: `/agy` was asked to design a "Hermes-Agent-equivalent self-improving loop" for graphify.
+  Its design (Section 3) proposed rebuilding node-scoring/decay/rerank from scratch — checked
+  against the actual code before trusting it (same discipline established earlier the same session
+  after catching agy fabricate a CVE number and two other wrong claims): `reflect.py` already has
+  `aggregate_lessons`/`build_learning_overlay`/`write_learning_sidecar`/`_decay`, already wired live
+  into `query.py:1078`, `serve.py`, `export.py`, `report.py`, auto-refreshed by the commit/checkout
+  git hooks (`hooks.py`). Agy's proposal would have been pure duplicate work.
+- The real gap, once traced end to end: the one write path that feeds the whole loop
+  (`ingest.save_query_result`, exposed as the `graphify save-result` CLI command) was never
+  reachable from an MCP session — not in `serve.py`'s tool list, not mentioned in
+  `~/.claude/CLAUDE.md`'s Graphify usage instructions. The scoring/decay/rerank machinery has
+  existed for a while with no realistic way to have collected real data through normal MCP usage.
+- Fix: exposed `save_result` as a plain MCP tool (`serve.py`, alongside `query_graph`/`get_node`/
+  etc.) and documented when to call it in `~/.claude/CLAUDE.md`. No new tracking/scoring/decay
+  code — the existing mechanism just needed its missing write path wired in.
+- Lesson: "add a self-improving loop" turned out to be "the loop already exists, wire up the one
+  disconnected pipe" once actually traced through the code — the same shape as several other
+  decisions in this doc (P9's `type_table` discovery, TF-IDF's BM25-supersession). Always trace
+  the real call graph before scoping a "build new subsystem" task, especially when the request
+  originates from another agent's design rather than direct code reading.
