@@ -133,20 +133,20 @@ def test_surprise_score_documents_bug_in_outranks_extracted_of_same_shape():
     crowded out of the top_n surprises by generic AMBIGUOUS/INFERRED edges (G2)."""
     G = nx.Graph()
     for nid, label, src in [
-        ("case_001", "CASE-001: modal isVisible() bug", "agent-memory/playbook.md"),
+        ("case_001", "CASE-001: modal isVisible() bug", "agent-memory/PLAYBOOK.md"),
         ("confirm_order", ".confirmOrder()", "tests/pages/orderConfirmPage.ts"),
         ("gamma", "Gamma", "repo1/data.py"),
         ("delta", "Delta", "repo2/eval.py"),
     ]:
         G.add_node(nid, label=label, source_file=src, file_type="document" if nid == "case_001" else "code")
     G.add_edge("case_001", "confirm_order", relation="documents_bug_in", confidence="EXTRACTED",
-               weight=1.0, source_file="agent-memory/playbook.md")
+               weight=1.0, source_file="agent-memory/PLAYBOOK.md")
     G.add_edge("gamma", "delta", relation="calls", confidence="EXTRACTED", weight=1.0, source_file="repo1/data.py")
     nc = {"case_001": 0, "confirm_order": 1, "gamma": 0, "delta": 1}
 
     score_bug, reasons_bug = _surprise_score(
         G, "case_001", "confirm_order", G.edges["case_001", "confirm_order"], nc,
-        "agent-memory/playbook.md", "tests/pages/orderConfirmPage.ts",
+        "agent-memory/PLAYBOOK.md", "tests/pages/orderConfirmPage.ts",
     )
     score_plain, _ = _surprise_score(
         G, "gamma", "delta", G.edges["gamma", "delta"], nc, "repo1/data.py", "repo2/eval.py",
