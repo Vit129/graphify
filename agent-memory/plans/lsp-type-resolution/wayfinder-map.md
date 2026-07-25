@@ -1,6 +1,8 @@
 # Wayfinder Map — LSP-Style Semantic Type Resolution
 
-Status: Ticket 1 resolved (real gap confirmed, Swift-only) — Ticket 2 (language scope) up next, needs user's HITL call
+Status: Ticket 1 resolved (real gap confirmed, Swift-only) AND the confirmed overload-drop bug is now
+fixed (commit `4db71f7`, 2026-07-25) — Ticket 2 (build-vs-adopt language scope, the bigger LSP
+question) still open, unaffected by this fix, still needs user's HITL call
 Tracker: local (`agent-memory/plans/`, matching every other plan in this repo)
 Origin: descoped from `agent-memory/plans/iac-http-linking/` round — flagged as reimplementing a
 language-server-grade inference engine, not an additive patch.
@@ -65,6 +67,41 @@ only manages to link 1 of 3 real call sites. Reproducible, not hypothetical.
   anywhere in `graphify/`. Python has no compile-time name+arity overload dispatch — nothing
   analogous to resolve.
 Blocks: everything below (now unblocked, narrowed to Swift).
+
+**Fix landed 2026-07-25 (commit `4db71f7`), scope: overload disambiguation only, not the bigger
+Ticket 3 build-vs-adopt question.** Re-verified the root cause empirically before fixing (don't trust
+the pre-fix hypothesis on read-alone): it was earlier and worse than "the `method_index` dict
+collision picks the wrong overload" — `_make_id(parent_class_nid, func_name)` keys a Swift method's
+node id on the bare name alone, and `add_node` is first-write-wins, so all 3 `rasterize` overloads
+collapsed onto **one node** at extraction time. Confirmed by re-extracting the real kouen-terminal
+files (AST-only, `graphify.extract.extract()`, no LLM cost): before the fix, only 1 `rasterize`
+definition node existed and only 1 of the 3 cross-file call sites produced an edge (the other 2
+candidate edges didn't fail to resolve — they resolved to the SAME merged node as the first, and got
+deduped away by the resolver's own `(caller, target)` pair-guard, since duplicate identical pairs
+collapse to one).
+
+Fix: pre-scan each Swift type body for names declared 2+ times and, only for those, qualify the
+node id/label with the full Swift selector (parameter external labels, e.g.
+`rasterize(codepoint:bold:)`), tagged with `swift_bare_name`/`swift_param_labels` metadata.
+`_resolve_swift_member_calls` groups same-bare-name candidates and, when ambiguous (2+ candidates),
+matches the call site's captured argument labels against each candidate's declared labels — binds
+only on an exact single match, otherwise falls back to today's type-level `references` edge (no
+guessing). Non-overloaded methods (the vast majority) keep their existing plain node id/label
+unchanged — this was scoped as additive, not a general Swift node-id format change.
+
+Re-verified after the fix, same real kouen-terminal files: all 3 `rasterize` overloads now produce
+distinct definition nodes, and all 3 `GlyphAtlas.swift` call sites (L156/173/187) resolve to their
+own correct overload. Full suite: 3013 passed, 28 skipped, 0 failures (no regression).
+
+**Honest remaining ceiling (not fixed, documented not overclaimed):** (1) an overload split across
+a class in one file and an `extension` in a *different* file — the pre-scan is per-file, so it can't
+see the sibling file's declarations and that split silently falls back to pre-fix (first-write-wins)
+behavior; (2) a call site with no parenthesized argument list to read (e.g. a trailing-closure-only
+call `f.bar { ... }`) can't be label-matched and falls back to the type-level `references` edge
+rather than a `calls` edge to a specific overload; (3) default-argument calls where the passed labels
+don't exactly enumerate every declared parameter aren't specifically handled — same fallback. None of
+these are crash risks; all degrade to the pre-fix behavior (bail to `references`, or the general
+single-node collapse for the same-name-across-files case), not a wrong guess.
 
 ### Ticket 2 — grilling (HITL): which language(s), if any real gap is confirmed
 graphify already invests per-language (Swift/Python/Ruby/TS/C++/ObjC/C#) - a full LSP-grade engine
