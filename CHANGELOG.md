@@ -3,6 +3,24 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.21.0] - 2026-07-25
+
+### Added
+- Add per-hop confidence to blast_radius output ([`fab43fa`](https://github.com/Vit129/graphify/commit/fab43fab5ca78fc459e2cc1d7dcb25357a1b250e))
+- Expose save_result as an MCP tool ([`9394f37`](https://github.com/Vit129/graphify/commit/9394f37b19b7df6268db73f2425e831c87175608))
+- Git-diff-driven impact analysis ([`a69233a`](https://github.com/Vit129/graphify/commit/a69233a094033fa8b3ce56298bb6def20f57647c))
+
+### Documentation
+- Resolve items 3-5 of post-competitor-audit follow-up ([`3695724`](https://github.com/Vit129/graphify/commit/36957243d93bfb6ef4bd9a5a43eef587032be078))
+- Record save_result MCP tool provenance ([`248f330`](https://github.com/Vit129/graphify/commit/248f330b4b6ab56638bf6019a99191b9d441f32b))
+- Record affected --git-diff provenance ([`b655e33`](https://github.com/Vit129/graphify/commit/b655e336a793c83150baede42d33b4c1db0f9353))
+- Mark LSP Ticket 1 fixed (commit 4db71f7) ([`83890c9`](https://github.com/Vit129/graphify/commit/83890c956f4070040c7c4a5461f629cb4d48c427))
+- Close LSP tickets 2/3/4 and GitNexus remaining-features audit as moot/no-gap ([`8307ef6`](https://github.com/Vit129/graphify/commit/8307ef6927a2b85774a28ab34e2a21ec6a67258e))
+
+### Fixed
+- Disable graph.html's 3D view, sidebar-covering bug ([`cf66bd1`](https://github.com/Vit129/graphify/commit/cf66bd1282ccf29b64e1993c621f8bd0f3f624e2))
+- Disambiguate overloaded methods by parameter-label selector (#1356 cont'd) ([`4db71f7`](https://github.com/Vit129/graphify/commit/4db71f7693e77c172e2d83924bd26431d49baab2))
+
 ## [0.20.0] - 2026-07-24
 
 ### Added
