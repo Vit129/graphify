@@ -422,3 +422,39 @@ this exist and what did we look at before building it."
   when full AST ranges aren't stored. Risk is a plain dependent-count tier (isolated/contained/HIGH),
   deliberately not a fake ML score — matches this file's existing bias toward deterministic,
   explainable output over invented confidence numbers.
+
+## LSP wayfinder Tickets 2/3/4 — closed moot, not built (2026-07-25)
+
+Ticket 1 audited real repos (kouen-terminal/Swift, My-Investment-Port/TS+JS, graphify/Python) and
+confirmed exactly one real failure: Swift method-overload drop, fixed in commit `4db71f7`. Tickets
+2 (which language to scope to) and 3 (build vs. adopt a real language server) were both explicitly
+gated on further confirmed gaps — none exist. Generics/JSX-dispatch/flow-narrowing were never
+empirically found broken in any real repo, only assumed by analogy to `codebase-memory-mcp`'s
+10-language "Hybrid LSP" feature list. Building a `tsserver`/`pyright` shell-out integration for a
+gap with zero confirmed instances would be exactly the speculative build this file's own bias
+(deterministic, evidence-first, no invented capability) exists to prevent. Re-open only on a new
+confirmed failure in a real repo, not preemptively. See `agent-memory/plans/lsp-type-resolution/
+wayfinder-map.md` for the full evidence trail.
+
+## GitNexus remaining features — audited, nothing built (2026-07-25)
+
+Four features flagged as "not yet evaluated" this session: `trace`, `context`, `rename`, taint/PDG.
+Audit result: `trace` fully covered by existing `shortest_path` (hub-avoiding, ambiguity-retry —
+already a superset). `context` fully covered by existing `blast_radius(direction="both")`
+(hop-grouped, confidence-annotated). `rename` has a real partial gap (reference-finding exists via
+`get_neighbors`, execution doesn't) but zero evidenced need in kouen-terminal/My-Investment-Port/
+graphify itself. Taint/PDG has the largest real gap (zero data-flow edges exist in the graph model
+at all — would be a new analysis layer, not an edge extension) but also the largest build cost and
+zero evidenced need. Nothing built. See `agent-memory/plans/p17-post-competitor-audit-roadmap.md`
+"What's explicitly NOT on this list" for the per-feature entries.
+
+## Cross-machine sync gap (session-search.db, graphify-out/memory/) — kept as documented limitation, user decision 2026-07-25
+
+`~/.claude/projects/**/*.jsonl` (737MB, 67 projects, raw conversation incl. Bash output that can
+contain secrets/API keys) and `graphify-out/memory/` are both gitignored by design. Closing this for
+real means either un-gitignoring and pushing to the public `github.com/Vit129/skills.git` remote
+(privacy risk, hard to reverse once pushed) or building separate export/sync tooling (new infra).
+Presented both options plus "keep as documented limitation" to the user; user chose to keep it as a
+documented limitation — no new infra, no privacy risk. Cross-session search and `save_result`
+learning both reset to zero on a new machine; `graph.json` itself (the actual portable artifact)
+already transfers fine via normal git. Not revisiting without a new explicit request.

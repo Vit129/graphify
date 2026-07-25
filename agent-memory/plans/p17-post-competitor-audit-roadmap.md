@@ -133,3 +133,18 @@ context compaction.
 - Switching to a real embedded graph database (KuzuDB/FalkorDB, like GitNexus/CodeGraphContext) -
   graphify's whole value proposition to this user is a portable, git-diffable `graph.json`; a real DB
   file is a regression on that axis unless a concrete need surfaces
+- GitNexus's `trace` tool (directed shortest path via call+class-member edges) - audited 2026-07-25,
+  already fully covered by `shortest_path` (`query.py`'s `find_path_with_disambiguation`: hub-avoiding,
+  ambiguity-retry, a superset of what `trace` does). No gap.
+- GitNexus's `context` tool (360-degree symbol view: callers/callees/members in one shot) - audited
+  2026-07-25, already fully covered by `blast_radius(direction="both")`, arguably more structured
+  (hop-grouped, confidence-annotated) than a flat dump. No gap.
+- GitNexus's `rename` refactor tool - audited 2026-07-25. Partial gap: reference-finding exists
+  (`get_neighbors` with `relation_filter="references"`/`calls`/`uses`), but no rename-execution
+  (no write-back to source, no CLI command) exists. Not built - zero evidenced need for a symbol
+  rename in any real task across graphify/kouen-terminal/My-Investment-Port this session.
+- GitNexus's taint analysis / PDG (source-to-sink data-flow, needs a `--pdg` index build) - audited
+  2026-07-25. Real, full gap: graphify's extracted edges (`calls, contains, defines, imports, uses,
+  references, ...`) are all structural/reference edges, zero data-flow/assignment tracking exists.
+  Largest build cost of anything evaluated this session (a new analysis layer, not an edge
+  extension) and zero evidenced need. Lowest priority - not built.

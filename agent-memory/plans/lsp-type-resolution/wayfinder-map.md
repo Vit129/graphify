@@ -1,8 +1,7 @@
 # Wayfinder Map — LSP-Style Semantic Type Resolution
 
-Status: Ticket 1 resolved (real gap confirmed, Swift-only) AND the confirmed overload-drop bug is now
-fixed (commit `4db71f7`, 2026-07-25) — Ticket 2 (build-vs-adopt language scope, the bigger LSP
-question) still open, unaffected by this fix, still needs user's HITL call
+Status: CLOSED (2026-07-25). Ticket 1 confirmed one real gap (Swift overload-drop), fixed in
+commit `4db71f7`. Tickets 2/3/4 resolved as moot on the same evidence — see below.
 Tracker: local (`agent-memory/plans/`, matching every other plan in this repo)
 Origin: descoped from `agent-memory/plans/iac-http-linking/` round — flagged as reimplementing a
 language-server-grade inference engine, not an additive patch.
@@ -103,38 +102,29 @@ don't exactly enumerate every declared parameter aren't specifically handled —
 these are crash risks; all degrade to the pre-fix behavior (bail to `references`, or the general
 single-node collapse for the same-name-across-files case), not a wrong guess.
 
-### Ticket 2 — grilling (HITL): which language(s), if any real gap is confirmed
-graphify already invests per-language (Swift/Python/Ruby/TS/C++/ObjC/C#) - a full LSP-grade engine
-across all of them is out of realistic scope. If Ticket 1 finds real gaps, narrow to the 1-2
-languages the user's actual projects hit most (likely TS/JS given My-Investment-Port, or Python
-given graphify's own codebase) rather than chasing parity with the competitor's 10-language claim.
+### Ticket 2 — CLOSED (2026-07-25): moot, resolved by Ticket 1's own evidence
+Question was "which language(s), if any real gap is confirmed." Answer already in hand: Swift only,
+scoped to overload resolution specifically — TS/JS and Python came back zero candidates, not just
+zero confirmed failures. No further language has a real gap to narrow toward. Nothing to grill the
+user on; the evidence already answered it.
+Blocked by: Ticket 1 (clear).
 
-**Ticket 1's evidence already narrows this far more than expected: Swift is the only language with
-a confirmed real failure** (kouen-terminal's overload-drop case above) — TS/JS and Python both came
-back with zero candidates, not just zero confirmed failures. This makes Ticket 2's own question
-close to self-answering (Swift, scoped to overload resolution specifically — not generics, not
-polymorphism, since only the overload case was found), but the actual go/no-go on spending build
-effort here is still the user's call, not mine to presume. Surfacing for that decision rather than
-proceeding into Ticket 3.
-Blocked by: Ticket 1 (now clear).
+### Ticket 3 — CLOSED (2026-07-25): moot, no confirmed gap left to justify build-vs-adopt
+Was framed as "shell out to a real language server (tsserver/pyright/LSP) vs. extend the
+lightweight `type_table` heuristic" — but that tradeoff only matters if a CONFIRMED gap exists that
+the lightweight path can't close. It doesn't: the one confirmed failure (Swift overload-drop) is
+already fixed via the lightweight path (commit `4db71f7`). Generics, JSX dispatch, flow-sensitive
+narrowing were never empirically confirmed as real gaps anywhere in the user's actual repos — only
+hypothesized by analogy to `codebase-memory-mcp`'s feature list. Building a real-language-server
+integration to cover hypothetical gaps violates the same evidence-first rule Ticket 1 itself set
+("if zero real failures are found, re-classify Out of scope"). Re-open only if a NEW confirmed
+failure surfaces in a real repo — not preemptively.
+Blocked by: Ticket 2 (clear).
 
-### Ticket 3 — research (AFK): build vs. adopt
-A genuinely different architecture option, not yet evaluated: shell out to a REAL existing language
-server (`tsserver`, `pyright --outputjson`, or LSP client protocol) for the narrowed language(s),
-rather than reimplementing inference heuristics from scratch in Python. Tradeoffs to weigh: real
-language servers are authoritative (no reinvention risk) but add a runtime dependency + process
-lifecycle (a real cost graphify has avoided so far, per its own "zero dependency/portable" ethos
-noted throughout `feature-provenance.md`) vs. extending the existing lightweight `type_table`
-heuristic (cheaper, no new dependency, but caps out below true inference by design). This decision
-was never on the table during the original competitor audit (which only looked at reimplementing
-inference in C) - a real alternative worth researching before committing to either extreme.
-Blocked by: Ticket 2.
-
-### Ticket 4 — grilling (HITL): scope the actual mechanism
-Once build-vs-adopt is decided: what specifically gets built (e.g. "extend `type_table` to track
-generic parameter substitution for TS" vs. "wire a `pyright` subprocess call behind a new resolver")
-- this is where a real `design.md` (dev-architect) starts, not before.
-Blocked by: Ticket 3.
+### Ticket 4 — CLOSED (2026-07-25): moot, no mechanism left to scope
+Depended on Ticket 3 committing to build-vs-adopt. Ticket 3 closed without committing to either —
+nothing to scope.
+Blocked by: Ticket 3 (clear).
 
 ## Not yet specified (fog)
 
@@ -144,4 +134,8 @@ Blocked by: Ticket 3.
 
 ## Out of scope
 
-(none yet)
+- Real language server integration (tsserver/pyright/LSP client) for Swift/TS/Python — no confirmed
+  gap justifies the runtime-dependency cost. Closed 2026-07-25, see Ticket 3.
+- Generics substitution, JSX component dispatch, flow-sensitive narrowing — never empirically
+  confirmed as real gaps in any of the user's actual repos (kouen-terminal, My-Investment-Port,
+  graphify itself). Not built. Re-open only on new evidence.
