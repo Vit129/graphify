@@ -3090,15 +3090,23 @@ def main() -> None:
         )
         print(_result)
     elif cmd == "affected":
-        if len(sys.argv) < 3:
-            print("Usage: graphify affected \"<node-or-label>\" [--relation R] [--depth N] [--graph path]", file=sys.stderr)
+        git_diff_mode = "--git-diff" in sys.argv[2:]
+        if len(sys.argv) < 3 or (not git_diff_mode and sys.argv[2].startswith("--")):
+            print(
+                "Usage: graphify affected \"<node-or-label>\" [--relation R] [--depth N] [--graph path]\n"
+                "       graphify affected --git-diff [--base REF] [--relation R] [--depth N] [--graph path]",
+                file=sys.stderr,
+            )
             sys.exit(1)
-        from graphify.affected import DEFAULT_AFFECTED_RELATIONS, format_affected, load_graph
-        query = sys.argv[2]
+        from graphify.affected import (
+            DEFAULT_AFFECTED_RELATIONS, format_affected, format_git_diff_affected, load_graph,
+        )
+        query = None if git_diff_mode else sys.argv[2]
         graph_path = _default_graph_path()
         depth = 2
         relations: list[str] = []
-        args = sys.argv[3:]
+        base_ref: str | None = None
+        args = sys.argv[2:] if git_diff_mode else sys.argv[3:]
         i = 0
         while i < len(args):
             if args[i] == "--graph" and i + 1 < len(args):
@@ -3127,6 +3135,12 @@ def main() -> None:
             elif args[i].startswith("--relation="):
                 relations.append(args[i].split("=", 1)[1])
                 i += 1
+            elif args[i] == "--base" and i + 1 < len(args):
+                base_ref = args[i + 1]
+                i += 2
+            elif args[i].startswith("--base="):
+                base_ref = args[i].split("=", 1)[1]
+                i += 1
             else:
                 i += 1
         gp = Path(graph_path).resolve()
@@ -3142,14 +3156,30 @@ def main() -> None:
             print(f"error: could not load graph: {exc}", file=sys.stderr)
             sys.exit(1)
         _warn_if_graph_stale(gp)
-        print(
-            format_affected(
-                graph,
-                query,
-                relations=relations or DEFAULT_AFFECTED_RELATIONS,
-                depth=depth,
+        if git_diff_mode:
+            repo_root = gp.parent.parent
+            try:
+                print(
+                    format_git_diff_affected(
+                        graph,
+                        repo_root,
+                        base=base_ref,
+                        relations=relations or DEFAULT_AFFECTED_RELATIONS,
+                        depth=depth,
+                    )
+                )
+            except RuntimeError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            print(
+                format_affected(
+                    graph,
+                    query,
+                    relations=relations or DEFAULT_AFFECTED_RELATIONS,
+                    depth=depth,
+                )
             )
-        )
     elif cmd == "save-result":
         # graphify save-result --question Q --answer A [--type T] [--nodes N1 N2 ...]
         #                      [--outcome useful|dead_end|corrected] [--correction TEXT]

@@ -4,6 +4,9 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+import bisect
+import re
+import subprocess
 import unicodedata
 
 import networkx as nx
@@ -204,6 +207,155 @@ def affected_nodes(
             queue.append((source, current_depth + 1))
 
     return hits
+
+
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+
+def _parse_git_diff_hunks(diff_output: str) -> dict[str, list[tuple[int, int]]]:
+    """Parse `git diff --unified=0` output into {file: [(start_line, end_line), ...]}
+    on the new-file side (matching line numbers in the currently checked-out tree,
+    which is what the graph was built from)."""
+    changed: dict[str, list[tuple[int, int]]] = {}
+    current_file: str | None = None
+    for line in diff_output.splitlines():
+        if line.startswith("+++ "):
+            path = line[4:]
+            current_file = None if path == "/dev/null" else path[2:]  # strip "b/" prefix
+            continue
+        m = _HUNK_RE.match(line)
+        if m and current_file:
+            start = int(m.group(1))
+            count = int(m.group(2)) if m.group(2) is not None else 1
+            if count == 0:
+                # Pure deletion on the new side has no new-file lines to map;
+                # anchor on the line the deletion happened after so it still
+                # attributes to the right symbol.
+                count = 1
+            changed.setdefault(current_file, []).append((start, start + count - 1))
+    return changed
+
+
+def git_diff_changed_ranges(
+    repo_root: Path, base: str | None = None
+) -> dict[str, list[tuple[int, int]]]:
+    """Run `git diff` in repo_root and return changed line ranges per file.
+
+    ``base`` is the ref to diff against (default: working tree vs HEAD, i.e.
+    uncommitted changes — staged and unstaged).
+    """
+    cmd = ["git", "diff", "--unified=0"]
+    if base:
+        cmd.append(base)
+    result = subprocess.run(
+        cmd, cwd=str(repo_root), capture_output=True, text=True, timeout=30
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git diff failed: {result.stderr.strip()}")
+    return _parse_git_diff_hunks(result.stdout)
+
+
+def _nodes_by_file(graph: nx.Graph) -> dict[str, list[tuple[int, str]]]:
+    """{source_file: [(line, node_id), ...]} sorted ascending, for nodes with a
+    parseable single-line source_location (the "Lnn" format every extractor emits)."""
+    by_file: dict[str, list[tuple[int, str]]] = {}
+    for node_id, data in graph.nodes(data=True):
+        source_file = data.get("source_file")
+        loc = data.get("source_location")
+        if not source_file or not loc:
+            continue
+        m = re.match(r"^L(\d+)", str(loc))
+        if not m:
+            continue
+        by_file.setdefault(str(source_file), []).append((int(m.group(1)), str(node_id)))
+    for entries in by_file.values():
+        entries.sort(key=lambda t: t[0])
+    return by_file
+
+
+def changed_seeds(
+    graph: nx.Graph, repo_root: Path, base: str | None = None
+) -> dict[str, list[str]]:
+    """Map git-diff changed line ranges to graph node ids.
+
+    Returns {file: [node_id, ...]} — for each changed range, the nearest
+    node whose definition starts at or before the range (the innermost
+    enclosing definition, since source_location has no end line); if a
+    range starts before any node in the file, the file-level node (L1) is
+    used. New nodes whose own start line falls inside a changed range are
+    also included (covers newly-added functions).
+    """
+    changed = git_diff_changed_ranges(repo_root, base)
+    by_file = _nodes_by_file(graph)
+    result: dict[str, list[str]] = {}
+    for file_path, ranges in changed.items():
+        entries = by_file.get(file_path)
+        if not entries:
+            continue
+        hit_ids: list[str] = []
+        seen: set[str] = set()
+        lines = [line for line, _nid in entries]
+        for start, end in ranges:
+            # Nearest-preceding node (bisect from the right).
+            idx = bisect.bisect_right(lines, start) - 1
+            if idx >= 0:
+                nid = entries[idx][1]
+                if nid not in seen:
+                    seen.add(nid)
+                    hit_ids.append(nid)
+            # Any node whose own definition starts inside the changed range
+            # (new function/method added by this diff).
+            for line, nid in entries:
+                if start <= line <= end and nid not in seen:
+                    seen.add(nid)
+                    hit_ids.append(nid)
+        if hit_ids:
+            result[file_path] = hit_ids
+    return result
+
+
+def format_git_diff_affected(
+    graph: nx.Graph,
+    repo_root: Path,
+    *,
+    base: str | None = None,
+    relations: Iterable[str] = DEFAULT_AFFECTED_RELATIONS,
+    depth: int = 2,
+) -> str:
+    """Report blast radius for every symbol touched by the current git diff."""
+    seeds_by_file = changed_seeds(graph, repo_root, base)
+    if not seeds_by_file:
+        return "No changed symbols found (clean working tree, or changes fall outside indexed files)."
+
+    relation_list = tuple(relations)
+    lines = [
+        f"Git-diff impact ({'working tree vs ' + base if base else 'uncommitted changes'})",
+        f"Relations: {', '.join(relation_list)}",
+        f"Depth: {depth}",
+        "",
+    ]
+    total_affected = 0
+    for file_path, seed_ids in sorted(seeds_by_file.items()):
+        lines.append(f"## {file_path}")
+        for seed_id in seed_ids:
+            hits = affected_nodes(graph, seed_id, relations=relation_list, depth=depth)
+            total_affected += len(hits)
+            if not hits:
+                risk = "isolated (no dependents found)"
+            elif len(hits) <= 5:
+                risk = f"contained ({len(hits)} dependent{'s' if len(hits) != 1 else ''})"
+            else:
+                risk = f"HIGH blast radius ({len(hits)} dependents)"
+            lines.append(f"- {_node_label(graph, seed_id)} [{risk}]")
+            for hit in hits:
+                data = graph.nodes[hit.node_id]
+                lines.append(
+                    f"    -> {_node_label(graph, hit.node_id)} [{hit.via_relation}] {_format_location(data)}"
+                )
+        lines.append("")
+
+    lines.append(f"Total: {sum(len(v) for v in seeds_by_file.values())} changed symbol(s), {total_affected} dependent edge(s) found.")
+    return "\n".join(lines)
 
 
 def format_affected(

@@ -296,3 +296,141 @@ def test_affected_cli_source_file_path_uses_file_level_node(monkeypatch, tmp_pat
     assert "consumer.ts" in out
     assert "imports_from" in out
     assert "No unique node matched" not in out
+
+
+def _init_git_repo(root):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
+    subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=str(root), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(root), check=True)
+
+
+def test_parse_git_diff_hunks_maps_added_line_to_range():
+    from graphify.affected import _parse_git_diff_hunks
+
+    diff = (
+        "diff --git a/pkg/foo.py b/pkg/foo.py\n"
+        "index 111..222 100644\n"
+        "--- a/pkg/foo.py\n"
+        "+++ b/pkg/foo.py\n"
+        "@@ -10,0 +11 @@ def bar():\n"
+        "+    new_line\n"
+    )
+    result = _parse_git_diff_hunks(diff)
+    assert result == {"pkg/foo.py": [(11, 11)]}
+
+
+def test_parse_git_diff_hunks_multi_line_range():
+    from graphify.affected import _parse_git_diff_hunks
+
+    diff = (
+        "diff --git a/pkg/foo.py b/pkg/foo.py\n"
+        "--- a/pkg/foo.py\n"
+        "+++ b/pkg/foo.py\n"
+        "@@ -5,2 +5,4 @@ def bar():\n"
+        "+a\n+b\n+c\n+d\n"
+    )
+    result = _parse_git_diff_hunks(diff)
+    assert result == {"pkg/foo.py": [(5, 8)]}
+
+
+def test_parse_git_diff_hunks_skips_deleted_file():
+    from graphify.affected import _parse_git_diff_hunks
+
+    diff = "diff --git a/gone.py b/gone.py\n--- a/gone.py\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-x\n-y\n-z\n"
+    assert _parse_git_diff_hunks(diff) == {}
+
+
+def test_changed_seeds_maps_real_git_diff_to_nearest_node(tmp_path):
+    """End-to-end against a real git repo (real subprocess git diff, not mocked) --
+    the whole point of this feature is that it must work against real git output,
+    not an idealized mock of it."""
+    from graphify.affected import changed_seeds
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text("def foo():\n    return 1\n\n\ndef bar():\n    return 2\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+
+    # Modify bar() only.
+    src.write_text("def foo():\n    return 1\n\n\ndef bar():\n    return 999\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("file", label="mod.py", source_file="mod.py", source_location="L1")
+    graph.add_node("foo", label="foo()", source_file="mod.py", source_location="L1")
+    graph.add_node("bar", label="bar()", source_file="mod.py", source_location="L5")
+
+    result = changed_seeds(graph, tmp_path)
+    assert result == {"mod.py": ["bar"]}
+
+
+def test_format_git_diff_affected_reports_dependents(tmp_path):
+    from graphify.affected import format_git_diff_affected
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text("def target():\n    return 1\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    src.write_text("def target():\n    return 999\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("target", label="target()", source_file="mod.py", source_location="L1")
+    graph.add_node("caller", label="caller()", source_file="app.py", source_location="L1")
+    graph.add_edge("caller", "target", relation="calls", context="call", confidence="EXTRACTED")
+
+    out = format_git_diff_affected(graph, tmp_path)
+    assert "target()" in out
+    assert "caller()" in out
+    assert "contained (1 dependent)" in out
+    assert "Total: 1 changed symbol(s), 1 dependent edge(s) found." in out
+
+
+def test_format_git_diff_affected_clean_tree_reports_none(tmp_path):
+    from graphify.affected import format_git_diff_affected
+
+    _init_git_repo(tmp_path)
+    (tmp_path / "mod.py").write_text("def target():\n    return 1\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+
+    graph = nx.DiGraph()
+    graph.add_node("target", label="target()", source_file="mod.py", source_location="L1")
+
+    out = format_git_diff_affected(graph, tmp_path)
+    assert "No changed symbols found" in out
+
+
+def test_affected_cli_git_diff_flag_reports_impact(monkeypatch, tmp_path, capsys):
+    """CLI wiring: `graphify affected --git-diff` runs without a positional query."""
+    import subprocess
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text("def target():\n    return 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    src.write_text("def target():\n    return 999\n", encoding="utf-8")
+
+    graphify_out = tmp_path / "graphify-out"
+    graphify_out.mkdir()
+    graph = nx.DiGraph()
+    graph.add_node("target", label="target()", source_file="mod.py", source_location="L1")
+    graph_path = graphify_out / "graph.json"
+    graph_path.write_text(json.dumps(json_graph.node_link_data(graph, edges="links")), encoding="utf-8")
+
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(
+        mainmod.sys, "argv", ["graphify", "affected", "--git-diff", "--graph", str(graph_path)]
+    )
+
+    mainmod.main()
+
+    out = capsys.readouterr().out
+    assert "Git-diff impact" in out
+    assert "target()" in out
