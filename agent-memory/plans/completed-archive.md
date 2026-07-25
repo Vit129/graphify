@@ -11,7 +11,7 @@ stays in each plan's own file; this is the compact index. Matches the convention
   term-frequency + document-length normalization)
 - Superseded the original P1 doc's "ceiling closed" claim and a first reopen draft (stopword
   filter) — both re-validated and found not actually fixed
-- See `p1-multiterm-seed-ranking.md` for the superseded original
+- See `archive/p1-multiterm-seed-ranking.md` for the superseded original
 
 ## P2 — YAML Extraction Support
 - New `extractors/yaml_.py` — YAML previously had zero extractor, files were invisible to the graph

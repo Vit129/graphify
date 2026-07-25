@@ -57,11 +57,15 @@ Every extractor returns:
 
 ## Adding a new language extractor
 
-1. Add a `extract_<lang>(path: Path) -> dict` function in `extract.py` following the existing pattern (tree-sitter parse → walk nodes → collect `nodes` and `edges` → call-graph second pass for INFERRED `calls` edges).
-2. Register the file suffix in `extract()` dispatch and `collect_files()`.
-3. Add the suffix to `CODE_EXTENSIONS` in `detect.py` and `_WATCHED_EXTENSIONS` in `watch.py`.
-4. Add the tree-sitter package to `pyproject.toml` dependencies.
-5. Add a fixture file to `tests/fixtures/` and tests to `tests/test_languages.py`.
+Language extractors live as separate modules under `graphify/extractors/` (e.g., `csharp.py`, `yaml_.py`, `toml_.py`, `robot.py`). Shared helper functions (`_make_id`, `_file_stem`, `_read_text`, `_LANGUAGE_BUILTIN_GLOBALS`) are provided in `graphify/extractors/base.py`.
+
+To add a new language extractor:
+1. Create `graphify/extractors/<lang>.py` implementing `extract_<lang>(path: Path) -> dict` (tree-sitter parse or AST walk → collect `nodes` and `edges` → second pass for INFERRED `calls` edges). Import shared helpers from `graphify.extractors.base`.
+2. Register `extract_<lang>` in `LANGUAGE_EXTRACTORS` in `graphify/extractors/__init__.py`.
+3. Add facade re-export in `graphify/extract.py` (`from graphify.extractors.<lang> import extract_<lang>`) and update `extract()` dispatch.
+4. Add the file suffix to `CODE_EXTENSIONS` in `detect.py` and `_WATCHED_EXTENSIONS` in `watch.py`.
+5. Add any required tree-sitter package dependency to `pyproject.toml`.
+6. Add a fixture file to `tests/fixtures/` and unit tests in `tests/` (e.g. `test_languages.py` and `test_extractors_registry.py`).
 
 ## Security
 

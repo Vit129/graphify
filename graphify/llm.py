@@ -412,7 +412,7 @@ Edge direction rule — source is always the ACTOR, target is the ACTED-UPON:
 - calls: source = the function/method that CONTAINS the call site; target = the function/method BEING CALLED. Never reverse this.
 - imports/references: source = the file/entity that imports or references; target = the thing imported or referenced.
 - implements/inherits: source = the subclass/implementor; target = the base class/interface.
-- documents_bug_in: source = a known-issue/bug/incident entry (e.g. a CASE-NNN doc, a PLAYBOOK.md entry, a MEMORY.md dated note) that names a concrete symptom or root cause; target = the specific file, class, or function it says was broken or fixed. Only use this when the doc names that exact symbol/file, not for general project notes. Never use it for a doc that merely mentions a file in passing.
+- documents_bug_in: source = a known-issue/bug/incident entry (e.g. a CASE-NNN doc, a playbook.md entry, a MEMORY.md dated note) that names a concrete symptom or root cause; target = the specific file, class, or function it says was broken or fixed. Only use this when the doc names that exact symbol/file, not for general project notes. Never use it for a doc that merely mentions a file in passing.
 
 Hyperedges: if 3 or more nodes clearly participate together in a shared concept, flow, or pattern that is not captured by pairwise edges alone, add a hyperedge to the top-level `hyperedges` array (e.g. all classes implementing one protocol, all functions in one auth flow even if they don't all call each other, all concepts from a paper section forming one coherent idea). Use sparingly — only when the group relationship adds information beyond the pairwise edges. Maximum 3 hyperedges per chunk.
 
