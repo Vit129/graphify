@@ -93,6 +93,9 @@ from graphify.query import (
     _get_embedding_model,
     _get_embedding_index,
     _embedding_seed_fallback,
+    _embedding_similarity_map,
+    _fuse_embedding_rrf,
+    _embedding_corpus_hash,
     _EXACT_MATCH_BONUS,
     _PREFIX_MATCH_BONUS,
     _SOURCE_MATCH_BONUS,
@@ -287,6 +290,20 @@ def _build_server(graph_path: str):
                             "items": {"type": "string"},
                             "description": "Exclude nodes whose source_file starts with one of these prefixes, e.g. ['kb/', 'docs/']",
                         },
+                        "semantic_fusion": {
+                            "type": "string",
+                            "enum": ["boost", "rrf", "off"],
+                            "default": "boost",
+                            "description": (
+                                "Embedding fusion mode (no effect unless the `embeddings` extra is "
+                                "installed): boost=bounded nudge on BM25 ranking (default, safe against "
+                                "a weak semantic match outranking a confident lexical one); "
+                                "rrf=equal-weight Reciprocal Rank Fusion, matching DeusData/codebase-"
+                                "memory-mcp's approach (a purely-semantic match can tie a confident "
+                                "lexical match - accepted tradeoff of this mode); off=pure BM25, same "
+                                "as before this feature existed."
+                            ),
+                        },
                     },
                     "required": ["question"],
                 },
@@ -330,6 +347,17 @@ def _build_server(graph_path: str):
                 name="graph_stats",
                 description="Return summary statistics: node count, edge count, communities, confidence breakdown.",
                 inputSchema={"type": "object", "properties": {}},
+            ),
+            types.Tool(
+                name="dead_code",
+                description=(
+                    "Heuristic scan for function nodes unreachable from any recognized entry "
+                    "point (calls-graph reachability from public/main/test_* functions). Use "
+                    "this to find candidate dead code before deleting or refactoring - misses "
+                    "dynamic dispatch and framework-invoked callbacks, so treat results as "
+                    "candidates to verify, not a definitive list."
+                ),
+                inputSchema={"type": "object", "properties": {"top_n": {"type": "integer", "default": 15}}},
             ),
             types.Tool(
                 name="blast_radius",
@@ -483,6 +511,7 @@ def _build_server(graph_path: str):
         context_filter = arguments.get("context_filter")
         include_paths = arguments.get("include_paths")
         exclude_paths = arguments.get("exclude_paths")
+        semantic_fusion = arguments.get("semantic_fusion", "boost")
         _t0 = _time.perf_counter()
         result = _query_graph_text(
             G,
@@ -493,6 +522,8 @@ def _build_server(graph_path: str):
             context_filters=context_filter,
             include_paths=include_paths,
             exclude_paths=exclude_paths,
+            semantic_fusion=semantic_fusion,
+            embedding_cache_file=Path(active_graph_path).parent / "cache" / "embeddings" / "index.npz",
         )
         querylog.log_query(
             kind="mcp_query",
@@ -623,6 +654,15 @@ def _build_server(graph_path: str):
         nodes = _god_nodes(G, top_n=int(arguments.get("top_n", 10)))
         lines = ["God nodes (most connected):"]
         lines += [f"  {i}. {n['label']} - {n['degree']} edges" for i, n in enumerate(nodes, 1)]
+        return "\n".join(lines)
+
+    def _tool_dead_code(arguments: dict) -> str:
+        from graphify.analyze import unreachable_functions
+        dead = unreachable_functions(G, top_n=int(arguments.get("top_n", 15)))
+        if not dead:
+            return "No unreachable functions found."
+        lines = [f"Unreachable functions (heuristic, {len(dead)} shown):"]
+        lines += [f"  {d['label']} [{d['source_file']}]" for d in dead]
         return "\n".join(lines)
 
     def _tool_graph_stats(_: dict) -> str:
@@ -775,6 +815,7 @@ def _build_server(graph_path: str):
         "get_community": _tool_get_community,
         "god_nodes": _tool_god_nodes,
         "graph_stats": _tool_graph_stats,
+        "dead_code": _tool_dead_code,
         "shortest_path": _tool_shortest_path,
         "list_prs": _tool_list_prs,
         "get_pr_impact": _tool_get_pr_impact,

@@ -2438,10 +2438,15 @@ def main() -> None:
         print("    --path P                only consider nodes whose source_file starts with P (repeatable)")
         print("    --exclude-path P        exclude nodes whose source_file starts with P (repeatable)")
         print("    --budget N              cap output at N tokens (default 2000)")
+        print("    --semantic-fusion M     embedding fusion mode: boost (default) | rrf | off")
+        print("                            (no effect unless the `embeddings` extra is installed)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  affected \"X\"             reverse traversal to find nodes impacted by X")
         print("    --relation R            edge relation to traverse in reverse (repeatable)")
         print("    --depth N               reverse traversal depth (default 2)")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
+        print("  dead-code               heuristic scan for function nodes unreachable from any entry point")
+        print("    --top-n N               max results to show (default 15)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  save-result             save a Q&A result to graphify-out/memory/ for graph feedback loop")
         print("    --question Q            the question asked")
@@ -2977,7 +2982,7 @@ def main() -> None:
             sys.exit(1)
     elif cmd == "query":
         if len(sys.argv) < 3:
-            print("Usage: graphify query \"<question>\" [--dfs] [--context C] [--path P] [--exclude-path P] [--budget N] [--graph path]", file=sys.stderr)
+            print("Usage: graphify query \"<question>\" [--dfs] [--context C] [--path P] [--exclude-path P] [--budget N] [--semantic-fusion boost|rrf|off] [--graph path]", file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _query_graph_text
         from graphify.security import sanitize_label
@@ -2991,6 +2996,7 @@ def main() -> None:
         context_filters: list[str] = []
         include_paths: list[str] = []
         exclude_paths: list[str] = []
+        semantic_fusion = "boost"
         args = sys.argv[3:]
         i = 0
         while i < len(args):
@@ -3029,8 +3035,17 @@ def main() -> None:
             elif args[i] == "--graph" and i + 1 < len(args):
                 graph_path = args[i + 1]
                 i += 2
+            elif args[i] == "--semantic-fusion" and i + 1 < len(args):
+                semantic_fusion = args[i + 1]
+                i += 2
+            elif args[i].startswith("--semantic-fusion="):
+                semantic_fusion = args[i].split("=", 1)[1]
+                i += 1
             else:
                 i += 1
+        if semantic_fusion not in ("boost", "rrf", "off"):
+            print("error: --semantic-fusion must be one of: boost, rrf, off", file=sys.stderr)
+            sys.exit(1)
         gp = Path(graph_path).resolve()
         if not gp.exists():
             print(f"error: graph file not found: {gp}", file=sys.stderr)
@@ -3077,6 +3092,8 @@ def main() -> None:
             context_filters=context_filters,
             include_paths=include_paths,
             exclude_paths=exclude_paths,
+            semantic_fusion=semantic_fusion,
+            embedding_cache_file=gp.parent / "cache" / "embeddings" / "index.npz",
         )
         querylog.log_query(
             kind="query",
@@ -3180,6 +3197,57 @@ def main() -> None:
                     depth=depth,
                 )
             )
+    elif cmd == "dead-code":
+        from graphify.affected import load_graph
+        from graphify.analyze import unreachable_functions
+
+        graph_path = _default_graph_path()
+        top_n = 15
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            if args[i] == "--graph" and i + 1 < len(args):
+                graph_path = args[i + 1]
+                i += 2
+            elif args[i].startswith("--graph="):
+                graph_path = args[i].split("=", 1)[1]
+                i += 1
+            elif args[i] == "--top-n" and i + 1 < len(args):
+                try:
+                    top_n = int(args[i + 1])
+                except ValueError:
+                    print("error: --top-n must be an integer", file=sys.stderr)
+                    sys.exit(1)
+                i += 2
+            elif args[i].startswith("--top-n="):
+                try:
+                    top_n = int(args[i].split("=", 1)[1])
+                except ValueError:
+                    print("error: --top-n must be an integer", file=sys.stderr)
+                    sys.exit(1)
+                i += 1
+            else:
+                i += 1
+        gp = Path(graph_path).resolve()
+        if not gp.exists():
+            print(f"error: graph file not found: {gp}", file=sys.stderr)
+            sys.exit(1)
+        if not gp.suffix == ".json":
+            print("error: graph file must be a .json file", file=sys.stderr)
+            sys.exit(1)
+        try:
+            graph = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        dead = unreachable_functions(graph, top_n=top_n)
+        if not dead:
+            print("No unreachable functions found.")
+        else:
+            print(f"Unreachable functions (heuristic, {len(dead)} shown):")
+            for d in dead:
+                print(f"  {d['label']} [{d['source_file']}]")
     elif cmd == "save-result":
         # graphify save-result --question Q --answer A [--type T] [--nodes N1 N2 ...]
         #                      [--outcome useful|dead_end|corrected] [--correction TEXT]

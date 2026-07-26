@@ -12,6 +12,7 @@ dependency direction is one-way: serve.py imports from here, never the
 reverse.
 """
 from __future__ import annotations
+import hashlib
 import math
 import re
 from array import array
@@ -394,10 +395,39 @@ def _get_embedding_model():
     return _embedding_model_cache[0]
 
 
-def _get_embedding_index(G: nx.Graph) -> "tuple[list[str], object] | None":
+def _embedding_corpus_hash(node_ids: list[str], texts: list[str]) -> str:
+    """Fingerprint of (model name, node ids, encoded texts) - changes whenever
+    the corpus a cached embedding index was built from would no longer match
+    (a node added/removed/relabeled, or the model name changed), so a stale
+    on-disk cache is detected and rebuilt rather than silently served."""
+    h = hashlib.sha256()
+    h.update(_EMBEDDING_MODEL_NAME.encode("utf-8"))
+    for nid, text in zip(node_ids, texts):
+        h.update(b"\0")
+        h.update(nid.encode("utf-8"))
+        h.update(b"\0")
+        h.update(text.encode("utf-8"))
+    return h.hexdigest()
+
+
+def _get_embedding_index(
+    G: nx.Graph, cache_file: "Path | None" = None
+) -> "tuple[list[str], object] | None":
     """Build (and cache on G.graph, mirroring _get_bm25_corpus) a matrix of
     per-node label+source_file embeddings. Returns None (never raises) when
-    the model can't be loaded, so callers get a clean no-op."""
+    the model can't be loaded, so callers get a clean no-op.
+
+    `cache_file`, when given, additionally persists the built index to disk
+    (a `.npz`, containing node_ids, the embedding matrix, and a corpus hash)
+    and loads from it on a cache hit instead of re-encoding. This matters
+    because the in-memory `G.graph` cache above only helps *within* one
+    process - the CLI (`graphify query`) is a fresh process every call, so
+    without disk persistence the encode step (the expensive part for a
+    large graph) re-runs on every single query. A hash mismatch (corpus
+    changed) or a corrupt/unreadable cache file falls through to a normal
+    rebuild - this is a performance cache, never a source of truth, so any
+    failure to read it is silently treated as a miss.
+    """
     cached = G.graph.get("_embedding_index")
     if cached is not None:
         return cached
@@ -416,16 +446,46 @@ def _get_embedding_index(G: nx.Graph) -> "tuple[list[str], object] | None":
         node_ids.append(nid)
     if not texts:
         return None
+    if cache_file is not None and cache_file.exists():
+        try:
+            import numpy as np
+            with np.load(cache_file, allow_pickle=False) as data:
+                if str(data["hash"][0]) == _embedding_corpus_hash(node_ids, texts):
+                    index = ([str(n) for n in data["node_ids"]], data["embeddings"])
+                    G.graph["_embedding_index"] = index
+                    return index
+        except Exception:
+            pass
     embeddings = model.encode(texts, normalize_embeddings=True)
     index = (node_ids, embeddings)
     G.graph["_embedding_index"] = index
+    if cache_file is not None:
+        try:
+            import numpy as np
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache_file.with_suffix(".npz.tmp")
+            # np.savez appends ".npz" to a path string that doesn't already
+            # end with it - given a plain file handle instead, it writes
+            # exactly where told, so the tmp-then-replace swap below is atomic.
+            with open(tmp, "wb") as f:
+                np.savez(
+                    f,
+                    node_ids=np.array(node_ids),
+                    embeddings=embeddings,
+                    hash=np.array([_embedding_corpus_hash(node_ids, texts)]),
+                )
+            tmp.replace(cache_file)
+        except Exception:
+            pass
     return index
 
 
 _EMBEDDING_MIN_SIMILARITY = 0.35
 
 
-def _embedding_seed_fallback(G: nx.Graph, question: str, top_k: int = 3) -> list[str]:
+def _embedding_seed_fallback(
+    G: nx.Graph, question: str, top_k: int = 3, cache_file: "Path | None" = None
+) -> list[str]:
     """Last-resort seed selection via local dense-retrieval, tried only after
     BM25 + typo correction + fuzzy-substring matching all found nothing - the
     deliberate recall gap for a query and its target sharing zero literal or
@@ -436,7 +496,7 @@ def _embedding_seed_fallback(G: nx.Graph, question: str, top_k: int = 3) -> list
     the graph, so an unfiltered top-k would turn a genuinely unmatched query
     into a confidently wrong one instead of "no match".
     """
-    index = _get_embedding_index(G)
+    index = _get_embedding_index(G, cache_file=cache_file)
     if index is None:
         return []
     node_ids, embeddings = index
@@ -449,6 +509,74 @@ def _embedding_seed_fallback(G: nx.Graph, question: str, top_k: int = 3) -> list
     scores = embeddings @ query_vec
     top_indices = np.argsort(-scores)[:top_k]
     return [node_ids[i] for i in top_indices if scores[i] >= _EMBEDDING_MIN_SIMILARITY]
+
+
+# Primary-scoring embedding fusion (P18 follow-up) - unlike the last-resort-only
+# fallback above (#5, only tried when scored is empty), these two run on EVERY
+# query once the `embeddings` extra is installed, same as DeusData/codebase-
+# memory-mcp and SocratiCode fusing lexical + semantic search on every call.
+# Two modes, both opt-in via the extra and both no-ops when it's absent:
+#   "boost" (default) - bounded multiplicative nudge, same shape/ceiling as
+#       the existing _PAGERANK_BOOST_MAX. Can reorder near-ties, can never
+#       let a weak semantic match outrank a confident BM25 winner.
+#   "rrf"   (opt-in)  - equal-weight Reciprocal Rank Fusion, matching DeusData's
+#       actual mechanism. Accepted tradeoff: a purely-semantic top match can
+#       tie a confident exact-lexical top match (both are "rank 0 of their own
+#       list"), which "boost" mode is specifically designed to avoid. See
+#       agent-memory/plans/p18-competitor-audit-july2026.md for the tradeoff
+#       writeup that led to shipping both modes instead of just one.
+_EMBEDDING_BOOST_MAX = 0.15
+_RRF_K = 60
+_EMBEDDING_RRF_TOP_K = 20
+
+
+def _embedding_similarity_map(
+    G: nx.Graph, question: str, cache_file: "Path | None" = None
+) -> dict[str, float]:
+    """Cosine similarity of `question` against every indexed node, clipped to
+    [0, 1]. Returns {} (never raises) when the optional `embeddings` extra
+    isn't installed or the index can't be built - same no-op contract as
+    _embedding_seed_fallback."""
+    index = _get_embedding_index(G, cache_file=cache_file)
+    if index is None:
+        return {}
+    node_ids, embeddings = index
+    try:
+        model = _get_embedding_model()
+    except ImportError:
+        return {}
+    query_vec = model.encode([question], normalize_embeddings=True)[0]
+    scores = embeddings @ query_vec
+    return {nid: max(0.0, float(s)) for nid, s in zip(node_ids, scores)}
+
+
+def _fuse_embedding_rrf(
+    G: nx.Graph,
+    scored: list[tuple[float, str]],
+    question: str,
+    cache_file: "Path | None" = None,
+) -> list[tuple[float, str]]:
+    """Opt-in alternative to the default bounded boost: fuse BM25 rank and
+    embedding-similarity rank as equal-weight signals via Reciprocal Rank
+    Fusion. Returns `scored` unchanged when the `embeddings` extra isn't
+    installed."""
+    sims = _embedding_similarity_map(G, question, cache_file=cache_file)
+    if not sims:
+        return scored
+    top_ids = sorted(sims, key=lambda nid: -sims[nid])[:_EMBEDDING_RRF_TOP_K]
+    embedding_rank = {nid: rank for rank, nid in enumerate(top_ids)}
+    bm25_rank = {nid: rank for rank, (_, nid) in enumerate(scored)}
+    all_ids = set(bm25_rank) | set(embedding_rank)
+    fused = []
+    for nid in all_ids:
+        rrf = 0.0
+        if nid in bm25_rank:
+            rrf += 1.0 / (_RRF_K + bm25_rank[nid])
+        if nid in embedding_rank:
+            rrf += 1.0 / (_RRF_K + embedding_rank[nid])
+        fused.append((rrf, nid))
+    fused.sort(key=lambda s: (-s[0], len(G.nodes[s[1]].get("label") or s[1]), s[1]))
+    return fused
 
 
 _EXACT_MATCH_BONUS = 1000.0
@@ -697,6 +825,7 @@ def _pick_seeds(
     multi_term: bool = False,
     max_communities: int = 5,
     terms: list[str] | None = None,
+    embedding_sims: dict[str, float] | None = None,
 ) -> list[str]:
     """Select BFS seed nodes, stopping when score drops too far below the top.
 
@@ -739,6 +868,11 @@ def _pick_seeds(
     all (every graph built without `pagerank_ranking`, i.e. the default
     today), the boost step is skipped entirely and this function's behavior
     is unchanged from before this feature existed.
+
+    Same shape for `embedding_sims` (cosine similarity per node, from
+    `_embedding_similarity_map`): bounded boost up to `_EMBEDDING_BOOST_MAX`,
+    a no-op for any node absent from the map (including every graph when the
+    `embeddings` extra isn't installed - `embedding_sims` is then `None`/{}).
     """
     if not scored:
         return []
@@ -758,6 +892,10 @@ def _pick_seeds(
             if max_pagerank > 0:
                 node_pagerank = G.nodes[nid].get("pagerank") or 0.0
                 penalty *= 1.0 + _PAGERANK_BOOST_MAX * (node_pagerank / max_pagerank)
+            if embedding_sims:
+                sim = embedding_sims.get(nid, 0.0)
+                if sim > 0:
+                    penalty *= 1.0 + _EMBEDDING_BOOST_MAX * sim
             return penalty
 
         scored = [(score * _seed_penalty(nid), nid) for score, nid in scored]
@@ -1153,6 +1291,8 @@ def _query_graph_text(
     context_filters: list[str] | None = None,
     include_paths: list[str] | None = None,
     exclude_paths: list[str] | None = None,
+    semantic_fusion: str = "boost",
+    embedding_cache_file: "Path | None" = None,
 ) -> str:
     def _in_path_scope(nid: str) -> bool:
         if not include_paths and not exclude_paths:
@@ -1164,16 +1304,35 @@ def _query_graph_text(
             return False
         return True
 
+    # Embedding fusion on every query, not just the last-resort tier below -
+    # see the comment block above _EMBEDDING_BOOST_MAX/_RRF_K for the two
+    # modes. Both are no-ops (embedding_sims={}, _fuse_embedding_rrf returns
+    # `scored` unchanged) when the optional `embeddings` extra isn't installed
+    # or semantic_fusion="off". `embedding_cache_file`, when given, persists
+    # the encoded index to disk (see _get_embedding_index) - without it, a
+    # fresh CLI process re-encodes the whole corpus on every call.
+    embedding_sims: dict[str, float] = (
+        _embedding_similarity_map(G, question, cache_file=embedding_cache_file)
+        if semantic_fusion == "boost" else {}
+    )
+
+    def _fuse(scored: list[tuple[float, str]]) -> list[tuple[float, str]]:
+        if semantic_fusion == "rrf":
+            fused = _fuse_embedding_rrf(G, scored, question, cache_file=embedding_cache_file)
+            return [(s, nid) for s, nid in fused if _in_path_scope(nid)]
+        return scored
+
     terms = _query_terms(question)
-    scored = [(s, nid) for s, nid in _score_nodes(G, terms) if _in_path_scope(nid)]
-    start_nodes = _pick_seeds(scored, G=G, multi_term=len(set(terms)) > 1, terms=terms)
+    scored = _fuse([(s, nid) for s, nid in _score_nodes(G, terms) if _in_path_scope(nid)])
+    start_nodes = _pick_seeds(scored, G=G, multi_term=len(set(terms)) > 1, terms=terms, embedding_sims=embedding_sims)
     correction_note = ""
     if not start_nodes:
         corrected_terms, corrections = _apply_vocabulary_corrections(G, terms)
         if corrections:
-            scored = [(s, nid) for s, nid in _score_nodes(G, corrected_terms) if _in_path_scope(nid)]
+            scored = _fuse([(s, nid) for s, nid in _score_nodes(G, corrected_terms) if _in_path_scope(nid)])
             start_nodes = _pick_seeds(
-                scored, G=G, multi_term=len(set(corrected_terms)) > 1, terms=corrected_terms
+                scored, G=G, multi_term=len(set(corrected_terms)) > 1, terms=corrected_terms,
+                embedding_sims=embedding_sims,
             )
             if start_nodes:
                 pairs = ", ".join(f'"{o}" -> "{c}"' for o, c in corrections)
@@ -1194,7 +1353,10 @@ def _query_graph_text(
         # only ever says "authenticate" with none of _SYNONYM_GROUPS' words
         # nearby). Silently a no-op unless the optional `embeddings` extra is
         # installed - see _embedding_seed_fallback's docstring.
-        start_nodes = [nid for nid in _embedding_seed_fallback(G, question) if _in_path_scope(nid)]
+        start_nodes = [
+            nid for nid in _embedding_seed_fallback(G, question, cache_file=embedding_cache_file)
+            if _in_path_scope(nid)
+        ]
         if start_nodes:
             correction_note = (
                 "Note: no lexical/typo/substring match; used local embedding-based "

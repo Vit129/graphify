@@ -28,6 +28,10 @@ from graphify.serve import (
     _blast_radius_hops,
     _hop_distances,
     _embedding_seed_fallback,
+    _embedding_similarity_map,
+    _fuse_embedding_rrf,
+    _get_embedding_index,
+    _embedding_corpus_hash,
 )
 from graphify.query import _find_node_tied_group
 
@@ -669,7 +673,7 @@ def test_embedding_seed_fallback_ranks_by_cosine_similarity(monkeypatch):
         [0.0, 1.0, 0.0],   # n2
         [0.7, 0.7, 0.0],   # n3
     ])
-    monkeypatch.setattr("graphify.query._get_embedding_index", lambda G: (node_ids, embeddings))
+    monkeypatch.setattr("graphify.query._get_embedding_index", lambda G, cache_file=None: (node_ids, embeddings))
 
     class _FakeModel:
         def encode(self, texts, normalize_embeddings=True):
@@ -686,7 +690,7 @@ def test_query_graph_text_uses_embedding_fallback_as_true_last_resort(monkeypatc
     to the embedding fallback and surfaces its low-confidence note instead of
     'No matching nodes found.'"""
     G = _make_graph()
-    monkeypatch.setattr("graphify.query._embedding_seed_fallback", lambda G, q, top_k=3: ["n1"])
+    monkeypatch.setattr("graphify.query._embedding_seed_fallback", lambda G, q, top_k=3, cache_file=None: ["n1"])
     text = _query_graph_text(G, "zzz_totally_unrelated_query_xyz")
     assert "No matching nodes found." not in text
     assert "embedding-based fallback" in text
@@ -697,7 +701,7 @@ def test_query_graph_text_still_reports_no_match_when_embedding_fallback_also_em
     """The embedding fallback returning [] (dependency absent, or genuinely no
     match) must fall through to the original 'No matching nodes found.'"""
     G = _make_graph()
-    monkeypatch.setattr("graphify.query._embedding_seed_fallback", lambda G, q, top_k=3: [])
+    monkeypatch.setattr("graphify.query._embedding_seed_fallback", lambda G, q, top_k=3, cache_file=None: [])
     text = _query_graph_text(G, "zzz_totally_unrelated_query_xyz")
     assert text == "No matching nodes found."
 
@@ -1089,6 +1093,222 @@ def test_pick_seeds_pagerank_missing_on_some_nodes_does_not_crash():
     scored = [(5.0, "has_pr"), (5.0, "no_pr")]
     seeds = _pick_seeds(scored, max_k=2, G=G)
     assert set(seeds) == {"has_pr", "no_pr"}
+
+
+# --- embedding fusion, "boost" mode (P18 follow-up) ----------------------------
+
+def test_pick_seeds_embedding_boost_breaks_a_near_tie():
+    """Same shape as the pagerank tiebreaker test above: on a genuine
+    near-tie, the node with higher embedding similarity wins."""
+    G = nx.Graph()
+    G.add_node("semantic_match", label="authenticateUser", source_file="src/auth.py")
+    G.add_node("lexical_noise", label="authenticateUserOnce", source_file="src/misc.py")
+    scored = [(10.0, "lexical_noise"), (9.9, "semantic_match")]
+    sims = {"semantic_match": 0.9, "lexical_noise": 0.05}
+    seeds = _pick_seeds(scored, max_k=1, G=G, embedding_sims=sims)
+    assert seeds == ["semantic_match"]
+
+
+def test_pick_seeds_embedding_boost_is_bounded_not_dominant():
+    """A much-lower-BM25 node with high embedding similarity must NOT
+    out-rank a clearly better BM25 match - the boost (max +15%) can only
+    ever tiebreak, never override a real relevance gap. This is the
+    concrete guard against the tie/override risk the "rrf" mode below
+    deliberately accepts instead."""
+    G = nx.Graph()
+    G.add_node("semantic_only", label="signIn", source_file="src/misc.py")
+    G.add_node("exact_match", label="ExactQueryMatch", source_file="src/target.py")
+    scored = [(10.0, "exact_match"), (1.0, "semantic_only")]
+    sims = {"semantic_only": 1.0, "exact_match": 0.0}
+    seeds = _pick_seeds(scored, max_k=1, G=G, embedding_sims=sims)
+    assert seeds == ["exact_match"]
+
+
+def test_pick_seeds_no_embedding_sims_unchanged_from_before_feature():
+    """embedding_sims=None (the default - no extra installed, or
+    semantic_fusion="off") must produce byte-for-byte identical seed
+    selection to before this feature existed."""
+    G = nx.Graph()
+    G.add_node("concept", label="Authentication Flow", source_file="")
+    G.add_node("symbol", label="AuthService", source_file="src/auth.py")
+    scored = [(10.0, "concept"), (9.0, "symbol")]
+    seeds = _pick_seeds(scored, max_k=1, G=G)
+    assert seeds == ["symbol"]
+
+
+def test_embedding_similarity_map_empty_when_dependency_missing(monkeypatch):
+    def _raise_import_error():
+        raise ImportError("sentence-transformers not installed")
+    monkeypatch.setattr("graphify.query._get_embedding_model", _raise_import_error)
+    G = _make_graph()
+    assert _embedding_similarity_map(G, "some question") == {}
+
+
+def test_embedding_similarity_map_returns_cosine_scores(monkeypatch):
+    import numpy as np
+    G = _make_graph()
+    node_ids = ["n1", "n2"]
+    embeddings = np.array([[1.0, 0.0], [0.0, 1.0]])
+    monkeypatch.setattr("graphify.query._get_embedding_index", lambda G, cache_file=None: (node_ids, embeddings))
+
+    class _FakeModel:
+        def encode(self, texts, normalize_embeddings=True):
+            return np.array([[0.0, 1.0]])  # matches n2 exactly, orthogonal to n1
+
+    monkeypatch.setattr("graphify.query._get_embedding_model", lambda: _FakeModel())
+    sims = _embedding_similarity_map(G, "query")
+    assert sims["n2"] == pytest.approx(1.0)
+    assert sims["n1"] == pytest.approx(0.0)
+
+
+# --- on-disk embedding index cache (P18 follow-up: CLI perf) -------------------
+# A fresh CLI process re-runs _get_embedding_index every call - without disk
+# persistence, the (expensive) encode step repeats on every single query.
+# These tests use a real (small, fast) model-shaped fake, not a full
+# sentence-transformers load, so they stay fast and dependency-free.
+
+def _install_fake_embedding_model(monkeypatch, encode_calls: list):
+    import numpy as np
+
+    class _FakeModel:
+        def encode(self, texts, normalize_embeddings=True):
+            encode_calls.append(list(texts))
+            return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr("graphify.query._get_embedding_model", lambda: _FakeModel())
+
+
+def test_embedding_corpus_hash_deterministic_and_sensitive_to_content():
+    h1 = _embedding_corpus_hash(["n1", "n2"], ["label one", "label two"])
+    h2 = _embedding_corpus_hash(["n1", "n2"], ["label one", "label two"])
+    h3 = _embedding_corpus_hash(["n1", "n2"], ["label one", "label CHANGED"])
+    assert h1 == h2
+    assert h1 != h3
+
+
+def test_get_embedding_index_writes_and_reads_disk_cache(monkeypatch, tmp_path):
+    """First call (no cache file) encodes and writes the cache; a second call
+    against a FRESH graph object (simulating a new CLI process - no shared
+    G.graph state) reads from disk instead of encoding again."""
+    encode_calls: list = []
+    _install_fake_embedding_model(monkeypatch, encode_calls)
+    cache_file = tmp_path / "cache" / "embeddings" / "index.npz"
+
+    G1 = _make_graph()
+    index1 = _get_embedding_index(G1, cache_file=cache_file)
+    assert index1 is not None
+    assert len(encode_calls) == 1
+    assert cache_file.exists()
+
+    G2 = _make_graph()  # fresh graph object - no G.graph in-memory cache carried over
+    index2 = _get_embedding_index(G2, cache_file=cache_file)
+    assert index2 is not None
+    assert len(encode_calls) == 1  # unchanged - served from disk, not re-encoded
+    assert set(index2[0]) == set(index1[0])
+
+
+def test_get_embedding_index_rebuilds_when_corpus_changes(monkeypatch, tmp_path):
+    """A stale cache (corpus hash no longer matches - e.g. the graph was
+    rebuilt with different nodes) is detected and rebuilt, not silently
+    served."""
+    encode_calls: list = []
+    _install_fake_embedding_model(monkeypatch, encode_calls)
+    cache_file = tmp_path / "cache" / "embeddings" / "index.npz"
+
+    G1 = _make_graph()
+    _get_embedding_index(G1, cache_file=cache_file)
+    assert len(encode_calls) == 1
+
+    G2 = _make_graph()
+    G2.add_node("n_new", label="brandNewFunction", source_file="new.py")
+    index2 = _get_embedding_index(G2, cache_file=cache_file)
+    assert len(encode_calls) == 2  # cache was stale - rebuilt, not reused
+    assert "n_new" in index2[0]
+
+
+def test_get_embedding_index_falls_back_when_cache_file_corrupt(monkeypatch, tmp_path):
+    """A corrupt/unreadable cache file must never crash a query - it's a
+    performance cache, not a source of truth. Falls through to a normal
+    rebuild instead."""
+    encode_calls: list = []
+    _install_fake_embedding_model(monkeypatch, encode_calls)
+    cache_file = tmp_path / "cache" / "embeddings" / "index.npz"
+    cache_file.parent.mkdir(parents=True)
+    cache_file.write_bytes(b"not a valid npz file")
+
+    G = _make_graph()
+    index = _get_embedding_index(G, cache_file=cache_file)
+    assert index is not None
+    assert len(encode_calls) == 1
+
+
+def test_get_embedding_index_no_cache_file_behaves_as_before_feature(monkeypatch):
+    """cache_file=None (the default, every existing caller) must never touch
+    disk - purely in-memory, same as before this feature existed."""
+    encode_calls: list = []
+    _install_fake_embedding_model(monkeypatch, encode_calls)
+    G = _make_graph()
+    index = _get_embedding_index(G)
+    assert index is not None
+    assert len(encode_calls) == 1
+
+
+# --- embedding fusion, "rrf" mode (P18 follow-up) ------------------------------
+
+def test_fuse_embedding_rrf_no_op_when_dependency_missing(monkeypatch):
+    def _raise_import_error():
+        raise ImportError("sentence-transformers not installed")
+    monkeypatch.setattr("graphify.query._get_embedding_model", _raise_import_error)
+    G = _make_graph()
+    scored = [(10.0, "n1"), (5.0, "n2")]
+    assert _fuse_embedding_rrf(G, scored, "question") == scored
+
+
+def test_fuse_embedding_rrf_lets_pure_semantic_match_tie_top_lexical_match(monkeypatch):
+    """The accepted tradeoff of "rrf" mode, demonstrated concretely: a node
+    that's rank-0 on the BM25 list only and a node that's rank-0 on the
+    embedding list only score identically (both 1/60) - unlike "boost" mode
+    (see test_pick_seeds_embedding_boost_is_bounded_not_dominant above),
+    which keeps the confident lexical match strictly ahead."""
+    import numpy as np
+    G = _make_graph()
+    node_ids = ["n1", "n2", "n3"]
+    embeddings = np.array([
+        [0.0, 1.0],   # n1 - closest to the query vector below
+        [1.0, 0.0],   # n2
+        [0.7, 0.7],   # n3
+    ])
+    monkeypatch.setattr("graphify.query._get_embedding_index", lambda G, cache_file=None: (node_ids, embeddings))
+    # Force embedding_rank to hold only the single top match (n1), so n2 -
+    # a weaker but real embedding match too - doesn't also pick up a partial
+    # embedding-side contribution that would break the clean tie this test
+    # demonstrates.
+    monkeypatch.setattr("graphify.query._EMBEDDING_RRF_TOP_K", 1)
+
+    class _FakeModel:
+        def encode(self, texts, normalize_embeddings=True):
+            return np.array([[0.0, 1.0]])
+
+    monkeypatch.setattr("graphify.query._get_embedding_model", lambda: _FakeModel())
+    # n2 is the clear BM25 winner (exact lexical match); n1 has zero BM25
+    # score at all (not even in the candidate list) but is the top embedding
+    # match - "rrf" mode surfaces it tied for first anyway.
+    scored = [(100.0, "n2")]
+    fused = _fuse_embedding_rrf(G, scored, "query")
+    fused_scores = dict((nid, s) for s, nid in fused)
+    assert fused_scores["n1"] == pytest.approx(fused_scores["n2"])
+
+
+def test_query_graph_text_semantic_fusion_off_ignores_embeddings(monkeypatch):
+    """semantic_fusion="off" must never even consult the embedding index,
+    regardless of whether the extra is installed - explicit escape hatch
+    back to pure BM25."""
+    G = _make_graph()
+    def _boom(*a, **kw):
+        raise AssertionError("embedding index must not be consulted when semantic_fusion='off'")
+    monkeypatch.setattr("graphify.query._get_embedding_index", _boom)
+    text = _query_graph_text(G, "extract", semantic_fusion="off")
+    assert "extract" in text
 
 
 def test_pick_seeds_multi_term_diversifies_across_communities():
