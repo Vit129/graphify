@@ -3,6 +3,20 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.22.0] - 2026-07-26
+
+### Added
+- Add make start as standard release entry point ([`c9adae8`](https://github.com/Vit129/graphify/commit/c9adae88992591ba9571def8cbb08073a8b2d2df))
+- Dead-code detection command and embedding-fused query search ([`c532578`](https://github.com/Vit129/graphify/commit/c532578361e7476c45cb1f44ec0c7a0ca494293e))
+
+### Documentation
+- Root-cause the recurring graphify-skill deletion bug ([`fda7361`](https://github.com/Vit129/graphify/commit/fda73618ad82b566589a8de512a875e7bf2239e8))
+- Record the PLAYBOOK.md casing correction and its lesson ([`798a366`](https://github.com/Vit129/graphify/commit/798a366cc1d5912f08d2a1b685ca41dbcdacd61c))
+
+### Fixed
+- Sync global uv-tool CLI after each release, close skill-deletion window ([`95894a9`](https://github.com/Vit129/graphify/commit/95894a9fc4d480d22cd35b8180299e7f2bd4b8d2))
+- Revert PLAYBOOK.md casing to uppercase — earlier fix this session was backwards ([`39d79c0`](https://github.com/Vit129/graphify/commit/39d79c08ddf2f33167c58086714c2d1f9cfcf071))
+
 ## [0.21.0] - 2026-07-25
 
 ### Added
