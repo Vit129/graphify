@@ -185,7 +185,7 @@ def _build_server(graph_path: str):
     try:
         from mcp.server import Server
         from mcp import types
-        from mcp.types import AnyUrl
+        from pydantic import AnyUrl
     except ImportError as e:
         raise ImportError('mcp not installed. Run: pip install "graphifyy[mcp]"') from e
 
