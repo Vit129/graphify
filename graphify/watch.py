@@ -178,11 +178,11 @@ def _apply_resource_limits() -> None:
         pass
 
 
-def _git_head() -> str | None:
-    """Return current git HEAD commit hash, or None outside a repo."""
+def _git_head(cwd: str | Path | None = None) -> str | None:
+    """Return the git HEAD commit hash for `cwd` (default: caller's cwd), or None outside a repo."""
     import subprocess as _sp
     try:
-        r = _sp.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3)
+        r = _sp.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3, cwd=cwd)
         return r.stdout.strip() if r.returncode == 0 else None
     except Exception:
         return None
@@ -610,7 +610,7 @@ def _rebuild_code(
         else:
             extract_targets = code_files
 
-        commit = _git_head()
+        commit = _git_head(watch_root)
         result = extract(extract_targets, cache_root=watch_root, value_coupling=value_coupling) if extract_targets else {
             "nodes": [], "edges": [], "hyperedges": [],
             "input_tokens": 0, "output_tokens": 0,

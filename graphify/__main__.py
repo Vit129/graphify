@@ -3941,7 +3941,7 @@ def main() -> None:
         questions = suggest_questions(G, communities, labels)
         tokens = {"input": 0, "output": 0}
         from graphify.export import _git_head as _gh
-        _commit = _gh()
+        _commit = _gh(watch_path)
         from graphify.report import load_learning_for_report as _llfr
         report = generate(G, communities, cohesion, labels, gods, surprises,
                           {"warning": "cluster-only mode — file stats not available"},
@@ -3954,7 +3954,7 @@ def main() -> None:
         stages.mark("report")
         from graphify.export import backup_if_protected as _backup
         _backup(out)
-        to_json(G, communities, str(out / "graph.json"), community_labels=labels)
+        to_json(G, communities, str(out / "graph.json"), community_labels=labels, built_at_commit=_commit)
         labels_path.write_text(json.dumps({str(k): v for k, v in labels.items()}, ensure_ascii=False), encoding="utf-8")
         # Membership signatures beside the labels so a later cluster-only can detect
         # which communities changed and avoid reusing a stale label (see reuse above).
@@ -5514,7 +5514,7 @@ def main() -> None:
             build_merge as _build_merge,
         )
         from graphify.cluster import cluster as _cluster, score_all as _score_all
-        from graphify.export import to_json as _to_json
+        from graphify.export import to_json as _to_json, _git_head as _gh2
         from graphify.analyze import (
             god_nodes as _god_nodes, cross_cutting_nodes as _cross_cutting,
             surprising_connections as _surprising, _PAGERANK_SCIPY_MISSING_MSG,
@@ -5570,7 +5570,7 @@ def main() -> None:
                     f"[graphify extract] pagerank_ranking {_PAGERANK_SCIPY_MISSING_MSG}",
                     file=sys.stderr,
                 )
-        _to_json(G, communities, str(graph_json_path), force=True, pagerank_scores=pagerank_scores)
+        _to_json(G, communities, str(graph_json_path), force=True, pagerank_scores=pagerank_scores, built_at_commit=_gh2(target))
         stages.mark("export")
         if merged.get("output_tokens", 0) > 0:
             (graphify_out / ".graphify_semantic_marker").write_text(
@@ -5654,7 +5654,7 @@ def main() -> None:
                     {"files": files_by_type, "total_files": len(code_files) + len(semantic_files), "total_words": total_words},
                     {"input": merged["input_tokens"], "output": merged["output_tokens"]},
                     report_root, suggested_questions=questions,
-                    built_at_commit=_git_head(), learning=_llfr(str(graph_json_path)),
+                    built_at_commit=_git_head(target), learning=_llfr(str(graph_json_path)),
                     cross_cutting_list=cross_cutting,
                 )
                 (graphify_out / "GRAPH_REPORT.md").write_text(report, encoding="utf-8")

@@ -990,11 +990,11 @@ def attach_hyperedges(G: nx.Graph, hyperedges: list) -> None:
     G.graph["hyperedges"] = existing
 
 
-def _git_head() -> str | None:
-    """Return the current git HEAD commit hash, or None if not in a git repo."""
+def _git_head(cwd: str | Path | None = None) -> str | None:
+    """Return the git HEAD commit hash for `cwd` (default: caller's cwd), or None if not in a git repo."""
     import subprocess as _sp
     try:
-        r = _sp.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3)
+        r = _sp.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3, cwd=cwd)
         return r.stdout.strip() if r.returncode == 0 else None
     except Exception:
         return None
