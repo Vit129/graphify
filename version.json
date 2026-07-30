@@ -1,5 +1,5 @@
 {
   "version": 4,
-  "updated": "2026-07-19",
-  "summary": "affected --relation prefix-match for parameterized relations, JS/TS content-data array indexing"
+  "updated": "2026-07-30",
+  "summary": "remove Chinese query segmentation and jieba dependency"
 }
