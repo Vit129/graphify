@@ -12,11 +12,6 @@ from graphify.security import sanitize_label, check_graph_file_size_cap
 from graphify.build import edge_data
 from graphify.paths import default_graph_json as _default_graph_json
 
-try:
-    import jieba as _jieba  # type: ignore[import-untyped]
-except ImportError:
-    _jieba = None
-
 
 def _load_graph(graph_path: str) -> nx.Graph:
     try:
@@ -76,8 +71,6 @@ from graphify.query import (
     _strip_diacritics,
     _CAMEL_SPLIT_RE,
     _search_tokens,
-    _has_chinese,
-    _segment_chinese,
     _is_searchable,
     _STOPWORDS,
     _query_terms,

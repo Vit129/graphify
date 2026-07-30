@@ -22,10 +22,6 @@ from graphify.security import sanitize_label
 from graphify.detect import DOC_EXTENSIONS
 from graphify.build import edge_data
 
-try:
-    import jieba as _jieba  # type: ignore[import-untyped]
-except ImportError:
-    _jieba = None
 
 
 def _strip_diacritics(text: str | None) -> str:
@@ -46,23 +42,8 @@ def _search_tokens(text: str) -> list[str]:
     return [tok.lower() for tok in _CAMEL_SPLIT_RE.findall(_strip_diacritics(str(text)))]
 
 
-def _has_chinese(text: str) -> bool:
-    return any("一" <= ch <= "鿿" for ch in text)
-
-
-def _segment_chinese(text: str) -> list[str]:
-    """Segment Chinese text and keep the original term for exact matching."""
-    if _jieba is not None:
-        segments = [w for w in _jieba.cut(text) if len(w.strip()) > 0]
-    else:
-        segments = [text[i:i + 2] for i in range(len(text) - 1)] or [text]
-    if len(text) > 1 and text not in segments:
-        segments.append(text)
-    return segments
-
-
 def _is_searchable(term: str) -> bool:
-    """True if term is Chinese, non-English, or an English word longer than 2 chars."""
+    """True if term is non-English or an English word longer than 2 chars."""
     if all("a" <= ch <= "z" for ch in term):
         return len(term) > 2
     return True
@@ -155,21 +136,14 @@ def _expand_synonyms(terms: list[str], raw_question: str) -> list[str]:
 
 
 def _query_terms(question: str) -> list[str]:
-    """Split a query into searchable terms, segmenting Chinese text, drop
-    stopwords (falling back to the unfiltered terms if the query is all
-    stopwords, e.g. "how does it work", so it still seeds on something), then
-    expand synonyms."""
+    """Split a query into searchable terms, drop stopwords (falling back to
+    the unfiltered terms if the query is all stopwords, e.g. "how does it work",
+    so it still seeds on something), then expand synonyms."""
     terms: list[str] = []
     for raw in question.split():
-        if _has_chinese(raw):
-            for seg in _segment_chinese(raw.lower().strip()):
-                seg = seg.strip()
-                if seg and _is_searchable(seg):
-                    terms.append(seg)
-        else:
-            for tok in re.findall(r"\w+", raw.lower()):
-                if _is_searchable(tok):
-                    terms.append(tok)
+        for tok in re.findall(r"\w+", raw.lower()):
+            if _is_searchable(tok):
+                terms.append(tok)
     content = [t for t in terms if t not in _STOPWORDS]
     return _expand_synonyms(content or terms, question)
 

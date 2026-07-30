@@ -78,7 +78,6 @@ bedrock = ["boto3"]
 anthropic = ["anthropic"]
 gemini = ["openai", "tiktoken"]
 openai = ["openai", "tiktoken"]
-chinese = ["jieba"]
 sql = ["tree-sitter-sql"]
 # tree-sitter-dm (BYOND DreamMaker) ships only a Windows wheel, so on Linux/Mac it
 # must compile from source (needs a C toolchain + python3-dev). Keeping it optional
@@ -87,7 +86,7 @@ dm = ["tree-sitter-dm"]
 terraform = ["tree-sitter-hcl"]
 robot = ["tree-sitter-robot"]
 scss = ["tree-sitter-scss"]
-all = ["mcp", "starlette>=1.3.1", "neo4j", "falkordb", "pypdf>=6.12.0", "markdownify", "watchdog", "graspologic; python_version < '3.13'", "python-docx", "openpyxl", "faster-whisper; python_version >= '3.11'", "yt-dlp>=2026.6.9", "matplotlib", "numpy>=2.0; python_version >= '3.13'", "openai", "tiktoken", "boto3", "anthropic", "tree-sitter-sql", "jieba", "tree-sitter-dm", "tree-sitter-hcl", "tree-sitter-robot", "tree-sitter-scss"]
+all = ["mcp", "starlette>=1.3.1", "neo4j", "falkordb", "pypdf>=6.12.0", "markdownify", "watchdog", "graspologic; python_version < '3.13'", "python-docx", "openpyxl", "faster-whisper; python_version >= '3.11'", "yt-dlp>=2026.6.9", "matplotlib", "numpy>=2.0; python_version >= '3.13'", "openai", "tiktoken", "boto3", "anthropic", "tree-sitter-sql", "tree-sitter-dm", "tree-sitter-hcl", "tree-sitter-robot", "tree-sitter-scss"]
 
 [project.scripts]
 graphify = "graphify.__main__:main"
