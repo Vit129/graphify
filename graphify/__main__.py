@@ -2475,12 +2475,15 @@ def main() -> None:
         print("    --top-k-edges N         per-symbol outbound edges in inspector (default 12)")
         print("    --label NAME            project label in header")
         print("  extract <path>          headless full extraction (AST + semantic LLM) for CI/scripts")
-        print("    --backend B             gemini|kimi|claude|openai|deepseek|ollama (default: whichever API key is set)")
+        print("    --backend B             gemini|kimi|claude|claude-cli|openai|deepseek|ollama|azure|bedrock")
+        print("                            (default: whichever API key is set)")
         print("                            openai also reaches self-hosted OpenAI-compatible servers (llama.cpp,")
         print("                            vLLM, LM Studio): set OPENAI_BASE_URL (e.g. http://localhost:8080/v1)")
         print("                            and OPENAI_MODEL to the model name your server serves")
         print("                            claude also reaches custom Anthropic-compatible endpoints (LiteLLM")
         print("                            proxy, gateways): set ANTHROPIC_BASE_URL and ANTHROPIC_MODEL")
+        print("                            claude-cli and bedrock need no API key (claude-cli shells out to the")
+        print("                            claude CLI, billed to your Claude subscription; bedrock uses AWS IAM)")
         print("    --model M               override backend default model")
         print("    --mode deep             aggressive INFERRED-edge semantic extraction")
         print("    --max-workers N         AST extraction subprocess count (default: cpu_count)")
@@ -4885,7 +4888,8 @@ def main() -> None:
         # has an API key set.
         if len(sys.argv) < 3:
             print(
-                "Usage: graphify extract <path> [--backend gemini|kimi|claude|openai|deepseek|ollama] "
+                "Usage: graphify extract <path> "
+                "[--backend gemini|kimi|claude|claude-cli|openai|deepseek|ollama|azure|bedrock] "
                 "[--model M] [--mode deep] [--out DIR] [--google-workspace] [--no-cluster] "
                 "[--max-workers N] [--token-budget N] [--max-concurrency N] "
                 "[--api-timeout S] [--postgres DSN] [--cargo] [--timing]",
