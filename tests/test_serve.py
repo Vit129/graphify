@@ -1672,3 +1672,31 @@ def test_shortest_path_tool_undirected_opt_in():
     assert "Shortest path (2 hops)" in out
     assert out.count("<--calls--") == 2
     assert "-->" not in out
+
+
+# --- #1596: per-term seed diversity ---
+
+def test_pick_seeds_diversity_recovers_starved_term():
+    """Reproduces #1445: a vague natural-language query where one term's
+    incidental EXACT match on an unrelated node (e.g. a common word also used
+    as an unrelated field/identifier) outscores every match on the
+    query's other, actually-relevant terms by ~1000x. Without G/terms, the
+    gap cutoff discards the relevant candidate entirely; with them, it is
+    recovered as a guaranteed per-term seed.
+    """
+    G = nx.DiGraph()
+    G.add_node("noise", label="unrelated", source_file="design_tokens.json")
+    G.add_node("target", label="rate_limit_widget", source_file="src/widget.py")
+    G.add_node("other", label="something_else", source_file="src/other.py")
+    G.add_edge("other", "target")
+
+    terms = ["unrelated", "widget"]
+    scored = [(1000.0, "noise"), (1.0, "target")]
+
+    # Sanity check the premise: without diversity, only the top match survives.
+    seeds_before = _pick_seeds(scored)
+    assert seeds_before == ["noise"]
+
+    seeds_after = _pick_seeds(scored, G=G, terms=terms)
+    assert "noise" in seeds_after
+    assert "target" in seeds_after

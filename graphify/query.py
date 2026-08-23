@@ -880,6 +880,18 @@ def _pick_seeds(
         if seeds and score < top_score * gap_ratio:
             break
         seeds.append(nid)
+    if G is not None and terms:
+        scored_nids = {nid for _, nid in scored}
+        norm_terms = sorted({tok for t in terms for tok in _search_tokens(t)})
+        for term in norm_terms:
+            term_scored = [(s, nid) for s, nid in _score_nodes(G, [term]) if nid in scored_nids]
+            if not term_scored:
+                continue
+            best_score = term_scored[0][0]
+            tied = [nid for s, nid in term_scored if s == best_score]
+            best_nid = max(tied, key=lambda n: G.degree(n)) if len(tied) > 1 else term_scored[0][1]
+            if best_nid not in seeds:
+                seeds.append(best_nid)
     if G is not None and multi_term:
         seen_communities = {G.nodes[n].get("community") for n in seeds}
         candidates = scored
