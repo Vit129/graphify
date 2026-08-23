@@ -690,24 +690,30 @@ def _rebuild_code(
                 # kept exactly as before, so cross-file edges that merely point at a
                 # re-extracted file (#1402 sourceless stubs / cross-file rewire) are
                 # not over-pruned — only edges the re-extracted file itself produced.
-                edge_evict_sources: set[str] = set(evict_sources)
+                # Deletion evicts edges regardless of tier; re-extraction only owns a
+                # source's AST-tier edges (checked per-edge below, #1865).
+                edge_deleted_sources: set[str] = set(deleted_paths)
+                rebuilt_edge_sources: set[str] = set()
                 for p in extract_targets:
                     for _root in (project_root, watch_root):
-                        edge_evict_sources.add(_nsf(str(p), str(_root)) or str(p))
-                def _edge_evicted(e: dict) -> bool:
-                    if not edge_evict_sources:
+                        rebuilt_edge_sources.add(_nsf(str(p), str(_root)) or str(p))
+
+                def _source_matches(sf: str | None, sources: set[str]) -> bool:
+                    if not sf or not sources:
                         return False
-                    sf = e.get("source_file")
-                    if not sf:
-                        return False
-                    if sf in edge_evict_sources:
+                    if sf in sources:
                         return True
                     norm = _nsf(sf, str(project_root))
-                    return bool(norm) and norm in edge_evict_sources
+                    return bool(norm) and norm in sources
+
                 preserved_edges = [
                     e for e in existing.get("links", existing.get("edges", []))
                     if e.get("source") in all_ids and e.get("target") in all_ids
-                    and not _edge_evicted(e)
+                    and not _source_matches(e.get("source_file"), edge_deleted_sources)
+                    and not (
+                        e.get("_origin") == "ast"
+                        and _source_matches(e.get("source_file"), rebuilt_edge_sources)
+                    )
                 ]
                 result = {
                     "nodes": result["nodes"] + preserved_nodes,
