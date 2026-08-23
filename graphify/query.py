@@ -178,7 +178,7 @@ def _query_terms(question: str) -> list[str]:
     so it still seeds on something), then expand synonyms."""
     terms: list[str] = []
     for raw in question.split():
-        for tok in re.findall(r"\w+", raw.lower()):
+        for tok in _search_tokens(raw):
             if _is_searchable(tok):
                 terms.append(tok)
     content = [t for t in terms if t not in _STOPWORDS]
@@ -935,7 +935,12 @@ def _pick_seeds(
     if G is not None and terms:
         scored_nids = {nid for _, nid in scored}
         norm_terms = sorted({tok for t in terms for tok in _search_tokens(t)})
-        for term in norm_terms:
+        intent = {t for t in norm_terms if t in _RELATIONAL_INTENT_TERMS}
+        if intent and any(t not in _RELATIONAL_INTENT_TERMS for t in norm_terms):
+            effective_terms = [t for t in norm_terms if t not in intent]
+        else:
+            effective_terms = norm_terms
+        for term in effective_terms:
             term_scored = [(s, nid) for s, nid in _score_nodes(G, [term]) if nid in scored_nids]
             if not term_scored:
                 continue
@@ -978,8 +983,31 @@ def _pick_seeds(
     return seeds
 
 
+# Verb-shaped tokens that express the RELATION a query asks about ("who calls
+# X", "what uses Y") rather than a symbol to look up. `_query_terms` keeps them
+# on purpose (a corpus can legitimately define an identifier named `calls`, see
+# #1597), but they must not be handed a guaranteed seed slot in `_pick_seeds`:
+# an incidental prefix match (e.g. "calls" prefixing `.callStoreWithAmount()`)
+# would otherwise seat an unrelated decoy as a BFS root (#2507). Demotion
+# happens when non-intent query terms exist, so `_score_nodes`' ranking —
+# where such a verb can still win a seat on merit via the gap window — is
+# untouched. Deliberately verbs only; relation NOUNS (module, field, return)
+# stay eligible for the guarantee.
+_RELATIONAL_INTENT_TERMS: frozenset[str] = frozenset({
+    "call", "calls", "called", "caller", "callers",
+    "invoke", "invokes", "invoked",
+    "use", "uses", "used", "using",
+    "import", "imports", "imported",
+    "export", "exports", "exported",
+    "extend", "extends", "extended",
+    "implement", "implements", "implemented",
+    "depend", "depends",
+    "reference", "references", "referenced",
+})
+
+
 _CONTEXT_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("call", ("call", "calls", "called", "invoke", "invokes", "invoked")),
+    ("call", ("call", "calls", "called", "caller", "callers", "invoke", "invokes", "invoked")),
     ("import", ("import", "imports", "imported", "module", "modules")),
     ("field", ("field", "fields", "member", "members", "property", "properties")),
     ("parameter_type", ("parameter", "parameters", "param", "params", "argument", "arguments")),
