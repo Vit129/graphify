@@ -49,8 +49,8 @@ def _is_searchable(term: str) -> bool:
     return True
 
 
-# English question/filler words dropped from query terms so content words drive
-# BFS seeding. Without this, "how does the frontier cache work" seeds on "how"/
+# Question/filler words dropped from query terms so content words drive BFS
+# seeding. Without this, "how does the frontier cache work" seeds on "how"/
 # "the"/"work" (which prefix-match prose labels like "Working Principles" at the
 # 100x prefix tier) instead of "frontier"/"cache", landing in the wrong part of
 # the graph. Merged from this fork's own P1-reopen stopword set and upstream's
@@ -58,16 +58,53 @@ def _is_searchable(term: str) -> bool:
 # overlapped heavily but each had words the other missed. Applied to query terms
 # only via `_query_terms`'s fallback-to-unfiltered behavior below — node text is
 # never filtered, so a symbol literally named `work` stays findable via
-# explain/path.
+# explain/path. `work`/`works`/`working` are included because "how does X work" /
+# "how X works" is the most common question phrasing.
+#
+# Non-English question words are just as damaging (#1900): in a mostly-English
+# code corpus, German "wie"/"funktioniert" are rare, so they get HIGH IDF weight
+# and out-seed the actual content noun by orders of magnitude. So this also
+# carries a curated German set plus a trimmed French/Spanish/Portuguese/Italian
+# set of question/filler words. Diacritics are kept intact (the query tokenizer
+# does not NFKD-strip).
+#
+# Collision tradeoff: a few foreign stopwords are also English content words.
+# We include high-German-value ones like "die"/"hat" (the all-stopword fallback
+# in _query_terms and the unfiltered find_node path keep an English "die"/"hat"
+# query workable), but deliberately OMIT "war"/"bald" (German was/soon) so
+# English queries about "war" or "bald" are not clobbered. On the Romance side
+# we likewise omit "comment" (FR how), "come" (IT how), "son"/"sin"/"con" (ES),
+# and "pour"/"des" (FR) — all too common as English/code terms.
 _STOPWORDS = frozenset({
-    "how", "does", "is", "are", "the", "a", "an", "to", "of", "in", "on",
-    "for", "and", "or", "what", "which", "that", "do", "did", "will",
-    "would", "should", "can", "could", "with", "from", "at", "by", "this",
-    "why", "when", "where", "who", "whom", "whose", "was", "were", "be",
-    "been", "being", "shall", "may", "might", "must", "has", "have", "had",
-    "but", "not", "without", "into", "onto", "off", "these", "those",
-    "there", "here", "its", "their", "them", "they", "about", "any", "all",
-    "some", "work", "works", "working",
+    # English
+    "how", "what", "why", "when", "where", "which", "who", "whom", "whose",
+    "does", "did", "do", "is", "are", "was", "were", "be", "been", "being",
+    "can", "could", "should", "would", "will", "shall", "may", "might", "must",
+    "has", "have", "had", "the", "a", "an", "to", "of", "in", "on", "for",
+    "and", "or", "but", "not", "with", "from", "at", "by",
+    "without", "into", "onto", "off", "that", "this", "these", "those", "there",
+    "here", "its", "their", "them", "they", "about", "any", "all", "some",
+    "work", "works", "working",
+    # German (articles/conjunctions/question words/auxiliaries/prepositions)
+    "der", "die", "das", "den", "dem", "ein", "eine", "und", "oder", "nicht",
+    "wie", "wer", "wann", "wo", "warum", "wieso",
+    "welche", "welcher", "welches",
+    "ist", "sind", "wird", "wurde", "hat", "haben",
+    "kann", "koennen", "können", "soll", "muss", "sich",
+    "bei", "mit", "von", "fuer", "für", "ueber", "über", "nach", "aus",
+    "gibt", "es",
+    "funktioniert", "geaendert", "geändert", "aendert", "ändert",
+    # French
+    "pourquoi", "quand", "quel", "quelle", "quels", "quelles", "quoi",
+    "qui", "que", "est", "sont", "fonctionne", "cette", "dans", "avec", "où",
+    # Spanish
+    "cómo", "como", "qué", "cuál", "cuáles", "cuándo", "dónde", "donde",
+    "porque", "por", "para", "funciona", "está", "están", "hay",
+    # Portuguese
+    "qual", "quais", "quando", "onde", "são", "estão", "tem", "uma", "não",
+    # Italian
+    "perché", "cosa", "quale", "quali", "dove", "funziona", "sono", "che",
+    "della",
 })
 
 
