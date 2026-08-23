@@ -591,8 +591,7 @@ def _rebuild_code(
                 )
                 if existing_in_root is not None:
                     # The path exists under the watched root but detect filtered
-                    # it out. Evict any stale nodes that still claim it.
-                    _add_deleted_source(existing_in_root)
+                    # it out. It is excluded, not deleted (#1795).
                     continue
 
                 deleted_in_root = next(
@@ -634,30 +633,49 @@ def _rebuild_code(
                 new_ast_ids = {n["id"] for n in result["nodes"]}
                 _relativize_source_files(existing, project_root)
                 evict_sources: set[str] = set(deleted_paths)
+                _root_str = str(project_root)
+                current_sources = {
+                    _nsf(str(p.relative_to(project_root)), _root_str)
+                    for p in code_files
+                    if p.is_relative_to(project_root)
+                }
+                excluded_alive_files: set[str] = set()
+                excluded_alive_nodes = 0
+                _alive_cache: dict[str, bool] = {}
+                for n in existing.get("nodes", []):
+                    sf = n.get("source_file")
+                    if not sf:
+                        continue
+                    if _get_extractor(Path(sf)) is None and Path(sf).suffix.lower() not in _CODE_EXTENSIONS:
+                        continue
+                    norm = _nsf(sf, _root_str)
+                    if norm not in current_sources:
+                        alive = _alive_cache.get(sf)
+                        if alive is None:
+                            p = Path(sf)
+                            if not p.is_absolute():
+                                p = project_root / p
+                            alive = p.exists()
+                            _alive_cache[sf] = alive
+                        if alive:
+                            excluded_alive_files.add(sf)
+                            excluded_alive_nodes += 1
+                            continue
+                        evict_sources.add(sf)
+                        evict_sources.add(norm)
+                        deleted_paths.add(norm)
+                        deleted_paths.add(sf)
+                if excluded_alive_files:
+                    print(
+                        f"[graphify watch] fail-closed: kept {excluded_alive_nodes} node(s) "
+                        f"from {len(excluded_alive_files)} file(s) that left the scan corpus "
+                        "but still exist on disk (ignore rules or filters changed?). "
+                        "Run a full re-extraction to purge them if the exclusion is intentional."
+                    )
                 if changed_paths is not None:
                     for p in extract_targets:
                         for root in (project_root, watch_root):
                             evict_sources.add(_nsf(str(p), str(root)) or str(p))
-                else:
-                    # Full re-extraction: reconcile against current code files to
-                    # evict nodes from files deleted since the last run (#1007).
-                    _root_str = str(project_root)
-                    current_sources = {
-                        _nsf(str(p.relative_to(project_root)), _root_str)
-                        for p in code_files
-                        if p.is_relative_to(project_root)
-                    }
-                    for n in existing.get("nodes", []):
-                        sf = n.get("source_file")
-                        if not sf:
-                            continue
-                        if Path(sf).suffix.lower() not in _CODE_EXTENSIONS:
-                            continue
-                        norm = _nsf(sf, _root_str)
-                        if norm not in current_sources:
-                            evict_sources.add(sf)
-                            evict_sources.add(norm)
-                            deleted_paths.add(norm)
                 # On a full re-extraction every code file is re-extracted, so
                 # new_ast_ids is the complete current AST set. Any AST-marked node
                 # missing from it is stale and must be dropped even if its source
