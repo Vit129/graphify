@@ -1497,11 +1497,15 @@ def find_path_with_disambiguation(
     target_label: str,
     source_path: str | None = None,
     target_path: str | None = None,
+    undirected: bool = False,
 ) -> dict:
     """Resolve `source_label`/`target_label` to nodes and find a
     degree-weighted, hub-avoiding shortest path, retrying every near-tied
     candidate pair (not just the top-scored node on each side) before
     giving up.
+
+    Directed by default (#2487): the returned path must follow stored
+    caller→callee direction; pass ``undirected=True`` to ignore it.
 
     `source_path`/`target_path` (P16): optional source_file-prefix filters
     that narrow each endpoint's candidates before the tie-retry loop, so a
@@ -1525,7 +1529,7 @@ def find_path_with_disambiguation(
       - "same_node_error": str              (both sides resolved to one node)
       - the full result: "warnings" (list[str]), "path_nodes" (list[str] | None),
         "src_nid", "tgt_nid" (resolved endpoints, or None if no path found),
-        "used_hub_fallback" (bool), "tried_pairs" (int)
+        "used_hub_fallback" (bool), "tried_pairs" (int), "undirected" (bool)
     """
     import networkx as _nx
 
@@ -1580,12 +1584,28 @@ def find_path_with_disambiguation(
     # real, meaningful call chain.
     from graphify.analyze import _BUILTIN_NOISE_LABELS
 
-    # Deterministic path (#2074): the hash-seeded undirected view picked an
-    # arbitrary route among equal-length paths. Build a sorted, materialized
-    # undirected graph so the chosen path is canonical.
-    G_weighted = _nx.Graph()
-    G_weighted.add_nodes_from(sorted(G.nodes(data=True), key=lambda x: str(x[0])))
-    G_weighted.add_edges_from(sorted((min(str(u), str(v)), max(str(u), str(v))) for u, v in G.edges()))
+    # Deterministic path (#2074) & direction-aware routing (#2487):
+    if undirected:
+        G_weighted = _nx.Graph()
+        G_weighted.add_nodes_from(sorted(G.nodes(data=True), key=lambda x: str(x[0])))
+        G_weighted.add_edges_from(sorted((min(str(u), str(v)), max(str(u), str(v))) for u, v in G.edges()))
+    else:
+        # Directed by default (#2487). True direction is NOT raw arc order:
+        # legacy canonicalized files persist a flipped arc with _src/_tgt
+        # markers (#2309), so build the digraph from _src/_tgt (falling back
+        # to the loaded arc) rather than to_directed().
+        G_weighted = _nx.DiGraph()
+        G_weighted.add_nodes_from(sorted(G.nodes(data=True), key=lambda x: str(x[0])))
+        directed_edges = set()
+        for u, v, d in G.edges(data=True):
+            if "_src" in d and "_tgt" in d:
+                directed_edges.add((d["_src"], d["_tgt"]))
+            elif G.is_directed():
+                directed_edges.add((u, v))
+            else:
+                directed_edges.add((u, v))
+                directed_edges.add((v, u))
+        G_weighted.add_edges_from(sorted(directed_edges))
     degree = dict(G_weighted.degree())
     for u, v in G_weighted.edges():
         G_weighted[u][v]["_pathweight"] = 1 + degree.get(u, 0) + degree.get(v, 0)
@@ -1644,4 +1664,5 @@ def find_path_with_disambiguation(
         "tgt_nid": resolved_tgt,
         "used_hub_fallback": used_hub_fallback,
         "tried_pairs": len(pairs),
+        "undirected": undirected,
     }

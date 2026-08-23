@@ -180,6 +180,68 @@ def _community_header(cid: int, community_name) -> str:
     return base
 
 
+def _shortest_path_text(G: nx.Graph, arguments: dict) -> str:
+    """Body of the `shortest_path` MCP tool (module-level so tests can call it
+    without an mcp install).
+
+    Directed by default (#2487): the returned path must follow stored
+    caller→callee direction; pass ``undirected=True`` to ignore it.
+    """
+    from graphify.query import find_path_with_disambiguation
+    from graphify.build import edge_datas
+
+    undirected = bool(arguments.get("undirected", False))
+    result = find_path_with_disambiguation(
+        G, arguments["source"], arguments["target"], undirected=undirected
+    )
+    if "error" in result:
+        return result["error"]
+    if "same_node_error" in result:
+        return result["same_node_error"]
+    warnings = result["warnings"]
+    path_nodes = result["path_nodes"]
+    if path_nodes is None:
+        tried = result["tried_pairs"]
+        suffix = f" (tried {tried} candidate pair{'s' if tried != 1 else ''})" if tried > 1 else ""
+        if undirected:
+            return f"No path found between '{arguments['source']}' and '{arguments['target']}'.{suffix}"
+        return (
+            f"No directed path found between '{arguments['source']}' and '{arguments['target']}'.{suffix} "
+            "Pass undirected=true to search ignoring edge direction."
+        )
+    if result["used_hub_fallback"]:
+        warnings.append(
+            "note: no path avoiding generic/primitive hub nodes (Int, module anchors, etc.) - "
+            "this path routes through one"
+        )
+    max_hops = int(arguments.get("max_hops", 8))
+    hops = len(path_nodes) - 1
+    if hops > max_hops:
+        return f"Path exceeds max_hops={max_hops} ({hops} hops found)."
+    segments = []
+    for i in range(len(path_nodes) - 1):
+        u, v = path_nodes[i], path_nodes[i + 1]
+        fwd, bwd = [], []
+        for a, b in ((u, v), (v, u)):
+            if G.has_edge(a, b):
+                for d in edge_datas(G, a, b):
+                    (fwd if d.get("_src", a) == u else bwd).append(d)
+        datas = fwd or bwd
+        forward = bool(fwd)
+        rels = sorted({d.get("relation") for d in datas if d.get("relation")})
+        rel = "/".join(rels) if rels else "related"
+        confs = sorted({d.get("confidence") for d in datas if d.get("confidence")})
+        conf_str = f" [{'/'.join(confs)}]" if confs else ""
+        if i == 0:
+            segments.append(G.nodes[u].get("label", u))
+        if forward:
+            segments.append(f"--{rel}{conf_str}--> {G.nodes[v].get('label', v)}")
+        else:
+            segments.append(f"<--{rel}{conf_str}-- {G.nodes[v].get('label', v)}")
+    prefix = ("\n".join(warnings) + "\n") if warnings else ""
+    return prefix + f"Shortest path ({hops} hops):\n  " + " ".join(segments)
+
+
 def _build_server(graph_path: str):
     """Build the configured low-level MCP Server (shared by every transport).
 
@@ -688,51 +750,7 @@ def _build_server(graph_path: str):
         )
 
     def _tool_shortest_path(arguments: dict) -> str:
-        from graphify.query import find_path_with_disambiguation
-
-        result = find_path_with_disambiguation(G, arguments["source"], arguments["target"])
-        if "error" in result:
-            return result["error"]
-        if "same_node_error" in result:
-            return result["same_node_error"]
-        warnings = result["warnings"]
-        path_nodes = result["path_nodes"]
-        if path_nodes is None:
-            tried = result["tried_pairs"]
-            suffix = f" (tried {tried} candidate pair{'s' if tried != 1 else ''})" if tried > 1 else ""
-            return f"No path found between '{arguments['source']}' and '{arguments['target']}'.{suffix}"
-        if result["used_hub_fallback"]:
-            warnings.append(
-                "note: no path avoiding generic/primitive hub nodes (Int, module anchors, etc.) - "
-                "this path routes through one"
-            )
-        max_hops = int(arguments.get("max_hops", 8))
-        hops = len(path_nodes) - 1
-        if hops > max_hops:
-            return f"Path exceeds max_hops={max_hops} ({hops} hops found)."
-        segments = []
-        from graphify.build import edge_datas
-        for i in range(len(path_nodes) - 1):
-            u, v = path_nodes[i], path_nodes[i + 1]
-            fwd, bwd = [], []
-            for a, b in ((u, v), (v, u)):
-                if G.has_edge(a, b):
-                    for d in edge_datas(G, a, b):
-                        (fwd if d.get("_src", a) == u else bwd).append(d)
-            datas = fwd or bwd
-            forward = bool(fwd)
-            rels = sorted({d.get("relation") for d in datas if d.get("relation")})
-            rel = "/".join(rels) if rels else "related"
-            confs = sorted({d.get("confidence") for d in datas if d.get("confidence")})
-            conf_str = f" [{'/'.join(confs)}]" if confs else ""
-            if i == 0:
-                segments.append(G.nodes[u].get("label", u))
-            if forward:
-                segments.append(f"--{rel}{conf_str}--> {G.nodes[v].get('label', v)}")
-            else:
-                segments.append(f"<--{rel}{conf_str}-- {G.nodes[v].get('label', v)}")
-        prefix = ("\n".join(warnings) + "\n") if warnings else ""
-        return prefix + f"Shortest path ({hops} hops):\n  " + " ".join(segments)
+        return _shortest_path_text(G, arguments)
 
     def _tool_list_prs(arguments: dict) -> str:
         from graphify.prs import fetch_prs, fetch_worktrees, format_prs_text, _detect_default_branch

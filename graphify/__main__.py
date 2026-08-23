@@ -3343,7 +3343,7 @@ def main() -> None:
         if len(sys.argv) < 4:
             print(
                 'Usage: graphify path "<source>" "<target>" [--path P] '
-                "[--source-path P] [--target-path P] [--graph path]",
+                "[--source-path P] [--target-path P] [--undirected] [--graph path]",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -3357,6 +3357,7 @@ def main() -> None:
         # --target-path narrow each independently (needed when both labels are
         # duplicated in different dirs). Per-endpoint value wins over --path.
         shared_path = source_path = target_path = None
+        undirected = False
         args = sys.argv[4:]
         i = 0
         while i < len(args):
@@ -3372,6 +3373,9 @@ def main() -> None:
             elif args[i] == "--target-path" and i + 1 < len(args):
                 target_path = args[i + 1]
                 i += 2
+            elif args[i] == "--undirected":
+                undirected = True
+                i += 1
             else:
                 i += 1
         source_path = source_path or shared_path
@@ -3407,7 +3411,12 @@ def main() -> None:
             G = json_graph.node_link_graph(_raw)
         _warn_if_graph_stale(gp, _raw)
         result = find_path_with_disambiguation(
-            G, source_label, target_label, source_path=source_path, target_path=target_path
+            G,
+            source_label,
+            target_label,
+            source_path=source_path,
+            target_path=target_path,
+            undirected=undirected,
         )
         if "error" in result:
             print(result["error"], file=sys.stderr)
@@ -3421,7 +3430,13 @@ def main() -> None:
         if path_nodes is None:
             tried = result["tried_pairs"]
             suffix = f" (tried {tried} candidate pair{'s' if tried != 1 else ''})" if tried > 1 else ""
-            print(f"No path found between '{source_label}' and '{target_label}'.{suffix}")
+            if undirected:
+                print(f"No path found between '{source_label}' and '{target_label}'.{suffix}")
+            else:
+                print(
+                    f"No directed path found between '{source_label}' and '{target_label}'.{suffix}\n"
+                    "  Pass --undirected to search ignoring edge direction."
+                )
             sys.exit(0)
         if result["used_hub_fallback"]:
             print(
