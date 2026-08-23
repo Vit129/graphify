@@ -2341,6 +2341,152 @@ def _trigger_live_reload(html_path: Path) -> None:
         subprocess.run(["osascript", "-e", safari_cmd], capture_output=True)
 
 
+def _stale_graph_sources(
+    graph_path: Path,
+    scan_root: Path,
+    seen_files: set[str],
+) -> list[str]:
+    """Source files graph.json still references but the current scan no longer
+    contains (#1909).
+
+    Incremental extract's prune set was historically derived from the manifest
+    alone (``manifest - corpus``), so a file that became EXCLUDED
+    (.graphifyignore/.gitignore/--exclude changed) without being listed in the
+    manifest kept its stale nodes in graph.json forever. Derive prune
+    candidates from the graph's own node ``source_file``s instead: anything
+    the graph references that the post-exclude detect corpus no longer
+    contains is stale, whether the file was deleted or newly excluded.
+
+    Only IN-ROOT paths are candidates: out-of-root/absolute entries
+    (--include sources, symlinked external corpora) are never walked by
+    detect, so their absence from the corpus is not staleness evidence.
+    Relative entries are re-anchored against both the scan root and the
+    graph's own output root (``--out`` extracts store source_files relative
+    to the OUT root, e.g. ``../project/x.py``, #555/#1899); only anchors
+    that land inside the scan root count.
+    ``seen_files`` must be the FULL detect output including unclassified
+    files, so nodes from walked-but-unsupported sources (e.g. introspected
+    Cargo.toml manifests) are not misread as stale.
+    """
+    try:
+        data = json.loads(graph_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(data, dict):
+        return []
+    try:
+        root_res = scan_root.resolve()
+    except (OSError, RuntimeError):
+        root_res = scan_root
+    # <out>/graphify-out/graph.json — relative source_files may be anchored here.
+    out_base = graph_path.parent.parent
+    try:
+        out_base = out_base.resolve()
+    except (OSError, RuntimeError):
+        pass
+
+    def _within_root(p: Path) -> bool:
+        try:
+            p.relative_to(root_res)
+            return True
+        except ValueError:
+            pass
+        try:
+            p.resolve().relative_to(root_res)
+            return True
+        except (ValueError, OSError, RuntimeError):
+            return False
+
+    def _in_seen(p: Path) -> bool:
+        if str(p) in seen_files:
+            return True
+        try:
+            return str(p.resolve()) in seen_files
+        except (OSError, RuntimeError):
+            return False
+
+    stale: list[str] = []
+    checked: set[str] = set()
+    for n in data.get("nodes", []):
+        if not isinstance(n, dict):
+            continue
+        sf = n.get("source_file")
+        if not sf or not isinstance(sf, str) or sf in checked:
+            continue
+        checked.add(sf)
+        if "://" in sf:
+            continue  # remote/virtual source (e.g. Google Workspace), not a scanned path
+        p = Path(sf)
+        if p.is_absolute():
+            candidates = [p]
+        else:
+            rel = sf.replace("\\", "/")
+            bases = [root_res]
+            if out_base != root_res:
+                bases.append(out_base)
+            candidates = [
+                Path(os.path.normpath(str(base / rel))) for base in bases
+            ]
+        in_root = [c for c in candidates if _within_root(c)]
+        if not in_root:
+            continue  # out-of-root under every anchor: never prune
+        if any(_in_seen(c) for c in in_root):
+            continue  # still part of the scan corpus
+        stale.append(sf)
+    return stale
+
+
+def _prune_graph_json_sources(graph_path: Path, stale_sources: list[str]) -> int:
+    """Drop nodes/edges/hyperedges owned by ``stale_sources`` from graph.json
+    in place. Returns the number of nodes removed.
+
+    Used by the ``--no-cluster`` incremental early-exit: that path never runs
+    ``build_merge`` (it would raw-dump only the new chunks), so an
+    exclusion-only change must prune the existing raw graph directly or the
+    newly-excluded file's nodes survive forever (#1909).
+    ``stale_sources`` comes from :func:`_stale_graph_sources`, i.e. the
+    graph's own ``source_file`` spellings, so exact string matching is enough.
+    """
+    try:
+        data = json.loads(graph_path.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    if not isinstance(data, dict):
+        return 0
+    stale = set(stale_sources)
+    links_key = "links" if "links" in data else "edges"
+    nodes = [n for n in data.get("nodes", []) if isinstance(n, dict)]
+    kept_nodes = [n for n in nodes if n.get("source_file") not in stale]
+    removed_ids = {
+        n.get("id") for n in nodes if n.get("source_file") in stale
+    }
+    n_removed = len(nodes) - len(kept_nodes)
+    kept_edges = [
+        e for e in data.get(links_key, [])
+        if isinstance(e, dict)
+        and e.get("source_file") not in stale
+        and e.get("source") not in removed_ids
+        and e.get("target") not in removed_ids
+    ]
+    kept_hyper = [
+        h for h in data.get("hyperedges", [])
+        if isinstance(h, dict) and h.get("source_file") not in stale
+    ]
+    if n_removed == 0 and len(kept_edges) == len(data.get(links_key, [])) and (
+        len(kept_hyper) == len(data.get("hyperedges", []))
+    ):
+        return 0
+    data["nodes"] = kept_nodes
+    data[links_key] = kept_edges
+    if "hyperedges" in data:
+        data["hyperedges"] = kept_hyper
+    from graphify.export import backup_if_protected as _backup
+    _backup(graph_path.parent)
+    from graphify.paths import write_json_atomic as _write_json_atomic
+    _write_json_atomic(graph_path, data, indent=2)
+    return n_removed
+
+
 def main() -> None:
     for _stream in (sys.stdout, sys.stderr):
         if _stream is not None and hasattr(_stream, "reconfigure"):
@@ -5099,6 +5245,8 @@ def main() -> None:
             paper_files = []
             image_files = []
             deleted_files = []
+            excluded_files = []
+            graph_stale_sources = []
             unchanged_total = 0
             files_by_type = {}
             total_words = 0
@@ -5118,7 +5266,18 @@ def main() -> None:
             paper_files = [Path(p) for p in new_by_type.get("paper", [])]
             image_files = [Path(p) for p in new_by_type.get("image", [])]
             deleted_files = list(detection.get("deleted_files", []))
+            excluded_files = list(detection.get("excluded_files", []))
             unchanged_total = sum(len(v) for v in detection.get("unchanged_files", {}).values())
+            # #1909: derive the prune set from the existing graph itself, not
+            # just the manifest. A file that became excluded without ever
+            # being manifest-listed (every pre-#1897 graph is in this state)
+            # still has stale nodes carried forward by build_merge unless the
+            # graph's own sources are reconciled against the current corpus.
+            _seen_files = {f for _fl in files_by_type.values() for f in _fl}
+            _seen_files.update(detection.get("unclassified", []))
+            graph_stale_sources = _stale_graph_sources(
+                existing_graph_path, target, _seen_files
+            )
         else:
             print(f"[graphify extract] scanning {target}")
             detection = _detect(target, google_workspace=google_workspace or None, extra_excludes=cli_excludes or None)
@@ -5129,14 +5288,21 @@ def main() -> None:
             paper_files = [Path(p) for p in files_by_type.get("paper", [])]
             image_files = [Path(p) for p in files_by_type.get("image", [])]
             deleted_files = []
+            excluded_files = []
+            graph_stale_sources = []
             unchanged_total = 0
 
         semantic_files = doc_files + paper_files + image_files
         if incremental_mode:
+            # Excluded-but-alive files are reported separately from deletions
+            # (#1908): they still exist on disk, the scan just stopped
+            # covering them (ignore rules / --exclude changed).
+            _excl_note = f"; {len(excluded_files)} excluded" if excluded_files else ""
             print(
                 f"[graphify extract] {len(code_files)} code, {len(doc_files)} docs, "
                 f"{len(paper_files)} papers, {len(image_files)} images changed; "
                 f"{unchanged_total} unchanged; {len(deleted_files)} deleted"
+                f"{_excl_note}"
             )
         else:
             print(
@@ -5449,6 +5615,16 @@ def main() -> None:
             for ftype, flist in files_by_type.items()
         }
 
+        # Full-scan manifest saves prune rows for in-root files that left the
+        # scan corpus but still exist on disk (#1908). The corpus must be the
+        # RAW detect output (files_by_type), NOT the #933-stamp-filtered
+        # _manifest_files above — pruning to the filtered set would erase
+        # failed-chunk/omitted-doc rows and every doc row on --code-only runs.
+        _scan_corpus = (
+            {f for _fl in files_by_type.values() for f in _fl}
+            if has_path else None
+        )
+
         if no_cluster:
             # --no-cluster: dump the raw merged extraction as graph.json.
             # No NetworkX, no community detection, no analysis sidecar.
@@ -5468,12 +5644,26 @@ def main() -> None:
                 and not cargo_result.get("nodes")
                 and not cargo_result.get("edges")
             ):
+                # An exclusion-only change reaches this gate (excluded files
+                # are deliberately NOT in deleted_files, #1908) but must still
+                # scrub the newly-excluded sources from the raw graph (#1909).
+                # This path never runs build_merge, so prune in place.
+                if graph_stale_sources:
+                    _n_pruned = _prune_graph_json_sources(
+                        existing_graph_path, graph_stale_sources
+                    )
+                    if _n_pruned:
+                        print(
+                            f"[graphify extract] pruned {_n_pruned} node(s) from "
+                            f"{len(graph_stale_sources)} source file(s) no longer "
+                            "in the scan (deleted or excluded)."
+                        )
                 print(
                     "[graphify extract] no incremental changes detected "
                     "(--no-cluster); outputs left untouched."
                 )
                 try:
-                    _save_manifest(_manifest_files, manifest_path=str(manifest_path), kind="both", root=target)
+                    _save_manifest(_manifest_files, manifest_path=str(manifest_path), kind="both", root=target, scan_corpus=_scan_corpus)
                 except Exception as exc:
                     print(f"[graphify extract] warning: could not write manifest: {exc}", file=sys.stderr)
                 stages.total()
@@ -5538,7 +5728,7 @@ def main() -> None:
                     f"est. cost: ${cost:.4f}"
                 )
             try:
-                _save_manifest(_manifest_files, manifest_path=str(manifest_path), kind="both", root=target)
+                _save_manifest(_manifest_files, manifest_path=str(manifest_path), kind="both", root=target, scan_corpus=_scan_corpus)
             except Exception as exc:
                 print(f"[graphify extract] warning: could not write manifest: {exc}", file=sys.stderr)
             if global_merge:
@@ -5570,10 +5760,18 @@ def main() -> None:
         )
         dedup_backend = backend if dedup_llm else None
         if incremental_mode:
+            # Prune everything the current scan no longer covers: genuinely
+            # deleted manifest rows, excluded-but-alive manifest rows (#1908),
+            # and the graph's own stale sources — which catches files that
+            # became excluded without ever being manifest-listed (#1909).
+            _prune_sources: list[str] = list(deleted_files)
+            for _src in list(excluded_files) + graph_stale_sources:
+                if _src not in _prune_sources:
+                    _prune_sources.append(_src)
             G = _build_merge(
                 [merged],
                 graph_path=existing_graph_path,
-                prune_sources=deleted_files or None,
+                prune_sources=_prune_sources or None,
                 dedup=True,
                 dedup_llm_backend=dedup_backend,
                 root=target,
@@ -5683,7 +5881,7 @@ def main() -> None:
         from graphify.paths import write_json_atomic as _wja
         _wja(analysis_path, analysis, indent=2)
         try:
-            _save_manifest(_manifest_files, manifest_path=str(manifest_path), kind="both", root=target)
+            _save_manifest(_manifest_files, manifest_path=str(manifest_path), kind="both", root=target, scan_corpus=_scan_corpus)
         except Exception as exc:
             print(f"[graphify extract] warning: could not write manifest: {exc}", file=sys.stderr)
 
@@ -5695,11 +5893,12 @@ def main() -> None:
         )
         print(f"[graphify extract] wrote {analysis_path}")
         if incremental_mode:
+            _excl_note = f", {len(excluded_files)} excluded" if excluded_files else ""
             print(
                 f"[graphify extract] incremental summary: "
                 f"{sem_cache_hits + unchanged_total} files cached/unchanged, "
                 f"{len(code_files) + sem_cache_misses} re-extracted, "
-                f"{len(deleted_files)} deleted"
+                f"{len(deleted_files)} deleted{_excl_note}"
             )
         elif sem_cache_hits:
             print(f"[graphify extract] semantic cache: {sem_cache_hits} cached, {sem_cache_misses} re-extracted")
