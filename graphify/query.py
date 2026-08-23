@@ -627,7 +627,13 @@ def _node_search_text(data: dict, nid: str) -> str:
     label_tokens = " ".join(_search_tokens(data.get("label") or ""))
     source = (data.get("source_file") or "").lower()
     source_tokens = " ".join(_search_tokens(data.get("source_file") or ""))
-    return "\x00".join((norm_label, label_tokens, str(nid).lower(), source, source_tokens))
+    nid_text = str(nid).lower()
+    fields = (norm_label, label_tokens, nid_text, source, source_tokens)
+    if not nid_text.isascii():
+        nid_folded = _strip_diacritics(str(nid)).lower()
+        if nid_folded != nid_text:
+            fields += (nid_folded,)
+    return "\x00".join(fields)
 
 
 def _get_trigram_index(G: nx.Graph) -> dict:
@@ -1478,11 +1484,12 @@ def _find_node_tiers(
     term = " ".join(_search_tokens(label))
     if not term:
         return [], [], [], [], []
+    norm_query = _strip_diacritics(str(label)).lower().strip()
     source_exact: list[str] = []
     exact: list[str] = []
     prefix: list[str] = []
     substring: list[str] = []
-    candidate_ids = _trigram_candidates(G, [term])
+    candidate_ids = _trigram_candidates(G, [term, norm_query] if norm_query != term else [term])
     node_iter = (
         G.nodes(data=True) if candidate_ids is None
         else ((nid, G.nodes[nid]) for nid in candidate_ids)
@@ -1493,9 +1500,13 @@ def _find_node_tiers(
         label_tokens = " ".join(_search_tokens(d.get("label") or ""))
         source_tokens = " ".join(_search_tokens(d.get("source_file") or ""))
         nid_lower = nid.lower()
+        nid_norm = nid_lower if nid.isascii() else _strip_diacritics(nid).lower()
         if term == source_tokens:
             source_exact.append(nid)
-        elif term == norm_label or term == bare_label or term == label_tokens or term == nid_lower:
+        elif (
+            term == norm_label or term == bare_label or term == label_tokens or term == nid_lower
+            or norm_query == norm_label or norm_query == bare_label or norm_query == nid_norm
+        ):
             exact.append(nid)
         elif (
             norm_label.startswith(term)

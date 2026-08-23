@@ -34,7 +34,7 @@ from graphify.serve import (
     _embedding_corpus_hash,
     _shortest_path_text,
 )
-from graphify.query import _find_node_tied_group
+from graphify.query import _find_node_tied_group, _strip_diacritics
 
 
 def _make_call_chain() -> nx.DiGraph:
@@ -272,12 +272,38 @@ def test_find_node_matches_full_punctuated_unicode_label():
     assert _find_node(G, "Skill /auditar — Auditoría inquisitiva de enlaces") == ["n1"]
 
 
+def test_find_node_matches_punctuated_node_id_exactly():
+    # #2467: the id is only ever compared against `term`, which tokenizes on \w+
+    # ("concept:domain:widget" -> "concept domain widget"), so no id carrying
+    # punctuation could equal it. Only the symmetric `norm_query == nid_norm`
+    # match resolves an exactly-typed node id.
+    G = nx.Graph()
+    G.add_node("concept:domain:widget", label="Widget", norm_label="widget",
+               source_file="docs/domain.md", source_location="L1")
+    G.add_node("plain_node_id", label="Plain", norm_label="plain",
+               source_file="docs/plain.md", source_location="L1")
+    assert _find_node(G, "concept:domain:widget") == ["concept:domain:widget"]
+    assert _find_node(G, "plain_node_id") == ["plain_node_id"]   # unpunctuated ids as before
+    assert _find_node(G, "Widget") == ["concept:domain:widget"]  # label lookup as before
+
+
+def test_find_node_matches_merge_graphs_namespaced_node_id():
+    # #2467: `prefix_graph_for_global` namespaces every id with "<repo>::", so on a
+    # merged graph no node at all resolved by id — including the id that `explain`
+    # itself had just printed.
+    G = nx.Graph()
+    G.add_node("backend::src_server_router_go", label="Router()",
+               norm_label="router()", source_file="src/server/router.go",
+               source_location="L12")
+    assert _find_node(G, "backend::src_server_router_go") == ["backend::src_server_router_go"]
+
+
 # --- trigram candidate prefilter (the trigram index that shrinks the O(N) scan) ---
 
 
 def _force_full_scan(monkeypatch):
     """Disable the prefilter so a call exercises the original full-node scan."""
-    monkeypatch.setattr("graphify.serve._trigram_candidates", lambda *a, **k: None)
+    monkeypatch.setattr("graphify.query._trigram_candidates", lambda *a, **k: None)
 
 
 def _make_big_graph(n: int = 150) -> nx.Graph:
@@ -290,6 +316,23 @@ def _make_big_graph(n: int = 150) -> nx.Graph:
     G.add_node("rareA", label="ZebraQuokkaWidget", source_file="zoo/zqw.py")
     G.add_node("rareB", label="MarmosetGadget handler", source_file="zoo/marmoset.py")
     G.add_node("punct", label="Foo.Bar:Baz", source_file="pkg/foobar.py")
+    return G
+
+
+def _make_non_ascii_id_graph(n: int = 40) -> nx.Graph:
+    """A graph whose ids carry Hangul, large enough that the prefilter really runs.
+
+    The filler nodes are load-bearing: `_trigram_candidates` bails out to a full
+    scan when `min(present) > int(n * 0.10)`, so on a two-node graph any present
+    trigram trips the guard and the index path — where #2467's second defect lives —
+    is never exercised at all."""
+    G = nx.Graph()
+    for i in range(n):
+        G.add_node(f"id{i}", label=f"item node {i}", source_file=f"pkg/item_{i}.py")
+    G.add_node("concept:domain:한글", label="Hangul domain",
+               source_file="docs/한글.md", source_location="L1")
+    G.add_node("문서_목록", label="DocumentList",
+               source_file="src/문서_목록.py", source_location="L1")
     return G
 
 
@@ -310,6 +353,19 @@ def test_node_search_text_includes_all_matched_fields():
     assert parts[2] == "punct"                # nid
     assert parts[3] == "pkg/foobar.py"        # source_file
     assert parts[4] == "pkg foobar py"        # source_file tokens
+    assert len(parts) == 5                    # no folded-id field for an ASCII id (#2467)
+
+
+def test_node_search_text_appends_folded_non_ascii_node_id():
+    # #2467: for a Hangul id the raw and folded forms differ — precomposed syllables
+    # against conjoining jamo. Queries are trigrammed from the folded form, so the
+    # index has to carry it too, appended so the other field positions do not move.
+    G = _make_non_ascii_id_graph()
+    nid = "concept:domain:한글"
+    parts = _node_search_text(G.nodes[nid], nid).split("\x00")
+    assert parts[2] == nid
+    assert parts[5] == _strip_diacritics(nid).lower()
+    assert parts[5] != parts[2]
 
 
 def test_trigram_candidates_fast_path_fires_for_rare_term():
@@ -350,6 +406,36 @@ def test_find_node_prefilter_is_identical_to_full_scan(monkeypatch):
     # includes the punctuated label, exercised via its tokenized (label_tokens) form
     for label in ["ZebraQuokkaWidget", "MarmosetGadget handler", "Foo Bar Baz",
                   "item node 7", "missing"]:
+        fast = _find_node(G, label)
+        _force_full_scan(monkeypatch)
+        full = _find_node(G, label)
+        monkeypatch.undo()
+        assert fast == full, f"_find_node prefilter diverged (order!) for {label!r}"
+
+
+def test_find_node_matches_non_ascii_node_id_through_prefilter():
+    # #2467: `_node_search_text` indexed the id raw while every query folds through
+    # `_strip_diacritics`. NFKD decomposes a Hangul syllable into conjoining jamo,
+    # which have combining class 0 and so survive the combining-character filter —
+    # the needle's trigrams and the posting's trigrams were disjoint and the node
+    # was dropped from the candidate list before any predicate could see it.
+    import unicodedata
+    G = _make_non_ascii_id_graph()
+    for nid in ("concept:domain:한글", "문서_목록"):
+        assert unicodedata.normalize("NFKD", nid) != nid   # fixture must stay NFKD-sensitive
+        needles = [" ".join(_search_tokens(nid)), _strip_diacritics(nid).lower()]
+        candidates = _trigram_candidates(G, needles)
+        assert candidates is not None                      # index path, not the full-scan fallback
+        assert nid in candidates
+        assert _find_node(G, nid) == [nid]
+
+
+def test_find_node_node_id_prefilter_is_identical_to_full_scan(monkeypatch):
+    # #2467: an id must resolve the same way whether the candidates came from the
+    # trigram index or from the full scan.
+    G = _make_non_ascii_id_graph()
+    for label in ["concept:domain:한글", "문서_목록", "id7", "item node 7",
+                  "DocumentList", "missing"]:
         fast = _find_node(G, label)
         _force_full_scan(monkeypatch)
         full = _find_node(G, label)
