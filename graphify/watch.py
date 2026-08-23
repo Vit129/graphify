@@ -549,14 +549,68 @@ def _rebuild_code(
         code_files = [Path(f) for f in detected['files']['code']]
 
         # Include document files that have AST extractors (e.g. .md, .mdx, .qmd)
+        ast_doc_files: list[Path] = []
         for doc_file in detected['files'].get('document', []):
             p = Path(doc_file)
             if _get_extractor(p) is not None:
                 code_files.append(p)
+                ast_doc_files.append(p)
 
-        if not code_files:
+        existing_graph = out / "graph.json"
+        if not code_files and not existing_graph.exists():
             print("[graphify watch] No code files found - nothing to rebuild.")
             return False
+
+        # #1915: a document that already carries SEMANTIC (LLM) nodes in the
+        # existing graph must not ALSO be AST-quick-scanned — otherwise every
+        # rebuild mints heading nodes on top of the preserved semantic nodes
+        # and the doc is represented twice (~4x graph bloat vs the CLI update
+        # path, which AST-extracts only code). Semantic supersedes AST per doc
+        # source: the quick-scan stays as a fallback for docs with no semantic
+        # layer (the no-LLM doc-structure feature, #09b33b7) and for brand-new
+        # docs the graph has never seen. These docs stay in ``code_files`` so
+        # corpus membership (#1795 fail-closed deletion evidence) and the
+        # shrink accounting below still cover them — a previously-bloated
+        # graph must be allowed to self-heal on a full rebuild without the
+        # shrink-guard refusing the smaller write.
+        semantic_doc_files: set[Path] = set()
+        if ast_doc_files and existing_graph.exists():
+            try:
+                check_graph_file_size_cap(existing_graph)
+                prior = json.loads(existing_graph.read_text(encoding="utf-8"))
+                # Semantic doc nodes lack the AST origin marker. Gate on the
+                # doc-shaped subset of the six-value file_type enum
+                # (document/concept/rationale/paper, matching build.py's
+                # canonical set minus code/image) rather than "document"
+                # alone (#1915, #1954).
+                semantic_doc_identities: set[str] = set()
+                _root_str = str(project_root)
+                for node in prior.get("nodes", []):
+                    if node.get("_origin") == "ast":
+                        continue
+                    if node.get("file_type") not in (
+                        "document", "concept", "rationale", "paper"
+                    ):
+                        continue
+                    sf = node.get("source_file")
+                    if sf:
+                        norm = _nsf(sf, _root_str)
+                        if norm:
+                            semantic_doc_identities.add(norm)
+                        semantic_doc_identities.add(sf)
+                if semantic_doc_identities:
+                    for p in ast_doc_files:
+                        p_str = str(p)
+                        norm_p = _nsf(p_str, _root_str)
+                        rel_p = str(p.relative_to(project_root)) if p.is_relative_to(project_root) else None
+                        if (
+                            p_str in semantic_doc_identities
+                            or (norm_p and norm_p in semantic_doc_identities)
+                            or (rel_p and rel_p in semantic_doc_identities)
+                        ):
+                            semantic_doc_files.add(p)
+            except Exception:
+                semantic_doc_files = set()
 
         # Incremental path: when the caller passed an explicit change list,
         # extract only changed-and-still-existing files. Deleted paths are
@@ -568,6 +622,7 @@ def _rebuild_code(
 
         if changed_paths is not None:
             code_set = {p.resolve() for p in code_files}
+            semantic_doc_set = {p.resolve() for p in semantic_doc_files}
             wanted: list[Path] = []
             change_root = Path.cwd().resolve()
             for raw in changed_paths:
@@ -578,7 +633,7 @@ def _rebuild_code(
                 )
                 tracked = next((cand for cand in candidates if cand.exists() and cand in code_set), None)
                 if tracked is not None:
-                    if tracked not in wanted:
+                    if tracked not in wanted and tracked not in semantic_doc_set:
                         wanted.append(tracked)
                     continue
 
@@ -607,7 +662,7 @@ def _rebuild_code(
                 return True
             extract_targets = wanted
         else:
-            extract_targets = code_files
+            extract_targets = [p for p in code_files if p not in semantic_doc_files]
 
         commit = _git_head(watch_root)
         result = extract(extract_targets, cache_root=watch_root, value_coupling=value_coupling) if extract_targets else {
