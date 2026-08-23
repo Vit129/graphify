@@ -170,6 +170,45 @@ def test_to_html_pins_visjs_version_with_sri():
     # crossorigin="anonymous" is required for SRI on cross-origin scripts.
     assert 'crossorigin="anonymous"' in content
 
+
+def test_to_html_neighbor_links_have_no_inline_onclick_xss():
+    """#1838: neighbor links dropped an unescaped JSON.stringify(nid) into a
+    quoted inline onclick — which broke every link (the value's own quotes
+    truncated the attribute) and let a node id/label containing a double-quote
+    (from a document or a scraped `graphify add` URL) inject a live event handler
+    into the local report (stored XSS). The template must instead carry the id in
+    an escaped data attribute and dispatch via one delegated listener."""
+    G = make_graph()
+    communities = cluster(G)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.html"
+        to_html(G, communities, str(out))
+        html = out.read_text()
+    # The vulnerable inline handler is gone entirely...
+    assert 'onclick="focusNode(' not in html
+    assert "JSON.stringify(nid)" not in html
+    # ...replaced by an escaped data attribute + a single delegated listener.
+    assert 'data-nid="${esc(nid)}"' in html
+    assert "closest('.neighbor-link')" in html
+
+
+def test_to_html_neighbor_links_escapes_hostile_node_ids():
+    """Verify that node IDs containing quotes and script tags are safe in neighbor links."""
+    import networkx as nx
+    G = nx.Graph()
+    malicious_id = 'node" onclick="alert(1)" <script>alert(2)</script>'
+    G.add_node("target", label="Target", file_type="code")
+    G.add_node(malicious_id, label='Malicious "Label" <tag>', file_type="doc")
+    G.add_edge("target", malicious_id, relation="calls")
+    communities = {0: ["target", malicious_id]}
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.html"
+        to_html(G, communities, str(out))
+        html = out.read_text()
+    assert 'onclick="alert(1)"' not in html
+    assert '<script>alert(2)</script>' not in html
+
+
 def test_to_html_contains_search():
     G = make_graph()
     communities = cluster(G)
