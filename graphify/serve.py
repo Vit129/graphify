@@ -25,7 +25,22 @@ def _load_graph(graph_path: str) -> nx.Graph:
         data = json.loads(safe.read_text(encoding="utf-8"))
         if "links" not in data and "edges" in data:
             data = dict(data, links=data["edges"])
-        data = {**data, "directed": True}
+        # Keep in-file markers when present (#2309): unconditionally
+        # overwriting them with source/target would clobber the true
+        # direction of a link persisted in flipped endpoint order.
+        data = dict(
+            data,
+            links=[
+                {
+                    **link,
+                    "_src": link.get("_src", link.get("source")),
+                    "_tgt": link.get("_tgt", link.get("target")),
+                }
+                for link in data.get("links", [])
+            ],
+            directed=True,
+            multigraph=True,
+        )
         try:
             from graphify.build import graph_has_legacy_ids as _legacy
             if _legacy(data.get("nodes", [])):
@@ -577,8 +592,9 @@ def _build_server(graph_path: str):
             rel = d.get("relation", "")
             if rel_filter and rel_filter not in rel.lower():
                 continue
+            arrow = "-->" if d.get("_src", nid) == nid else "<--"
             lines.append(
-                f"  --> {sanitize_label(G.nodes[nb].get('label', nb))} "
+                f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
                 f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
             )
         for nb in G.predecessors(nid):
@@ -586,8 +602,9 @@ def _build_server(graph_path: str):
             rel = d.get("relation", "")
             if rel_filter and rel_filter not in rel.lower():
                 continue
+            arrow = "<--" if d.get("_src", nb) == nb else "-->"
             lines.append(
-                f"  <-- {sanitize_label(G.nodes[nb].get('label', nb))} "
+                f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
                 f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
             )
         return "\n".join(lines)
@@ -697,12 +714,13 @@ def _build_server(graph_path: str):
         from graphify.build import edge_datas
         for i in range(len(path_nodes) - 1):
             u, v = path_nodes[i], path_nodes[i + 1]
-            if G.has_edge(u, v):
-                datas = edge_datas(G, u, v)
-                forward = True
-            else:
-                datas = edge_datas(G, v, u)
-                forward = False
+            fwd, bwd = [], []
+            for a, b in ((u, v), (v, u)):
+                if G.has_edge(a, b):
+                    for d in edge_datas(G, a, b):
+                        (fwd if d.get("_src", a) == u else bwd).append(d)
+            datas = fwd or bwd
+            forward = bool(fwd)
             rels = sorted({d.get("relation") for d in datas if d.get("relation")})
             rel = "/".join(rels) if rels else "related"
             confs = sorted({d.get("confidence") for d in datas if d.get("confidence")})
