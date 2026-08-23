@@ -4894,7 +4894,7 @@ def main() -> None:
                 "[--backend gemini|kimi|claude|claude-cli|openai|deepseek|ollama|azure|bedrock] "
                 "[--model M] [--mode deep] [--out DIR] [--google-workspace] [--no-cluster] "
                 "[--max-workers N] [--token-budget N] [--max-concurrency N] "
-                "[--api-timeout S] [--postgres DSN] [--cargo] [--timing]",
+                "[--api-timeout S] [--postgres DSN] [--cargo] [--allow-partial] [--timing]",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -4919,6 +4919,7 @@ def main() -> None:
         out_dir: Path | None = Path(proj_config.get("out")) if "out" in proj_config else None
         cli_postgres_dsn: str | None = proj_config.get("postgres")
         cli_cargo: bool = proj_config.get("cargo", False)
+        cli_allow_partial: bool = False
         no_cluster = proj_config.get("no_cluster", False)
         value_coupling = proj_config.get("value_coupling", False)  # P15 opt-in
         pagerank_ranking = proj_config.get("pagerank_ranking", False)  # P17 item 2 opt-in
@@ -5043,6 +5044,8 @@ def main() -> None:
                 cli_wiki = True; i += 1
             elif a == "--no-viz":
                 cli_no_viz = True; i += 1
+            elif a == "--allow-partial":
+                cli_allow_partial = True; i += 1
             elif a == "--update":
                 # Compatibility flag, incremental_mode is auto-detected
                 i += 1
@@ -5230,6 +5233,14 @@ def main() -> None:
                     )
                     sys.exit(1)
 
+        # Track whether this run's extraction was incomplete (a whole extractor
+        # pass crashed, or some semantic chunks failed). A partial result must not
+        # be force-written over a good complete graph — the final write falls back
+        # to the #479 shrink guard unless --allow-partial is set.
+        _extraction_incomplete = False
+        if detection.get("walk_errors"):
+            _extraction_incomplete = True
+
         # AST extraction on code files. Empty code list (docs-only corpus) is
         # the issue #698 case — skip cleanly instead of crashing inside extract().
         ast_result: dict = {"nodes": [], "edges": [], "input_tokens": 0, "output_tokens": 0}
@@ -5247,6 +5258,7 @@ def main() -> None:
             except Exception as exc:
                 print(f"[graphify extract] AST extraction failed: {exc}", file=sys.stderr)
                 ast_result = {"nodes": [], "edges": [], "input_tokens": 0, "output_tokens": 0}
+                _extraction_incomplete = True
         stages.mark("AST extract")
 
         # Semantic extraction on docs/papers/images. Check cache first.
@@ -5316,6 +5328,7 @@ def main() -> None:
                         file=sys.stderr,
                     )
                     fresh = {"nodes": [], "edges": [], "hyperedges": [], "input_tokens": 0, "output_tokens": 0}
+                    _extraction_incomplete = True
 
                 # on_chunk_done only fires after a chunk succeeds. If fresh
                 # semantic extraction was requested and no chunks completed,
@@ -5337,6 +5350,8 @@ def main() -> None:
                         file=sys.stderr,
                     )
                     sys.exit(1)
+                if _chunk_stats["total"] and _chunk_stats["succeeded"] < _chunk_stats["total"]:
+                    _extraction_incomplete = True
                 try:
                     _save_semantic_cache(
                         fresh.get("nodes", []),
@@ -5474,6 +5489,35 @@ def main() -> None:
                     _e["source_file"] = (
                         _node_sf.get(_e.get("source")) or _node_sf.get(_e.get("target")) or ""
                     )
+            # RT-parity for the raw path: an incomplete build must not force a
+            # partial graph over a larger complete one here either. The clustered
+            # path gets this from to_json's #479 guard; this path never calls
+            # to_json, so replicate the shrink check against the existing file and
+            # exit before the write/manifest unless --allow-partial is set.
+            if _extraction_incomplete and not cli_allow_partial:
+                from graphify.export import (
+                    existing_graph_node_count as _existing_graph_node_count,
+                    MALFORMED_GRAPH as _MALFORMED_GRAPH,
+                )
+                _existing_n = _existing_graph_node_count(graph_json_path)
+                _malformed = _existing_n is _MALFORMED_GRAPH
+                _shrinks = isinstance(_existing_n, int) and len(merged["nodes"]) < _existing_n
+                if _malformed or _shrinks:
+                    _detail = (
+                        f"the existing {graph_json_path} is present but unparseable "
+                        "(corrupt or a mid-write), so a shrink cannot be ruled out"
+                        if _malformed
+                        else f"smaller than the existing {graph_json_path} "
+                        f"({len(merged['nodes'])} < {_existing_n} nodes)"
+                    )
+                    print(
+                        "[graphify extract] error: extraction was incomplete (an AST/"
+                        f"semantic pass failed) and the resulting --no-cluster graph is {_detail}. "
+                        "Refusing to overwrite a complete graph with a partial one. Re-run after "
+                        "fixing the failures, or pass --allow-partial to overwrite anyway.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
             _backup(graphify_out)
             from graphify.paths import write_json_atomic as _write_json_atomic
             _write_json_atomic(graph_json_path, merged, indent=2)
@@ -5575,8 +5619,41 @@ def main() -> None:
                     f"[graphify extract] pagerank_ranking {_PAGERANK_SCIPY_MISSING_MSG}",
                     file=sys.stderr,
                 )
-        _to_json(G, communities, str(graph_json_path), force=True, pagerank_scores=pagerank_scores, built_at_commit=_gh2(target))
-        stages.mark("export")
+        # force=True bypasses the #479 shrink guard entirely. A full build
+        # legitimately shrinks (fuzzy dedup collapse, deleted code) so it keeps
+        # force=True — EXCEPT when this run's extraction was incomplete (an
+        # extractor pass crashed or some semantic chunks failed). Then a partial
+        # graph could silently overwrite a good complete one, so fall back to the
+        # shrink guard (force=False) unless the user opts in with --allow-partial.
+        #
+        # Both write paths are guarded: the clustered path here via to_json's
+        # #479 check, and the `--no-cluster` raw-dump path above via the same
+        # shrink check against the existing file (existing_graph_node_count).
+        #
+        # Trade-off: this reuses to_json's coarse node-count guard, not the
+        # source-aware _check_shrink that watch/update use. On an incremental run
+        # a legitimate deletion that coincides with an unrelated transient chunk
+        # failure can therefore be refused here — recoverable by re-running or
+        # passing --allow-partial (the good graph is preserved and the manifest
+        # is not stamped, so the retry re-extracts).
+        _force_write = cli_allow_partial or not _extraction_incomplete
+        _wrote = _to_json(G, communities, str(graph_json_path), force=_force_write, pagerank_scores=pagerank_scores, built_at_commit=_gh2(target))
+        if not _wrote:
+            # The shrink guard refused: this partial build is smaller than the
+            # existing graph. Exit before writing the manifest/marker below, which
+            # would otherwise stamp these files as done and make the next
+            # incremental run skip re-extracting them (poisoning the manifest
+            # against the graph we declined to write). Exit non-zero so a retry
+            # re-attempts.
+            print(
+                "[graphify extract] error: extraction was incomplete (an AST/semantic "
+                f"pass failed) and the resulting graph is smaller than the existing "
+                f"{graph_json_path}. Refusing to overwrite a complete graph with a "
+                "partial one. Re-run after fixing the failures, or pass --allow-partial "
+                "to overwrite anyway.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         if merged.get("output_tokens", 0) > 0:
             (graphify_out / ".graphify_semantic_marker").write_text(
                 json.dumps({"output_tokens": merged["output_tokens"]}), encoding="utf-8"
