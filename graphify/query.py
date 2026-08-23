@@ -1580,7 +1580,12 @@ def find_path_with_disambiguation(
     # real, meaningful call chain.
     from graphify.analyze import _BUILTIN_NOISE_LABELS
 
-    G_weighted = G.to_undirected()
+    # Deterministic path (#2074): the hash-seeded undirected view picked an
+    # arbitrary route among equal-length paths. Build a sorted, materialized
+    # undirected graph so the chosen path is canonical.
+    G_weighted = _nx.Graph()
+    G_weighted.add_nodes_from(sorted(G.nodes(data=True), key=lambda x: str(x[0])))
+    G_weighted.add_edges_from(sorted((min(str(u), str(v)), max(str(u), str(v))) for u, v in G.edges()))
     degree = dict(G_weighted.degree())
     for u, v in G_weighted.edges():
         G_weighted[u][v]["_pathweight"] = 1 + degree.get(u, 0) + degree.get(v, 0)

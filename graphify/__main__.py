@@ -3384,8 +3384,9 @@ def main() -> None:
         _raw = json.loads(gp.read_text(encoding="utf-8"))
         if "links" not in _raw and "edges" in _raw:
             _raw = dict(_raw, links=_raw["edges"])
-        # Force directed so the renderer can recover stored caller→callee direction.
-        _raw = {**_raw, "directed": True}
+        # Force directed multigraph so the renderer can recover stored caller→callee direction
+        # and preserve parallel links (#2074).
+        _raw = {**_raw, "directed": True, "multigraph": True}
         try:
             G = json_graph.node_link_graph(_raw, edges="links")
         except TypeError:
@@ -3416,19 +3417,22 @@ def main() -> None:
             )
         hops = len(path_nodes) - 1
         segments = []
-        from graphify.build import edge_data
+        from graphify.build import edge_datas
         for i in range(len(path_nodes) - 1):
             u, v = path_nodes[i], path_nodes[i + 1]
             # Check which direction the stored edge points.
+            # Report the actual stored relation(s), never a fabricated `calls`;
+            # fall back to an honest "related" when the edge has no relation (#2074).
             if G.has_edge(u, v):
-                edata = edge_data(G, u, v)
+                datas = edge_datas(G, u, v)
                 forward = True
             else:
-                edata = edge_data(G, v, u)
+                datas = edge_datas(G, v, u)
                 forward = False
-            rel = edata.get("relation", "")
-            conf = edata.get("confidence", "")
-            conf_str = f" [{conf}]" if conf else ""
+            rels = sorted({d.get("relation") for d in datas if d.get("relation")})
+            rel = "/".join(rels) if rels else "related"
+            confs = sorted({d.get("confidence") for d in datas if d.get("confidence")})
+            conf_str = f" [{'/'.join(confs)}]" if confs else ""
             if i == 0:
                 segments.append(G.nodes[u].get("label", u))
             if forward:

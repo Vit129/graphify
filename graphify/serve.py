@@ -694,17 +694,19 @@ def _build_server(graph_path: str):
         if hops > max_hops:
             return f"Path exceeds max_hops={max_hops} ({hops} hops found)."
         segments = []
+        from graphify.build import edge_datas
         for i in range(len(path_nodes) - 1):
             u, v = path_nodes[i], path_nodes[i + 1]
             if G.has_edge(u, v):
-                edata = edge_data(G, u, v)
+                datas = edge_datas(G, u, v)
                 forward = True
             else:
-                edata = edge_data(G, v, u)
+                datas = edge_datas(G, v, u)
                 forward = False
-            rel = edata.get("relation", "")
-            conf = edata.get("confidence", "")
-            conf_str = f" [{conf}]" if conf else ""
+            rels = sorted({d.get("relation") for d in datas if d.get("relation")})
+            rel = "/".join(rels) if rels else "related"
+            confs = sorted({d.get("confidence") for d in datas if d.get("confidence")})
+            conf_str = f" [{'/'.join(confs)}]" if confs else ""
             if i == 0:
                 segments.append(G.nodes[u].get("label", u))
             if forward:
