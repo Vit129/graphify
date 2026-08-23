@@ -874,12 +874,27 @@ def _pick_seeds(
 
         scored = [(score * _seed_penalty(nid), nid) for score, nid in scored]
         scored.sort(key=lambda s: (-s[0], len(G.nodes[s[1]].get("label") or s[1]), s[1]))
+    def _seed_label_key(nid: str) -> str:
+        if G is None:
+            return nid
+        data = G.nodes[nid]
+        return (data.get("norm_label")
+                or _strip_diacritics(data.get("label") or "").lower()) or nid
+
     top_score = scored[0][0]
-    seeds = []
-    for score, nid in scored[:max_k]:
+    seeds: list[str] = []
+    seen_labels: set[str] = set()
+    for score, nid in scored:
+        if len(seeds) >= max_k:
+            break
         if seeds and score < top_score * gap_ratio:
             break
+        key = _seed_label_key(nid)
+        if key in seen_labels:
+            continue
+        seen_labels.add(key)
         seeds.append(nid)
+
     if G is not None and terms:
         scored_nids = {nid for _, nid in scored}
         norm_terms = sorted({tok for t in terms for tok in _search_tokens(t)})
@@ -890,7 +905,9 @@ def _pick_seeds(
             best_score = term_scored[0][0]
             tied = [nid for s, nid in term_scored if s == best_score]
             best_nid = max(tied, key=lambda n: G.degree(n)) if len(tied) > 1 else term_scored[0][1]
-            if best_nid not in seeds:
+            key = _seed_label_key(best_nid)
+            if best_nid not in seeds and key not in seen_labels:
+                seen_labels.add(key)
                 seeds.append(best_nid)
     if G is not None and multi_term:
         seen_communities = {G.nodes[n].get("community") for n in seeds}
