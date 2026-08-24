@@ -34,7 +34,9 @@ def _pascal_raw_calls(per_file: list[dict]) -> list[dict]:
         for rc in result.get("raw_calls", []):
             if not isinstance(rc, dict):
                 continue
-            if str(rc.get("source_file", "")).endswith(_PASCAL_SUFFIXES):
+            if rc.get("is_member_call"):
+                continue
+            if rc.get("lang") == "pascal" or str(rc.get("source_file", "")).endswith(_PASCAL_SUFFIXES):
                 calls.append(rc)
     return calls
 

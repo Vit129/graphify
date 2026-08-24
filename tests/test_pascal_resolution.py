@@ -93,3 +93,49 @@ def test_pascal_resolver_registered():
     from graphify.resolver_registry import registered_resolvers
     names = {r.name for r in registered_resolvers()}
     assert "pascal_inherited_calls" in names
+
+
+def test_lowercase_callee_does_not_leak_into_generic_resolver(tmp_path):
+    """Two unrelated Pascal classes in separate files, with a same-named lowercase
+    method and no inheritance relationship. Pascal raw_calls must NOT leak into
+    the generic corpus-wide cross-file pass, which would otherwise create a phantom
+    cross-class call edge when the callee name is lowercase."""
+    alpha = tmp_path / "Alpha.pas"
+    gamma = tmp_path / "Gamma.pas"
+    alpha.write_text(
+        "unit Alpha;\n\n"
+        "interface\n\n"
+        "type\n"
+        "  TAlpha = class(TObject)\n"
+        "  public\n"
+        "    procedure prepare;\n"
+        "  end;\n\n"
+        "implementation\n\n"
+        "procedure TAlpha.prepare;\n"
+        "begin\n"
+        "end;\n\n"
+        "end.\n",
+        encoding="utf-8",
+    )
+    gamma.write_text(
+        "unit Gamma;\n\n"
+        "interface\n\n"
+        "type\n"
+        "  TGamma = class(TObject)\n"
+        "  public\n"
+        "    procedure Run;\n"
+        "  end;\n\n"
+        "implementation\n\n"
+        "procedure TGamma.Run;\n"
+        "begin\n"
+        "  prepare;\n"
+        "end;\n\n"
+        "end.\n",
+        encoding="utf-8",
+    )
+    graph = extract([alpha, gamma], cache_root=tmp_path, parallel=False)
+    edge = _call_edge(graph, "Run()", "prepare()")
+    assert edge is None, (
+        "TGamma.Run must not resolve an unrelated lowercase call to TAlpha.prepare -- "
+        "Pascal raw_calls must not leak into the generic corpus-wide resolver"
+    )

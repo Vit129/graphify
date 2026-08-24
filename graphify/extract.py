@@ -13256,6 +13256,7 @@ def _extract_pascal_regex(path: Path) -> dict:
     # pattern) from collapsing into an arbitrary cross-class edge.
     callee_nid = _resolve_pascal_callee_factory(impl_records, edges, module_nid)
     raw_calls: list[dict] = []
+    seen_raw_calls: set[tuple[str, str]] = set()
     for caller_nid, caller_line, body_text, _container, _name_lower in impl_records:
         for cm in _PAS_CALL_RE.finditer(body_text):
             callee_name = cm.group(1).split(".")[-1].lower()
@@ -13270,12 +13271,16 @@ def _extract_pascal_regex(path: Path) -> dict:
                 # class declared in another file) -- report for the
                 # cross-file resolver (graphify.pascal_resolution) instead of
                 # guessing or dropping it silently.
-                raw_calls.append({
-                    "source_file": str_path,
-                    "source_location": f"L{call_line}",
-                    "caller_nid": caller_nid,
-                    "callee": callee_name,
-                })
+                raw_key = (caller_nid, callee_name)
+                if raw_key not in seen_raw_calls:
+                    seen_raw_calls.add(raw_key)
+                    raw_calls.append({
+                        "source_file": str_path,
+                        "source_location": f"L{call_line}",
+                        "caller_nid": caller_nid,
+                        "callee": callee_name,
+                        "lang": "pascal",
+                    })
                 continue
             pair = (caller_nid, target_nid)
             if pair in seen_call_pairs:
@@ -13500,6 +13505,7 @@ def extract_pascal(path: Path) -> dict:
     resolve_callee = _resolve_pascal_callee_factory(proc_bodies, edges, module_nid)
     seen_call_pairs: set[tuple[str, str]] = set()
     raw_calls: list[dict] = []
+    seen_raw_calls: set[tuple[str, str]] = set()
 
     def _emit_or_report(caller_nid: str, name_lower: str, line: int) -> None:
         target = resolve_callee(caller_nid, name_lower)
@@ -13510,12 +13516,16 @@ def extract_pascal(path: Path) -> dict:
             # class declared in another file) -- report for the cross-file
             # resolver (graphify.pascal_resolution) instead of guessing or
             # dropping it silently.
-            raw_calls.append({
-                "source_file": str_path,
-                "source_location": f"L{line}",
-                "caller_nid": caller_nid,
-                "callee": name_lower,
-            })
+            raw_key = (caller_nid, name_lower)
+            if raw_key not in seen_raw_calls:
+                seen_raw_calls.add(raw_key)
+                raw_calls.append({
+                    "source_file": str_path,
+                    "source_location": f"L{line}",
+                    "caller_nid": caller_nid,
+                    "callee": name_lower,
+                    "lang": "pascal",
+                })
             return
         pair = (caller_nid, target)
         if pair not in seen_call_pairs:
@@ -16903,6 +16913,10 @@ def extract(
         # Skip member-call callees: obj.log() → "log" has no import evidence
         # and collides with any top-level function named "log" in the corpus.
         if rc.get("is_member_call"):
+            continue
+        # Pascal: skip raw_calls tagged for pascal resolution (which resolves only
+        # through inheritance chains, not generic global-name lookup).
+        if rc.get("lang") == "pascal":
             continue
         # Exact-case match first (case is semantic). Fold only when the CALLING
         # file's language is case-insensitive, and only against the folded index of
