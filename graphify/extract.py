@@ -5167,7 +5167,7 @@ def _extract_generic(
                                 if base:
                                     lit_bases.append((base, relation))
                         obj_label = (
-                            lit_bases[0][0] if lit_bases
+                            f"object:{lit_bases[0][0]}@L{lit_line}" if lit_bases
                             else f"object@L{lit_line}"
                         )
                         obj_nid = _make_id(

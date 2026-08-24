@@ -4,8 +4,8 @@
 object_literal is not a class_type (it has no name), and the function branch
 never recurses into function bodies — so the literal's members AND every call
 inside them were silently dropped. The extractor now emits an owner node per
-literal (labeled after its first supertype), a `contains` edge from the
-enclosing function, the implements/inherits edge to the supertype, and walks
+literal (labeled after its first supertype with object: prefix and line), a `contains`
+edge from the enclosing function, the implements/inherits edge to the supertype, and walks
 the literal's class_body like a class so members flow normally.
 """
 from __future__ import annotations
@@ -59,7 +59,7 @@ _REGISTRY = {
 
 def test_object_literal_members_get_nodes_and_method_edges(tmp_path):
     r = _extract(tmp_path, _REGISTRY)
-    obj_nid = _find(r, "EventListener", "object")
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:EventListener"))
     process = _find(r, ".process()", "object")
     handle = _find(r, ".handleSomething()", "object")
     methods = _edges(r, "method")
@@ -73,9 +73,8 @@ def test_object_literal_members_get_nodes_and_method_edges(tmp_path):
 
 def test_object_literal_implements_supertype(tmp_path):
     r = _extract(tmp_path, _REGISTRY)
-    obj_nid = _find(r, "EventListener", "object")
-    iface = next(n["id"] for n in r["nodes"]
-                 if n["label"] == "EventListener" and "object" not in n["id"])
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:EventListener"))
+    iface = next(n["id"] for n in r["nodes"] if n["label"] == "EventListener")
     assert (obj_nid, iface) in _edges(r, "implements"), \
         "object : EventListener must implement the in-corpus interface"
 
@@ -109,8 +108,8 @@ def test_two_object_literals_in_one_function_do_not_collide(tmp_path):
             "}\n"
         ),
     })
-    obj_a = _find(r, "Alpha", "object")
-    obj_b = _find(r, "Beta", "object")
+    obj_a = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Alpha"))
+    obj_b = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Beta"))
     assert obj_a != obj_b
     methods = _edges(r, "method")
     one = _find(r, ".one()", "object")
@@ -144,5 +143,32 @@ def test_named_object_and_plain_class_unchanged(tmp_path):
     assert (singleton, go) in methods
     assert (plain, run) in methods and (plain, go2) in methods
     assert (run, go2) in _edges(r, "calls")
-    assert not any("object" in n["id"] and n["label"].startswith("object@")
+    assert not any(n["label"].startswith("object:") or n["label"].startswith("object@")
                    for n in r["nodes"]), "no phantom object-literal owner nodes"
+
+
+def test_anonymous_object_does_not_steal_supertype_call_resolution(tmp_path):
+    """Regression test: anonymous object literal node must not steal supertype's
+    name in label_to_nid, preserving same-file and cross-file call resolution."""
+    r = _extract(tmp_path, {
+        "Base.kt": (
+            "open class Base {\n"
+            "    fun execute() { }\n"
+            "}\n"
+            "class Factory {\n"
+            "    fun make() = object : Base() {\n"
+            "        fun extra() { }\n"
+            "    }\n"
+            "    fun build(): Base {\n"
+            "        return Base()\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    base_class = next(n["id"] for n in r["nodes"] if n["label"] == "Base")
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Base"))
+    assert base_class != obj_nid
+    calls = _edges(r, "calls")
+    build_nid = next(n["id"] for n in r["nodes"] if n["label"] == ".build()")
+    assert (build_nid, base_class) in calls, "Base() constructor call must resolve to Base class"
+    assert (build_nid, obj_nid) not in calls, "Base() constructor call must not resolve to anonymous object"
