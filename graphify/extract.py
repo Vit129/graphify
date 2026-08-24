@@ -38,6 +38,7 @@ from graphify.extractors.gherkin import extract_gherkin  # noqa: F401
 from graphify.extractors.toml_ import extract_toml  # noqa: F401
 from graphify.extractors.csharp import (
     CsharpNameResolver,
+    _merge_csharp_partial_class_nodes,
     _resolve_cross_file_csharp_imports,
     _resolve_csharp_type_references,
 )
@@ -3596,6 +3597,23 @@ def _csharp_method_receiver_types(
                                 )
                                 break
                     bind(_read_text(name_node, source), type_name)
+        elif node.type in ("declaration_expression", "declaration_pattern"):
+            # #2346: inline-declared receivers. `out Sect s` is a
+            # declaration_expression; `is Leaf lf`, `is not Node nd`,
+            # `case Twig tw:` and a switch-arm `Stem st =>` are
+            # declaration_patterns — all carry `type` + `name` fields and
+            # bind the name for the rest of the method. `out var v`
+            # (implicit_type) yields None from _csharp_receiver_type_name
+            # and poisons the name method-locally, matching the
+            # untypable-local rule above (no guess).
+            name_node = node.child_by_field_name("name")
+            if name_node is not None and name_node.type == "identifier":
+                bind(
+                    _read_text(name_node, source),
+                    _csharp_receiver_type_name(
+                        node.child_by_field_name("type"), source
+                    ),
+                )
         stack.extend(node.children)
 
     table = dict(field_types)
@@ -3900,6 +3918,12 @@ def _extract_generic(
             metadata = None
             if config.ts_module == "tree_sitter_c_sharp" and parent_class_nid:
                 metadata = {"is_nested_type": True}
+            if config.ts_module == "tree_sitter_c_sharp" and any(
+                c.type == "modifier" and _read_text(c, source) == "partial"
+                for c in node.children
+            ):
+                metadata = dict(metadata or {})
+                metadata["is_partial"] = True
             add_node(class_nid, class_name, line, metadata=metadata)
             callable_def_nids.add(class_nid)  # a class is callable (constructor)
             add_edge(file_nid, class_nid, "contains", line)
@@ -16799,6 +16823,7 @@ def extract(
                     rc["caller_nid"] = sym_remap[cn]
 
     _merge_swift_extensions(per_file, all_nodes, all_edges)
+    _merge_csharp_partial_class_nodes(per_file, all_nodes, all_edges)
     _disambiguate_colliding_node_ids(all_nodes, all_edges, all_raw_calls, root)
     _canonicalize_csharp_namespace_nodes(all_nodes, all_edges)
     _rewire_unique_stub_nodes(all_nodes, all_edges)
