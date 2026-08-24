@@ -3391,6 +3391,8 @@ def main() -> None:
         _raw = json.loads(gp.read_text(encoding="utf-8"))
         if "links" not in _raw and "edges" in _raw:
             _raw = dict(_raw, links=_raw["edges"])
+        from graphify.multigraph_compat import require_multigraph_capabilities
+        require_multigraph_capabilities()
         # Preserve stored edge direction across undirected node_link_graph (#2261).
         # Keep in-file markers when present (#2309): unconditionally
         # overwriting them with source/target would clobber the true
@@ -3522,6 +3524,8 @@ def main() -> None:
         _raw = json.loads(gp.read_text(encoding="utf-8"))
         if "links" not in _raw and "edges" in _raw:
             _raw = dict(_raw, links=_raw["edges"])
+        from graphify.multigraph_compat import require_multigraph_capabilities
+        require_multigraph_capabilities()
         # Preserve stored edge direction across undirected node_link_graph (#2261).
         # Keep in-file markers when present (#2309): unconditionally
         # overwriting them with source/target would clobber the true
