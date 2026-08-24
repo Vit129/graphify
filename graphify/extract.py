@@ -103,19 +103,22 @@ def _repoint_python_package_imports(paths, all_nodes, all_edges, root) -> None:
     (``_make_id('pkg.mod')`` -> ``pkg_mod``), but file-node ids are
     scan-root-relative (``src_pkg_mod`` when the code lives under ``src/``), so
     the edge dangles and is silently dropped — the graph loses most ``imports``
-    edges purely because of where the scan started. Build an alias map from the
-    dotted-module id to the real file-node id by detecting each ``.py`` file's
-    package root (the contiguous run of ancestor dirs carrying ``__init__.py``)
-    and rewrite matching ``imports``/``imports_from`` edge targets. Guards: never
-    shadow an existing node id, and drop an alias claimed by more than one file
-    (ambiguous -> leave dangling, as before). Files whose package root IS the
-    scan root are skipped (ids already coincide)."""
+    edges purely because of where the scan started. Build an alias map from
+    (sys_path_root, dotted-module id) to the real file-node id by detecting each
+    ``.py`` file's package root (the contiguous run of ancestor dirs carrying
+    ``__init__.py``) and rewrite matching ``imports``/``imports_from`` edge
+    targets from importing files sharing that same sys.path root. Guards: never
+    shadow an existing node id, drop an alias claimed by more than one file in
+    the same root (ambiguous -> leave dangling), and only repoint when the
+    importing file's sys.path root matches the target's sys.path root (prevents
+    cross-tree fabricated imports). Files whose package root IS the scan root are
+    skipped (ids already coincide)."""
     try:
         root = Path(root).resolve()
     except OSError:
         root = Path(root)
     node_ids = {n.get("id") for n in all_nodes if isinstance(n, dict)}
-    alias_to_files: dict[str, set[str]] = {}
+    alias_to_files: dict[tuple[Path, str], set[str]] = {}
     for p in paths:
         if p.suffix.lower() not in (".py", ".pyi"):
             continue
@@ -140,14 +143,14 @@ def _repoint_python_package_imports(paths, all_nodes, all_edges, root) -> None:
             continue  # package root == scan root: file-node id already coincides
         file_node = _file_node_id(rel)
         alias = _make_id(str(Path(*mod_parts).with_suffix("")))
-        alias_to_files.setdefault(alias, set()).add(file_node)
+        alias_to_files.setdefault((d, alias), set()).add(file_node)
         if p.name in ("__init__.py", "__init__.pyi") and len(mod_parts) > 1:
             # `import pkg` / `from pkg import x` targets the package-dir id.
             pkg_alias = _make_id(str(Path(*mod_parts[:-1])))
-            alias_to_files.setdefault(pkg_alias, set()).add(file_node)
+            alias_to_files.setdefault((d, pkg_alias), set()).add(file_node)
     alias_map = {
-        a: next(iter(fs))
-        for a, fs in alias_to_files.items()
+        (d, a): next(iter(fs))
+        for (d, a), fs in alias_to_files.items()
         if len(fs) == 1 and a not in node_ids
     }
     if not alias_map:
@@ -162,9 +165,27 @@ def _repoint_python_package_imports(paths, all_nodes, all_edges, root) -> None:
             and e.get("relation") in ("imports", "imports_from")
             and str(e.get("source_file", "")).lower().endswith((".py", ".pyi"))
         ):
+            src_file = e.get("source_file")
+            if not src_file:
+                continue
+            try:
+                src_path = Path(src_file)
+                if not src_path.is_absolute():
+                    src_path = (root / src_path).resolve()
+                else:
+                    src_path = src_path.resolve()
+                src_rel = src_path.relative_to(root)
+            except (ValueError, OSError):
+                continue
+            src_parts = src_rel.parts
+            src_d = src_path.parent
+            src_levels = 0
+            while src_levels < len(src_parts) - 1 and (src_d / "__init__.py").is_file():
+                src_levels += 1
+                src_d = src_d.parent
             tgt = e.get("target")
-            if tgt in alias_map:
-                e["target"] = alias_map[tgt]
+            if (src_d, tgt) in alias_map:
+                e["target"] = alias_map[(src_d, tgt)]
 
 
 def _csharp_namespace_id(dotted_name: str) -> str:

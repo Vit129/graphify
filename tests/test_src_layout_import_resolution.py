@@ -98,9 +98,9 @@ def test_import_edges_identical_from_root_or_src(tmp_path):
     )
 
 
-def test_ambiguous_package_alias_is_not_repointed(tmp_path):
-    """A dotted-module id claimed by two different files (two src roots with the
-    same package) must stay dangling rather than pick an arbitrary file."""
+def test_same_package_in_separate_roots_scoped_to_own_root(tmp_path):
+    """A dotted-module import in one src root must resolve to that root's own
+    package, never fabricating edges to a sibling root (#2072)."""
     for sub in ("a", "b"):
         d = tmp_path / sub / "src" / "pkg"
         d.mkdir(parents=True)
@@ -115,18 +115,84 @@ def test_ambiguous_package_alias_is_not_repointed(tmp_path):
         tmp_path / "b" / "src" / "pkg" / "__init__.py",
     ]
     res = extract(paths, cache_root=tmp_path / "c", root=tmp_path, parallel=False)
-    # The ambiguous `pkg_mod` alias claimed by both a/ and b/ must not be
-    # repointed onto either file — no fabricated cross-tree import edge.
     import_edges = [
         e for e in res["edges"]
         if e.get("relation") in ("imports", "imports_from") and e.get("source") == "a_src_pkg_app"
     ]
     targets = {e["target"] for e in import_edges}
-    # Neither file may be chosen — an ambiguous alias must stay dangling (pkg_mod).
-    assert "a_src_pkg_mod" not in targets and "b_src_pkg_mod" not in targets, (
-        f"ambiguous alias was repointed to a specific file: {targets}"
+    # a/src/pkg/app.py must resolve to its own a_src_pkg_mod and NEVER b_src_pkg_mod.
+    assert "a_src_pkg_mod" in targets
+    assert "b_src_pkg_mod" not in targets
+
+
+def test_unrelated_sibling_tree_and_stub_imports_not_fabricated(tmp_path):
+    """Reviewer reproduction: src/app/main.py importing boto3.session and pkg.mod
+    must NOT fabricate edges to thirdparty_stubs/boto3/session.py or
+    other_project/pkg/mod.py (unrelated trees with no sys.path relationship)."""
+    src_app = tmp_path / "src" / "app"
+    src_app.mkdir(parents=True)
+    (src_app / "__init__.py").write_text("")
+    (src_app / "main.py").write_text(
+        "import boto3.session\n"
+        "from pkg.mod import f\n\n"
+        "def run():\n"
+        "    return f()\n"
     )
-    assert "pkg_mod" in targets
+
+    stubs = tmp_path / "thirdparty_stubs" / "boto3"
+    stubs.mkdir(parents=True)
+    (stubs / "__init__.py").write_text("")
+    (stubs / "session.py").write_text("class Session: pass\n")
+
+    other = tmp_path / "other_project" / "pkg"
+    other.mkdir(parents=True)
+    (other / "__init__.py").write_text("")
+    (other / "mod.py").write_text("def f(): return 1\n")
+
+    paths = [
+        src_app / "__init__.py",
+        src_app / "main.py",
+        stubs / "__init__.py",
+        stubs / "session.py",
+        other / "__init__.py",
+        other / "mod.py",
+    ]
+    res = extract(paths, cache_root=tmp_path / "c", root=tmp_path, parallel=False)
+
+    main_edges = [
+        e for e in res["edges"]
+        if e.get("source") == "src_app_main" and e.get("relation") in ("imports", "imports_from")
+    ]
+    main_targets = {e["target"] for e in main_edges}
+    assert "thirdparty_stubs_boto3_session" not in main_targets
+    assert "other_project_pkg_mod" not in main_targets
+
+
+def test_stdlib_name_collision_is_not_repointed_across_trees(tmp_path):
+    """A package with a stdlib-looking name (e.g. libs/logging/__init__.py)
+    must not hijack `import logging` from an unrelated package tree."""
+    libs = tmp_path / "libs" / "logging"
+    libs.mkdir(parents=True)
+    (libs / "__init__.py").write_text("def info(msg): pass\n")
+
+    src = tmp_path / "src" / "app"
+    src.mkdir(parents=True)
+    (src / "__init__.py").write_text("")
+    (src / "main.py").write_text("import logging\n")
+
+    paths = [
+        libs / "__init__.py",
+        src / "__init__.py",
+        src / "main.py",
+    ]
+    res = extract(paths, cache_root=tmp_path / "c", root=tmp_path, parallel=False)
+
+    main_edges = [
+        e for e in res["edges"]
+        if e.get("source") == "src_app_main" and e.get("relation") in ("imports", "imports_from")
+    ]
+    main_targets = {e["target"] for e in main_edges}
+    assert "libs_logging_init" not in main_targets
 
 
 def test_non_python_import_edge_is_not_repointed(tmp_path):
