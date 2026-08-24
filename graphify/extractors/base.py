@@ -29,10 +29,13 @@ _LANGUAGE_BUILTIN_GLOBALS: frozenset[str] = frozenset({
     "print", "open", "isinstance", "type", "super", "sorted", "reversed",
     "any", "all", "abs", "round", "next", "iter", "hash", "id", "repr",
     "callable", "getattr", "setattr", "hasattr", "delattr", "vars", "dir",
-    # Swift standard library / Foundation / SwiftUI (#2147). Value-type
-    # initializers (Data(x), Int(x), UUID()) and protocol conformance targets
-    # appear from virtually every file of a Swift codebase, exactly like the
-    # ECMAScript constructors above. String/Date/URL/Error are already listed.
+})
+
+# Swift standard library / Foundation / SwiftUI (#2147). Value-type
+# initializers (Data(x), Int(x), UUID()) and protocol conformance targets
+# appear from virtually every file of a Swift codebase, scoped strictly to
+# Swift extraction/analysis to avoid filtering common names in other languages.
+_SWIFT_BUILTIN_GLOBALS: frozenset[str] = frozenset({
     "Int", "Int8", "Int16", "Int32", "Int64",
     "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
     "Double", "Float", "Bool", "Character",

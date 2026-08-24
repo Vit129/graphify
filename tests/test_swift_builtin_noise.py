@@ -141,3 +141,78 @@ def test_swift_user_receiver_type_still_resolves(tmp_path):
         if e.get("context") == "call" and "play" in str(lbl.get(e.get("target"), "")).lower()
     }
     assert resolved, "user-typed member call must still resolve cross-file"
+
+
+def test_non_swift_symbols_matching_swift_builtins_resolve_call_edges(tmp_path):
+    """Non-Swift files defining symbols named like Swift builtins (Color, View, Calendar) must resolve calls."""
+    (tmp_path / "Color.ts").write_text(
+        "export function Color(hex: string) {\n"
+        "    return hex;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "View.ts").write_text(
+        "import { Color } from './Color';\n"
+        "export function render() {\n"
+        "    return Color('#fff');\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "cal.py").write_text(
+        "class Calendar:\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "app.py").write_text(
+        "from cal import Calendar\n"
+        "def schedule():\n"
+        "    return Calendar()\n",
+        encoding="utf-8",
+    )
+    r = extract(sorted(tmp_path.glob("*.*")), cache_root=tmp_path, parallel=False)
+    lbl = _labels_by_id(r)
+    edges = [
+        (lbl.get(e["source"]), e.get("relation"), lbl.get(e["target"]), e.get("confidence"))
+        for e in r["edges"]
+    ]
+    # TS render() calls Color()
+    assert ("render()", "calls", "Color()", "EXTRACTED") in edges, (
+        f"TS call to Color() was filtered: {edges}"
+    )
+    # Python schedule() calls Calendar
+    assert ("schedule()", "calls", "Calendar", "EXTRACTED") in edges, (
+        f"Python call to Calendar was filtered: {edges}"
+    )
+
+
+def test_god_nodes_preserves_non_swift_symbols_matching_swift_builtins():
+    """Non-Swift nodes labeled 'Color' or 'View' must not be filtered by Swift noise labels."""
+    G = nx.Graph()
+    G.add_node(
+        "ts_view_node",
+        label="View",
+        source_file="src/components/View.tsx",
+        file_type="code",
+        source_location="L1",
+    )
+    for i in range(15):
+        peer = f"component_{i}"
+        G.add_node(
+            peer,
+            label=f"Comp{i}",
+            source_file=f"src/components/Comp{i}.tsx",
+            file_type="code",
+            source_location="L1",
+        )
+        G.add_edge(
+            peer,
+            "ts_view_node",
+            relation="references",
+            confidence="EXTRACTED",
+            source_file=f"src/components/Comp{i}.tsx",
+            weight=1.0,
+        )
+
+    result = god_nodes(G, top_n=5)
+    result_ids = [r["id"] for r in result]
+    assert "ts_view_node" in result_ids, "TypeScript View component must be included in god_nodes"

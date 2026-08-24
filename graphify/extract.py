@@ -26,6 +26,7 @@ from .ruby_resolution import resolve_ruby_member_calls
 # --- migrated to graphify/extractors/ (see graphify/extractors/MIGRATION.md) ---
 from graphify.extractors.base import (  # noqa: F401
     _LANGUAGE_BUILTIN_GLOBALS,
+    _SWIFT_BUILTIN_GLOBALS,
     _file_stem,
     _make_id,
     _read_text,
@@ -5487,7 +5488,9 @@ def _extract_generic(
                         # Try reading the node directly (e.g. Java name field is the callee)
                         callee_name = _read_text(func_node, source)
 
-            if callee_name and callee_name not in _LANGUAGE_BUILTIN_GLOBALS:
+            if callee_name and callee_name not in _LANGUAGE_BUILTIN_GLOBALS and (
+                config.ts_module != "tree_sitter_swift" or callee_name not in _SWIFT_BUILTIN_GLOBALS
+            ):
                 # A capitalized-receiver member call (`ClassName.method()`) must defer
                 # to receiver-based cross-file resolution: the bare method name can
                 # collide with an in-file node — even the calling method itself, when a
@@ -11328,7 +11331,7 @@ def _merge_swift_extensions(
         # the way the member-call resolvers do (#1726, #2147).
         if _lang_family(n.get("source_file")) != "native":
             continue
-        if label in _LANGUAGE_BUILTIN_GLOBALS:
+        if label in _LANGUAGE_BUILTIN_GLOBALS or label in _SWIFT_BUILTIN_GLOBALS:
             continue
         if not (n.get("source_file") and n.get("id") in contained and _is_type_like_definition(n)):
             continue
@@ -11689,7 +11692,7 @@ def _resolve_swift_member_calls(
         # resolve to a same-named user symbol — the cross-file CALL resolver and
         # the TS/Python member-call resolvers already skip these globals (#1726);
         # do the same for Swift (#2147).
-        if type_name in _LANGUAGE_BUILTIN_GLOBALS:
+        if type_name in _LANGUAGE_BUILTIN_GLOBALS or type_name in _SWIFT_BUILTIN_GLOBALS:
             continue
         type_defs = type_def_nids.get(_key(type_name), [])
         if len(type_defs) != 1:  # ambiguous or absent -> bail (god-node guard)
@@ -16851,6 +16854,8 @@ def extract(
         if not callee:
             continue
         if callee in _LANGUAGE_BUILTIN_GLOBALS:
+            continue
+        if str(rc.get("source_file", "")).endswith(".swift") and callee in _SWIFT_BUILTIN_GLOBALS:
             continue
         # Skip member-call callees: obj.log() → "log" has no import evidence
         # and collides with any top-level function named "log" in the corpus.
