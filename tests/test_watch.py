@@ -1332,6 +1332,38 @@ def test_rebuild_code_preserves_nodes_from_excluded_but_alive_file(tmp_path, cap
     assert "fail-closed: kept" in capsys.readouterr().out
 
 
+def test_rebuild_code_preserves_nodes_from_excluded_but_alive_file_on_full_rebuild(tmp_path, capsys):
+    """#1795: On a full rebuild (changed_paths=None / force=True), nodes from an
+    excluded-but-alive file must also survive, honoring the fail-closed deletion evidence
+    requirement instead of dropping them via the #1116 full-rebuild AST purge."""
+    import json
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    (corpus / "notes").mkdir(parents=True)
+    (corpus / "auth.py").write_text("def login(): pass\n", encoding="utf-8")
+    (corpus / "notes" / "brainstorm.md").write_text(
+        "# Brainstorm\n\nA local-only design note.\n", encoding="utf-8"
+    )
+
+    assert _rebuild_code(corpus, acquire_lock=False) is True
+    graph_path = corpus / "graphify-out" / "graph.json"
+    labels = {n["label"] for n in json.loads(graph_path.read_text(encoding="utf-8"))["nodes"]}
+    assert "brainstorm.md" in labels
+
+    # The file becomes ignored (leaves the corpus) but stays on disk.
+    (corpus / ".graphifyignore").write_text("notes/\n", encoding="utf-8")
+    capsys.readouterr()
+
+    # Full rebuild (changed_paths is None)
+    assert _rebuild_code(corpus, changed_paths=None, no_cluster=True, acquire_lock=False) is True
+    labels = {n["label"] for n in json.loads(graph_path.read_text(encoding="utf-8"))["nodes"]}
+    assert "brainstorm.md" in labels, (
+        "nodes from an excluded-but-alive file must be preserved on a full rebuild too"
+    )
+    assert "fail-closed: kept" in capsys.readouterr().out
+
+
 def test_rebuild_code_still_evicts_when_excluded_file_is_also_deleted(tmp_path):
     """The fail-closed preserve must not weaken true-deletion eviction: once the
     excluded file is actually gone from disk, its nodes are evicted as before."""

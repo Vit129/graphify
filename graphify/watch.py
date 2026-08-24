@@ -725,7 +725,7 @@ def _rebuild_code(
                         f"[graphify watch] fail-closed: kept {excluded_alive_nodes} node(s) "
                         f"from {len(excluded_alive_files)} file(s) that left the scan corpus "
                         "but still exist on disk (ignore rules or filters changed?). "
-                        "Run a full re-extraction to purge them if the exclusion is intentional."
+                        "Run a full re-extraction (graphify extract) to purge them if the exclusion is intentional."
                     )
                 if changed_paths is not None:
                     for p in extract_targets:
@@ -736,14 +736,21 @@ def _rebuild_code(
                 # missing from it is stale and must be dropped even if its source
                 # file still exists (a symbol removed from a surviving file, #1116).
                 # Gate on full_rebuild: in incremental mode an AST node from an
-                # unchanged file is legitimately absent from new_ast_ids. Semantic
+                # unchanged file is legitimately absent from new_ast_ids. Excluded-alive
+                # nodes are explicitly kept (#1795 fail-closed deletion evidence). Semantic
                 # nodes lack the "_origin" marker, so they are never dropped here —
                 # only by the deleted-file eviction in evict_sources above.
                 full_rebuild = changed_paths is None
+
+                def _is_excluded_alive(sf: str | None) -> bool:
+                    if not sf or not excluded_alive_files:
+                        return False
+                    return sf in excluded_alive_files or (_nsf(sf, _root_str) in excluded_alive_files)
+
                 preserved_nodes = [
                     n for n in existing.get("nodes", [])
                     if n["id"] not in new_ast_ids
-                    and not (full_rebuild and n.get("_origin") == "ast")
+                    and not (full_rebuild and n.get("_origin") == "ast" and not _is_excluded_alive(n.get("source_file")))
                     and (not evict_sources or n.get("source_file") not in evict_sources)
                 ]
                 all_ids = new_ast_ids | {n["id"] for n in preserved_nodes}
