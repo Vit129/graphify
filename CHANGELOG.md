@@ -3,6 +3,16 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.3] - 2026-08-24
+
+### Fixed
+- Resolve Python imports regardless of scan root (src-layout) ([#2072](https://github.com/Vit129/graphify/pull/2072)) ([`8236db5`](https://github.com/Vit129/graphify/commit/8236db5531d5ddb50e5e05530fad5d4f74e72f64))
+- Resolve relative subpackage imports to their __init__ ([#2688](https://github.com/Vit129/graphify/pull/2688)) ([`670c2d9`](https://github.com/Vit129/graphify/commit/670c2d964b1e0060d6e2b1c8318c127e313c037c))
+- Avoid crash resolving overdeep relative imports ([`ddfd1f9`](https://github.com/Vit129/graphify/commit/ddfd1f9bd25074b516629cfbccfb199bb8fc66bd))
+- Scope package import aliases by sys.path root to prevent cross-tree scope leaks ([`503894e`](https://github.com/Vit129/graphify/commit/503894ecf2d3c85a7bd86ae48b7ce51f809a154e))
+- Defer relative subpackage import resolution to post-pass to preserve AST cache purity ([#2688](https://github.com/Vit129/graphify/pull/2688)) ([`f08bbef`](https://github.com/Vit129/graphify/commit/f08bbefdc2abcdb0c1d4fd20d41a3864e6f27830))
+- Resolve relative current_path and root in _resolve_python_module_path ([`cd4415e`](https://github.com/Vit129/graphify/commit/cd4415ec761fb68ca49a6d14727ac37a583f4c06))
+
 ## [0.24.2] - 2026-08-24
 
 ### Added
