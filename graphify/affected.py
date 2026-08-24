@@ -186,14 +186,22 @@ def affected_nodes(
         current, current_depth = queue.popleft()
         if current_depth >= depth:
             continue
+        incoming: list[tuple[str, str, dict]] = []
         if hasattr(graph, "in_edges"):
-            incoming = graph.in_edges(current, data=True)
+            for u, v, data in graph.in_edges(current, data=True):
+                if data.get("_src", u) == u:
+                    incoming.append((u, v, data))
+            for u, v, data in graph.out_edges(current, data=True):
+                if data.get("_src", u) != u:
+                    incoming.append((v, u, data))
         else:
-            incoming = (
-                (source, target, data)
-                for source, target, data in graph.edges(data=True)
-                if target == current
-            )
+            for source, target, data in graph.edges(data=True):
+                if data.get("_src", source) == source:
+                    if target == current:
+                        incoming.append((source, target, data))
+                else:
+                    if source == current:
+                        incoming.append((target, source, data))
         for source, _target, data in incoming:
             relation = str(data.get("relation", ""))
             if relation not in relation_set and not relation.startswith(relation_prefixes):
@@ -399,15 +407,32 @@ def load_graph(path: Path) -> nx.Graph:
             f"Cannot read graph file {path}: {exc}. "
             "Re-run 'graphify extract' to regenerate it."
         ) from exc
-    # Force directed so stored caller→callee direction survives the round-trip;
-    # mirrors serve.py and __main__.py (#1174).
-    raw = {**raw, "directed": True}
+    from graphify.multigraph_compat import require_multigraph_capabilities
+    require_multigraph_capabilities()
     # Normalize the edge key: graphify's `extract` output uses "edges" while
     # networkx's node_link_data default is "links". Without this, an edges-keyed
     # graph.json raises an uncaught KeyError: 'links' here — every other loader
     # (__main__.py) already normalizes this (#738; same class as #1198).
     if "links" not in raw and "edges" in raw:
         raw = dict(raw, links=raw["edges"])
+    # Force directed so stored caller→callee direction survives the round-trip;
+    # mirrors serve.py and __main__.py (#1174, #2309).
+    # Keep in-file markers when present (#2309): unconditionally
+    # overwriting them with source/target would clobber the true
+    # direction of a link persisted in flipped endpoint order.
+    raw = dict(
+        raw,
+        links=[
+            {
+                **link,
+                "_src": link.get("_src", link.get("source")),
+                "_tgt": link.get("_tgt", link.get("target")),
+            }
+            for link in raw.get("links", [])
+        ],
+        directed=True,
+        multigraph=True,
+    )
     try:
         return json_graph.node_link_graph(raw, edges="links")
     except TypeError:
