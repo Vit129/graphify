@@ -3666,11 +3666,12 @@ def _extract_generic(
     # resolved to real node ids once `label_to_nid` exists (same-file resolution
     # only, same reasoning as `raw_calls` - reuse, don't reimplement).
     gas_action_arms_raw: list[dict] = []
-    # nids of function / method / class definitions in this file. The indirect-
-    # dispatch guard (Python) resolves a call-argument identifier to an edge only
-    # when it names one of these callable defs — never an arbitrary same-named
-    # node — so `process(config)` can't manufacture an edge to a non-callable.
     callable_def_nids: set[str] = set()
+    # Subset of callable_def_nids that are CLASS defs (callable only via their
+    # constructor). Classes are frequently passed as descriptive values, not for
+    # invocation (`select(Model)`, exception tuples), so the cross-file indirect_call
+    # guard excludes them to avoid false edges (#2137).
+    callable_class_nids: set[str] = set()
     # Python only: per-function set of locally-bound names (params + local
     # assignment / for / with-as / comprehension targets). The indirect-dispatch
     # guard skips any call-argument identifier in the enclosing function's set,
@@ -3828,6 +3829,7 @@ def _extract_generic(
                 metadata = {"is_nested_type": True}
             add_node(class_nid, class_name, line, metadata=metadata)
             callable_def_nids.add(class_nid)  # a class is callable (constructor)
+            callable_class_nids.add(class_nid)  # ...but only via its constructor (#2137)
             add_edge(file_nid, class_nid, "contains", line)
 
             if config.ts_module == "tree_sitter_swift" and any(
@@ -5153,6 +5155,10 @@ def _extract_generic(
             return
         if ref_nid == scope_nid or ref_nid not in callable_def_nids:
             return  # self-ref, or a same-named LOCAL non-callable data node — no edge
+        if ref_nid in callable_class_nids:
+            # A class referenced as a value (`select(Model)`, `db.get(Model, id)`,
+            # an exception tuple) is a descriptor, not an invocation — no edge (#2137).
+            return
         if (scope_nid, ref_nid) in seen_call_pairs:
             return  # already a direct call to this target
         if (scope_nid, ref_nid) in seen_indirect_pairs:
@@ -5877,6 +5883,10 @@ def _extract_generic(
         for n in nodes:
             if n["id"] in callable_def_nids:
                 n["_callable"] = True
+                if n["id"] in callable_class_nids:
+                    # Class def: callable only via constructor. The indirect_call
+                    # guard excludes these to avoid false edges (#2137).
+                    n["_callable_class"] = True
     if swift_extensions:
         result["swift_extensions"] = swift_extensions
     if type_table:
@@ -16660,6 +16670,10 @@ def extract(
     # function/method/class, never a same-named data symbol, and the guard never goes
     # stale when node ids were relativized/disambiguated above (#1566).
     callable_nids = {n["id"] for n in all_nodes if n.get("_callable")}
+    # Classes are callable only via their constructor, but frequently referenced
+    # by name as descriptors (e.g. ORM models, exception types). We exclude
+    # them from the indirect_call guard below to avoid false edges (#2137).
+    class_nids = {n["id"] for n in all_nodes if n.get("_callable_class")}
 
     # Build evidence index from import edges so cross-file calls backed by an
     # explicit import statement can be promoted from INFERRED to EXTRACTED.
@@ -16815,7 +16829,7 @@ def extract(
             # evidence: the name is referenced as a value here, not invoked. Dedup
             # is call-aware (an existing direct `calls` edge pre-empts it; a benign
             # `imports` edge to the same symbol does NOT suppress it).
-            if tgt != caller and (caller, tgt) not in call_like_pairs and tgt in callable_nids:
+            if tgt != caller and (caller, tgt) not in call_like_pairs and tgt in callable_nids and tgt not in class_nids:
                 call_like_pairs.add((caller, tgt))
                 all_edges.append({
                     "source": caller,
@@ -16894,6 +16908,7 @@ def extract(
     for n in all_nodes:
         n.pop("origin_file", None)
         n.pop("_callable", None)  # internal indirect_call marker — never ships to graph.json
+        n.pop("_callable_class", None)  # internal #2137 marker — never ships to graph.json
 
     # Tag AST provenance so the incremental watch rebuild can distinguish
     # AST-extracted nodes from semantic/LLM nodes. On a full re-extraction
