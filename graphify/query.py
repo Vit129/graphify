@@ -1199,12 +1199,24 @@ def _blast_radius_hops(
         next_frontier: list[str] = []
         for n in frontier:
             neighbors: list[tuple[str, str]] = []
-            if direction in ("callees", "both"):
+            if G.is_directed():
                 for nb in G.successors(n):
-                    neighbors.append((nb, str(edge_data(G, n, nb).get("confidence", ""))))
-            if direction in ("callers", "both"):
+                    d = edge_data(G, n, nb)
+                    conf = str(d.get("confidence", ""))
+                    is_callee = (d.get("_src", n) == n)
+                    if (direction in ("callees", "both") and is_callee) or (direction in ("callers", "both") and not is_callee):
+                        neighbors.append((nb, conf))
                 for nb in G.predecessors(n):
-                    neighbors.append((nb, str(edge_data(G, nb, n).get("confidence", ""))))
+                    d = edge_data(G, nb, n)
+                    conf = str(d.get("confidence", ""))
+                    is_caller = (d.get("_src", nb) == nb)
+                    if (direction in ("callers", "both") and is_caller) or (direction in ("callees", "both") and not is_caller):
+                        neighbors.append((nb, conf))
+            else:
+                for nb in G.neighbors(n):
+                    d = edge_data(G, n, nb)
+                    conf = str(d.get("confidence", ""))
+                    neighbors.append((nb, conf))
             for nb, conf in neighbors:
                 if nb not in visited:
                     visited.add(nb)

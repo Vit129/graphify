@@ -1708,6 +1708,33 @@ def test_blast_radius_hops_reports_edge_confidence_per_node():
     assert conf["guess"] == "INFERRED"
 
 
+def test_blast_radius_hops_flipped_marker_direction():
+    """#2309: blast_radius must recover true direction from _src/_tgt markers.
+    If an edge is stored as hub->spoke but markers say spoke->hub (_src=spoke),
+    spoke is a CALLER of hub and hub is a CALLEE of spoke."""
+    G = nx.DiGraph()
+    G.add_node("hub", label="hub.ts")
+    G.add_node("spoke", label="spoke.ts")
+    # Arc is stored hub -> spoke, but _src says spoke calls hub
+    G.add_edge("hub", "spoke", _src="spoke", _tgt="hub", relation="calls", confidence="EXTRACTED")
+
+    # Callers of hub: should find spoke
+    hops_callers, _, _, _ = _blast_radius_hops(G, "hub", 1, "callers")
+    assert hops_callers == [["spoke"]]
+
+    # Callees of hub: should be empty
+    hops_callees, _, _, _ = _blast_radius_hops(G, "hub", 1, "callees")
+    assert hops_callees == []
+
+    # Callees of spoke: should find hub
+    hops_spoke_callees, _, _, _ = _blast_radius_hops(G, "spoke", 1, "callees")
+    assert hops_spoke_callees == [["hub"]]
+
+    # Callers of spoke: should be empty
+    hops_spoke_callers, _, _, _ = _blast_radius_hops(G, "spoke", 1, "callers")
+    assert hops_spoke_callers == []
+
+
 # --- query path scoping (--path / --exclude-path) --------------------------
 
 def _make_path_scope_graph() -> nx.Graph:
