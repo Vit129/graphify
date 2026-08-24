@@ -100,3 +100,35 @@ def test_calls_resolve_via_ancestor_chain(extract):
         "TDerivedWidget.Run should resolve the inherited Prepare() to "
         "TBaseWidget.Prepare via the inherits chain"
     )
+
+
+@pytest.mark.parametrize("extract", [
+    pytest.param(0, id="tree-sitter"),
+    pytest.param(1, id="regex-fallback"),
+])
+def test_calls_resolve_declaration_only_abstract_method(extract, tmp_path):
+    src = tmp_path / "AbstractWidget.pas"
+    src.write_text(
+        "unit AbstractWidget;\n\n"
+        "interface\n\n"
+        "type\n"
+        "  TAbstractWidget = class(TObject)\n"
+        "  public\n"
+        "    procedure Init; virtual; abstract;\n"
+        "    procedure Run;\n"
+        "  end;\n\n"
+        "implementation\n\n"
+        "procedure TAbstractWidget.Run;\n"
+        "begin\n"
+        "  Init;\n"
+        "end;\n\n"
+        "end.\n",
+        encoding="utf-8",
+    )
+    r = _extractors()[extract](src)
+    run_nid = _method_node_id(r, "TAbstractWidget", "Run()")
+    init_nid = _method_node_id(r, "TAbstractWidget", "Init()")
+    assert _has_call(r, run_nid, init_nid), (
+        "TAbstractWidget.Run should resolve calls to declaration-only Init() "
+        "even when Init has no implementation body in this file"
+    )

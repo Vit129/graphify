@@ -13016,6 +13016,7 @@ def _resolve_pascal_callee_factory(
     records: list[tuple],
     edges: list[dict],
     module_nid: str,
+    nodes: list[dict] | None = None,
 ) -> Callable[[str, str], str | None]:
     """Build a scoped call resolver for a single Pascal/Delphi file.
 
@@ -13043,6 +13044,8 @@ def _resolve_pascal_callee_factory(
     the "god-node guard" already used by ``resolve_ruby_member_calls`` for
     the analogous Ruby ambiguous-method-name problem.
     """
+    node_by_id = {n.get("id"): n for n in nodes} if nodes else {}
+
     class_bases: dict[str, list[str]] = {}
     for e in edges:
         if e.get("relation") == "inherits":
@@ -13055,11 +13058,47 @@ def _resolve_pascal_callee_factory(
     for rec in records:
         proc_nid, container, name_lower = rec[0], rec[-2], rec[-1]
         proc_owner[proc_nid] = container
-        global_procs.setdefault(name_lower, []).append(proc_nid)
+        if proc_nid not in global_procs.setdefault(name_lower, []):
+            global_procs[name_lower].append(proc_nid)
         if container == module_nid:
-            module_procs.setdefault(name_lower, []).append(proc_nid)
+            if proc_nid not in module_procs.setdefault(name_lower, []):
+                module_procs[name_lower].append(proc_nid)
         else:
-            class_procs.setdefault(container, {}).setdefault(name_lower, []).append(proc_nid)
+            bucket = class_procs.setdefault(container, {}).setdefault(name_lower, [])
+            if proc_nid not in bucket:
+                bucket.append(proc_nid)
+
+    # Seed declared methods / procs from edges and nodes so declaration-only
+    # methods (e.g. `procedure Init; virtual; abstract;`) resolve even when
+    # they have no implementation body in this file.
+    for e in edges:
+        src, tgt = e.get("source"), e.get("target")
+        if not src or not tgt:
+            continue
+        rel = e.get("relation")
+        if rel == "method":
+            proc_owner.setdefault(tgt, src)
+            node = node_by_id.get(tgt)
+            if node:
+                label = str(node.get("label", ""))
+                if label.endswith("()"):
+                    name_lower = label.removesuffix("()").lower()
+                    bucket = class_procs.setdefault(src, {}).setdefault(name_lower, [])
+                    if tgt not in bucket:
+                        bucket.append(tgt)
+                    if tgt not in global_procs.setdefault(name_lower, []):
+                        global_procs[name_lower].append(tgt)
+        elif rel == "contains" and src == module_nid:
+            proc_owner.setdefault(tgt, src)
+            node = node_by_id.get(tgt)
+            if node:
+                label = str(node.get("label", ""))
+                if label.endswith("()"):
+                    name_lower = label.removesuffix("()").lower()
+                    if tgt not in module_procs.setdefault(name_lower, []):
+                        module_procs[name_lower].append(tgt)
+                    if tgt not in global_procs.setdefault(name_lower, []):
+                        global_procs[name_lower].append(tgt)
 
     def _resolve(caller_nid: str, name_lower: str) -> str | None:
         owner = proc_owner.get(caller_nid)
@@ -13254,7 +13293,7 @@ def _extract_pascal_regex(path: Path) -> dict:
     # same-named methods on unrelated classes (property accessors, generated
     # wrapper classes such as TLB import units, etc. -- a common Pascal/Delphi
     # pattern) from collapsing into an arbitrary cross-class edge.
-    callee_nid = _resolve_pascal_callee_factory(impl_records, edges, module_nid)
+    callee_nid = _resolve_pascal_callee_factory(impl_records, edges, module_nid, nodes)
     raw_calls: list[dict] = []
     seen_raw_calls: set[tuple[str, str]] = set()
     for caller_nid, caller_line, body_text, _container, _name_lower in impl_records:
@@ -13502,7 +13541,7 @@ def extract_pascal(path: Path) -> dict:
     # the caller's own class, then its ancestor chain, then file-level free
     # functions, falling back to an unambiguous global match (see
     # _resolve_pascal_callee_factory).
-    resolve_callee = _resolve_pascal_callee_factory(proc_bodies, edges, module_nid)
+    resolve_callee = _resolve_pascal_callee_factory(proc_bodies, edges, module_nid, nodes)
     seen_call_pairs: set[tuple[str, str]] = set()
     raw_calls: list[dict] = []
     seen_raw_calls: set[tuple[str, str]] = set()
