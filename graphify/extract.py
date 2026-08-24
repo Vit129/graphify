@@ -37,6 +37,7 @@ from graphify.extractors.fish import extract_fish  # noqa: F401
 from graphify.extractors.gherkin import extract_gherkin  # noqa: F401
 from graphify.extractors.toml_ import extract_toml  # noqa: F401
 from graphify.extractors.csharp import (
+    CsharpNameResolver,
     _resolve_cross_file_csharp_imports,
     _resolve_csharp_type_references,
 )
@@ -3472,15 +3473,29 @@ def _csharp_member_type_table(root, source: bytes) -> dict[str, str]:
     """Collect ``name -> TypeName`` for C# receiver typing (#1609): class fields,
     properties, method parameters, and local variable declarations.
 
-    File-scoped, first-binding-wins (like the C++ table): a field declared once at
-    class scope is visible to every method's `field.Method()`, and a param/local
-    shadowing the same name is a conservative approximation graphify already accepts
-    for receiver typing. Only a resolvable, non-`var` type name is recorded; `var`
-    without a `new T()` initializer, and predefined/lower-cased primitives, are
-    skipped (precision over recall — an untypable receiver is left for the resolver
-    to drop rather than guess). `var v = new T()` is typed from the object-creation.
+    File-scoped with conflict POISONING (#1620): a name bound to two different
+    resolvable types anywhere in the file — or bound once to a resolvable type and
+    redeclared with an unresolvable one (``var x = Compute();``, a primitive, a
+    ``dynamic``) — is dropped from the table entirely, so a local shadowing a field
+    of a DIFFERENT type can never produce a wrong edge (the resolver simply emits
+    none). Consistent rebindings (the same resolved type) keep the single entry.
+    Only a resolvable, non-`var` type name is recorded; `var` without a `new T()`
+    initializer, and predefined/lower-cased primitives, are unresolvable (precision
+    over recall — an untypable receiver is left for the resolver to drop rather
+    than guess). `var v = new T()` is typed from the object-creation.
     """
     table: dict[str, str] = {}
+    poisoned: set[str] = set()
+
+    def _bind(name: str | None, resolved: str | None) -> None:
+        if not name:
+            return
+        if resolved is None or table.get(name, resolved) != resolved:
+            # An unresolvable redeclaration, or a second binding with a different
+            # type: the name is scope-ambiguous at file granularity — poison it.
+            poisoned.add(name)
+        else:
+            table[name] = resolved
 
     def _typed(type_node) -> str | None:
         info = _read_csharp_type_name(type_node, source)
@@ -3516,25 +3531,19 @@ def _csharp_member_type_table(root, source: bytes) -> dict[str, str]:
                 type_node = vd.child_by_field_name("type")
                 declared = _typed(type_node)
                 for name, decl in _decl_names(vd):
-                    resolved = declared or _new_type(decl)
-                    if name and resolved and name not in table:
-                        table[name] = resolved
+                    _bind(name, declared or _new_type(decl))
         elif t == "property_declaration":
             nm = n.child_by_field_name("name")
-            resolved = _typed(n.child_by_field_name("type"))
-            if nm is not None and resolved:
-                pname = _read_text(nm, source)
-                if pname not in table:
-                    table[pname] = resolved
+            if nm is not None:
+                _bind(_read_text(nm, source), _typed(n.child_by_field_name("type")))
         elif t == "parameter":
             nm = n.child_by_field_name("name")
-            resolved = _typed(n.child_by_field_name("type"))
-            if nm is not None and resolved:
-                pname = _read_text(nm, source)
-                if pname not in table:
-                    table[pname] = resolved
+            if nm is not None:
+                _bind(_read_text(nm, source), _typed(n.child_by_field_name("type")))
         for c in n.children:
             stack.append(c)
+    for name in poisoned:
+        table.pop(name, None)
     return table
 
 
@@ -5346,8 +5355,26 @@ def _extract_generic(
                         is_member_call = True
                         if recv is not None and recv.type == "identifier":
                             member_receiver = _read_text(recv, source)
-                        elif recv is not None and recv.type == "this_expression":
+                        elif recv is not None and recv.type in ("this", "this_expression"):
                             member_receiver = "this"
+                        elif recv is not None and recv.type in ("base", "base_expression"):
+                            # base.M(): resolved against the caller's single
+                            # resolvable base class in the cross-file pass.
+                            member_receiver = "base"
+                        elif recv is not None and recv.type == "member_access_expression":
+                            # this.field.M(): the explicit-`this` field access is
+                            # typed exactly like a bare `field.M()` via the file
+                            # table; any other chained receiver stays untyped
+                            # (the resolver bails rather than guessing).
+                            inner = recv.child_by_field_name("expression")
+                            fname = recv.child_by_field_name("name")
+                            if (
+                                inner is not None
+                                and inner.type in ("this", "this_expression")
+                                and fname is not None
+                                and fname.type == "identifier"
+                            ):
+                                member_receiver = _read_text(fname, source)
                 elif fn_node is not None and fn_node.type == "identifier":
                     callee_name = _read_text(fn_node, source)
                 else:
@@ -12059,20 +12086,32 @@ def _resolve_csharp_member_calls(
     all_edges: list[dict],
 ) -> None:
     """Resolve C# member calls (``recv.Method()``) to the receiver's declared type
-    (#1609).
+    (#1609), namespace-aware (#1620).
 
     The shared cross-file pass drops every ``is_member_call`` because a bare method
     name collides across the corpus — and for C# an in-file bare match silently
     mis-bound ``_server.Save()`` to an unrelated ``Cache.Save()``. The C# extractor
     now records each member call's receiver plus a per-file ``name -> Type`` table
-    (``csharp_type_table``) of fields/properties/params/locals. This pass types the
-    receiver, then emits an edge ONLY when that type resolves to exactly ONE
-    definition (the god-node guard); an untypable receiver is skipped (no guess).
+    (``csharp_type_table``) of fields/properties/params/locals (with conflicting
+    rebindings POISONED out, so a shadowing local of a different type produces no
+    edge rather than a wrong one). This pass types the receiver, then resolves the
+    declared type name with the same namespace/using/alias scoping machinery the
+    type-reference pass uses (``CsharpNameResolver``), so a class name duplicated
+    across namespaces still binds to the one in scope; only when scoping knows
+    nothing about the name does it fall back to the corpus-wide unique bare-name
+    match (the god-node guard). An untypable/ambiguous receiver is skipped — never
+    a guess.
 
     Receiver typing, by precision tier:
       * ``this.M()`` — receiver is the caller's own enclosing class -> EXTRACTED.
+      * ``base.M()`` — the caller's single resolvable base class -> EXTRACTED.
       * ``Type.M()`` (capitalized) — the type is named explicitly in source -> EXTRACTED.
-      * ``recv.M()`` — ``recv`` typed via the file's field/param/local table -> INFERRED.
+      * ``recv.M()`` / ``this.recv.M()`` — ``recv`` typed via the file's
+        field/param/local table -> INFERRED.
+
+    A method not declared on the receiver's type is looked up through its
+    ``inherits`` chain; a chain containing an unresolvable (out-of-corpus) base
+    poisons the lookup — the method may live there, so no edge is emitted.
 
     Must run after id-disambiguation so node ids and caller_nids are final.
     """
@@ -12094,6 +12133,11 @@ def _resolve_csharp_member_calls(
         if n.get("source_file") and n.get("id") in contained and _is_type_like_definition(n):
             type_def_nids.setdefault(_key(n.get("label", "")), []).append(n["id"])
 
+    # Namespace/using/alias-aware simple-name resolution, shared with the C#
+    # type-reference pass (which has already arbitrated inherits/implements/
+    # references targets by the time the resolver registry runs).
+    resolver = CsharpNameResolver(all_nodes, all_edges)
+
     # (type_node_id, method_key) -> method_node_id, and caller -> enclosing type.
     # C# owns its methods via `method` edges.
     method_index: dict[tuple[str, str], str] = {}
@@ -12107,6 +12151,78 @@ def _resolve_csharp_member_calls(
             continue
         enclosing_type.setdefault(tgt, src)
         method_index[(src, _key(tnode.get("label", "")))] = tgt
+
+    # Base-class chain from `inherits` edges (C# files only). The type-reference
+    # pass has already re-pointed each resolvable base to its real definition and
+    # left unresolvable ones on dangling sourceless stubs — a stub target marks
+    # the derived type's base chain as UNRESOLVED (poison: an inherited-member
+    # lookup through it must bail, the member may be declared out of corpus).
+    bases_of: dict[str, list[str]] = {}
+    unresolved_base: set[str] = set()
+    for e in all_edges:
+        if e.get("relation") != "inherits":
+            continue
+        src_file = e.get("source_file")
+        if not (isinstance(src_file, str) and src_file.endswith(".cs")):
+            continue
+        src, tgt = e.get("source"), e.get("target")
+        if not (isinstance(src, str) and isinstance(tgt, str)):
+            continue
+        tnode = node_by_id.get(tgt)
+        if tnode is None or not tnode.get("source_file"):
+            unresolved_base.add(src)
+        else:
+            bucket = bases_of.setdefault(src, [])
+            if tgt not in bucket:
+                bucket.append(tgt)
+
+    def _method_on_type_or_bases(type_nid: str, callee_key: str) -> str | None:
+        """The method's definition on the type or its resolvable base chain.
+
+        A type that declares the method directly wins (overrides shadow the
+        base). Otherwise walk `inherits` upward; an unresolved base anywhere the
+        walk actually reaches poisons the lookup (no edge), as does anything
+        other than exactly one declaration found.
+        """
+        hits: set[str] = set()
+        seen: set[str] = set()
+        frontier = [type_nid]
+        while frontier:
+            nid = frontier.pop()
+            if nid in seen:
+                continue
+            seen.add(nid)
+            method_nid = method_index.get((nid, callee_key))
+            if method_nid:
+                hits.add(method_nid)
+                continue  # an override shadows anything above it
+            if nid in unresolved_base:
+                return None  # the method may live on the out-of-corpus base
+            frontier.extend(bases_of.get(nid, []))
+        return next(iter(hits)) if len(hits) == 1 else None
+
+    def _resolve_type_name_nid(type_name: str | None, caller_node: dict | None,
+                               src_file: str) -> str | None:
+        """Resolve a declared type name to exactly one definition node id.
+
+        Namespace/using/alias scoping first (so `Svc` duplicated across
+        namespaces binds to the one in scope); when scoping is decisive but
+        ambiguous, bail. Only when scoping knows nothing about the name fall
+        back to the corpus-wide unique bare-name match (which also covers
+        nested types, absent from the scoped index).
+        """
+        if not type_name:
+            return None
+        if caller_node is not None:
+            resolved, decisive = resolver.resolve_type_name(
+                type_name, caller_node, src_file
+            )
+            if resolved:
+                return resolved
+            if decisive:
+                return None
+        type_defs = type_def_nids.get(_key(type_name), [])
+        return type_defs[0] if len(type_defs) == 1 else None
 
     all_raw_calls: list[dict] = []
     for result in per_file:
@@ -12122,33 +12238,41 @@ def _resolve_csharp_member_calls(
         if not receiver or not callee or not caller:
             continue
         src_file = rc.get("source_file", "")
+        caller_node = node_by_id.get(caller)
         if receiver == "this":
             type_nid = enclosing_type.get(caller)
             if not type_nid:
                 continue
             type_qualified = True
+        elif receiver == "base":
+            enclosing = enclosing_type.get(caller)
+            if not enclosing or enclosing in unresolved_base:
+                continue
+            bases = bases_of.get(enclosing, [])
+            if len(bases) != 1:  # no base, or can't tell which — bail
+                continue
+            type_nid = bases[0]
+            type_qualified = True
         elif receiver[:1].isupper():
             # Type.M() — the type is named explicitly (also covers a Pascal-cased
             # local whose name equals its type, resolved via the table below if the
             # explicit-type lookup misses).
-            type_defs = type_def_nids.get(_key(receiver), [])
-            if len(type_defs) != 1:
+            type_nid = _resolve_type_name_nid(receiver, caller_node, src_file)
+            if not type_nid:
                 type_name = type_table_by_file.get(src_file, {}).get(receiver)
-                type_defs = type_def_nids.get(_key(type_name), []) if type_name else []
-                if len(type_defs) != 1:
+                type_nid = _resolve_type_name_nid(type_name, caller_node, src_file)
+                if not type_nid:
                     continue
-            type_nid = type_defs[0]
             type_qualified = True
         else:
             type_name = type_table_by_file.get(src_file, {}).get(receiver)
             if not type_name:
                 continue
-            type_defs = type_def_nids.get(_key(type_name), [])
-            if len(type_defs) != 1:  # ambiguous or absent -> bail (god-node guard)
+            type_nid = _resolve_type_name_nid(type_name, caller_node, src_file)
+            if not type_nid:  # ambiguous or absent -> bail (god-node guard)
                 continue
-            type_nid = type_defs[0]
             type_qualified = False
-        method_nid = method_index.get((type_nid, _key(callee)))
+        method_nid = _method_on_type_or_bases(type_nid, _key(callee))
         if not method_nid:
             continue  # receiver typed, but the type has no such method — skip
         if method_nid == caller or (caller, method_nid) in existing_pairs:
