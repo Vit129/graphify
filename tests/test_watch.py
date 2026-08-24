@@ -1244,6 +1244,60 @@ def test_rebuild_code_preserves_semantic_edges_from_reextracted_doc(
     ) not in relations, "stale AST-tier edge of a re-extracted source must be evicted"
 
 
+def test_rebuild_code_evicts_stale_ast_edges_on_legacy_untagged_graph(tmp_path):
+    """On a legacy graph.json with ZERO _origin tags anywhere, an update to a code
+    source whose import was removed must still evict the stale AST import edge,
+    while preserving any untagged semantic edge from that source."""
+    from graphify.watch import _rebuild_code
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.py").write_text("import b\ndef foo(): pass\n", encoding="utf-8")
+    (corpus / "b.py").write_text("def bar(): pass\n", encoding="utf-8")
+
+    assert _rebuild_code(corpus, no_cluster=True, acquire_lock=False) is True
+    graph_path = corpus / "graphify-out" / "graph.json"
+    data = json.loads(graph_path.read_text(encoding="utf-8"))
+
+    # Strip all _origin tags from all edges to simulate a legacy graph.json
+    for e in data.get("links", []):
+        e.pop("_origin", None)
+
+    # Find foo node in a.py and bar node in b.py
+    a_id = next(n["id"] for n in data["nodes"] if n.get("source_file") == "a.py" and "foo" in n.get("label", ""))
+    b_id = next(n["id"] for n in data["nodes"] if n.get("source_file") == "b.py" and "bar" in n.get("label", ""))
+    data["links"].append({
+        "source": a_id,
+        "target": b_id,
+        "relation": "semantically_similar_to",
+        "confidence": "INFERRED",
+        "source_file": "a.py",
+    })
+    graph_path.write_text(json.dumps(data), encoding="utf-8")
+
+    # Now remove the import from a.py and re-extract
+    (corpus / "a.py").write_text("def foo(): pass\n", encoding="utf-8")
+    assert _rebuild_code(
+        corpus,
+        changed_paths=[Path("a.py")],
+        no_cluster=True,
+        acquire_lock=False,
+    ) is True
+
+    after = json.loads(graph_path.read_text(encoding="utf-8"))
+    relations = {
+        (e.get("source"), e.get("target"), e.get("relation"))
+        for e in after["links"]
+    }
+    assert (
+        a_id, b_id, "semantically_similar_to"
+    ) in relations, "semantic edge from re-extracted source must be preserved"
+    assert not any(
+        e.get("source_file") == "a.py" and e.get("relation") == "imports"
+        for e in after["links"]
+    ), "stale untagged AST import edge from re-extracted source must be evicted"
+
+
 def test_rebuild_code_preserves_nodes_from_excluded_but_alive_file(tmp_path, capsys):
     """Fail-closed eviction: a file that leaves the scan corpus (newly ignored)
     but still exists on disk was EXCLUDED, not deleted — its nodes must survive

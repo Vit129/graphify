@@ -779,12 +779,32 @@ def _rebuild_code(
                     norm = _nsf(sf, str(project_root))
                     return bool(norm) and norm in sources
 
+                _KNOWN_SEMANTIC_RELATIONS = {
+                    "semantically_similar_to",
+                    "conceptually_related_to",
+                    "shares_data_with",
+                    "cites",
+                    "documents_bug_in",
+                }
+
+                def _is_ast_tier_edge(e: dict) -> bool:
+                    origin = e.get("_origin")
+                    if origin == "ast":
+                        return True
+                    if origin == "semantic":
+                        return False
+                    # Legacy edge predating _origin edge tagging:
+                    # Known semantic relations are preserved. Structural/AST relations
+                    # (imports, calls, references, contains, inherits, etc.) are AST-tier
+                    # and must be evicted so removed imports/calls are pruned (#1865).
+                    return e.get("relation") not in _KNOWN_SEMANTIC_RELATIONS
+
                 preserved_edges = [
                     e for e in existing.get("links", existing.get("edges", []))
                     if e.get("source") in all_ids and e.get("target") in all_ids
                     and not _source_matches(e.get("source_file"), edge_deleted_sources)
                     and not (
-                        e.get("_origin") == "ast"
+                        _is_ast_tier_edge(e)
                         and _source_matches(e.get("source_file"), rebuilt_edge_sources)
                     )
                 ]
