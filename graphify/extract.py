@@ -3177,6 +3177,88 @@ def _kotlin_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: 
     return False
 
 
+def _kotlin_extract_object_literals(
+    scope_node,
+    source: bytes,
+    owner_nid: str,
+    add_node_fn,
+    add_edge_fn,
+    ensure_named_node_fn,
+    callable_def_nids: set,
+    walk_fn,
+) -> None:
+    """Scan scope_node for object_literal descendants and emit owner nodes/edges/members."""
+    _kt_literals = []
+    _kt_stack = list(scope_node.children)
+    while _kt_stack:
+        _kt_node = _kt_stack.pop()
+        if _kt_node.type == "function_declaration":
+            continue
+        if _kt_node.type == "object_literal":
+            _kt_literals.append(_kt_node)
+            continue
+        _kt_stack.extend(_kt_node.children)
+    _kt_literals.sort(key=lambda n: n.start_byte)
+    for lit in _kt_literals:
+        lit_line = lit.start_point[0] + 1
+        # Supertypes from the literal's delegation_specifiers,
+        # shaped like the Kotlin class-branch handling:
+        # constructor_invocation -> inherits, bare user_type
+        # (or explicit_delegation) -> implements.
+        lit_bases: list[tuple[str, str]] = []
+        for dchild in lit.children:
+            if dchild.type != "delegation_specifiers":
+                continue
+            for spec in dchild.children:
+                if spec.type != "delegation_specifier":
+                    continue
+                relation = "implements"
+                user_type_node = None
+                for sub in spec.children:
+                    if sub.type == "constructor_invocation":
+                        relation = "inherits"
+                        for inner in sub.children:
+                            if inner.type == "user_type":
+                                user_type_node = inner
+                                break
+                        break
+                    if sub.type == "user_type":
+                        user_type_node = sub
+                        break
+                    if sub.type == "explicit_delegation":
+                        for inner in sub.children:
+                            if inner.type == "user_type":
+                                user_type_node = inner
+                                break
+                        break
+                base = _kotlin_user_type_name(
+                    user_type_node, source
+                )
+                if base:
+                    lit_bases.append((base, relation))
+        obj_label = (
+            f"object:{lit_bases[0][0]}@L{lit_line}" if lit_bases
+            else f"object@L{lit_line}"
+        )
+        obj_nid = _make_id(
+            owner_nid, f"object:{obj_label}", f"L{lit_line}"
+        )
+        add_node_fn(obj_nid, obj_label, lit_line)
+        add_edge_fn(owner_nid, obj_nid, "contains", lit_line)
+        callable_def_nids.add(obj_nid)
+        for base, relation in lit_bases:
+            base_nid = ensure_named_node_fn(base, lit_line)
+            if base_nid != obj_nid:
+                add_edge_fn(obj_nid, base_nid, relation, lit_line)
+        lit_body = next(
+            (c for c in lit.children if c.type == "class_body"),
+            None,
+        )
+        if lit_body is not None:
+            for child in lit_body.children:
+                walk_fn(child, parent_class_nid=obj_nid)
+
+
 # ── Language configs ──────────────────────────────────────────────────────────
 
 _PYTHON_CONFIG = LanguageConfig(
@@ -4522,19 +4604,23 @@ def _extract_generic(
                 break
             return
 
-        if (config.ts_module == "tree_sitter_kotlin"
-                and t == "property_declaration"
-                and parent_class_nid):
-            type_node = _kotlin_property_type_node(node)
-            if type_node is not None:
-                line = node.start_point[0] + 1
-                refs: list[tuple[str, str]] = []
-                _kotlin_collect_type_refs(type_node, source, False, refs)
-                for ref_name, role in refs:
-                    ctx = "generic_arg" if role == "generic_arg" else "field"
-                    target_nid = ensure_named_node(ref_name, line)
-                    if target_nid != parent_class_nid:
-                        add_edge(parent_class_nid, target_nid, "references", line, context=ctx)
+        if config.ts_module == "tree_sitter_kotlin" and t == "property_declaration":
+            if parent_class_nid:
+                type_node = _kotlin_property_type_node(node)
+                if type_node is not None:
+                    line = node.start_point[0] + 1
+                    refs: list[tuple[str, str]] = []
+                    _kotlin_collect_type_refs(type_node, source, False, refs)
+                    for ref_name, role in refs:
+                        ctx = "generic_arg" if role == "generic_arg" else "field"
+                        target_nid = ensure_named_node(ref_name, line)
+                        if target_nid != parent_class_nid:
+                            add_edge(parent_class_nid, target_nid, "references", line, context=ctx)
+            owner_nid = parent_class_nid or file_nid
+            _kotlin_extract_object_literals(
+                node, source, owner_nid, add_node, add_edge,
+                ensure_named_node, callable_def_nids, walk
+            )
             return
 
         if (config.ts_module == "tree_sitter_swift"
@@ -5052,87 +5138,11 @@ def _extract_generic(
                 function_bodies.append((func_nid, body))
                 if config.ts_module == "tree_sitter_kotlin":
                     # #2347: Kotlin anonymous objects (`object : Foo { … }`,
-                    # node type `object_literal`). The function branch never
-                    # recurses into bodies and object_literal is not a
-                    # class_type, so the literal's members (and every call
-                    # inside them) got no nodes at all. Scan this body for
-                    # object_literal descendants — without crossing a nested
-                    # function_declaration boundary (a local fun's literals
-                    # are not this function's) and without descending into a
-                    # found literal — then emit an owner node per literal and
-                    # walk its class_body exactly like the class branch, so
-                    # members and their calls flow through the normal
-                    # machinery (walk_calls' function_boundary_types already
-                    # keep the enclosing function from absorbing them).
-                    _kt_literals = []
-                    _kt_stack = list(body.children)
-                    while _kt_stack:
-                        _kt_node = _kt_stack.pop()
-                        if _kt_node.type == "function_declaration":
-                            continue
-                        if _kt_node.type == "object_literal":
-                            _kt_literals.append(_kt_node)
-                            continue
-                        _kt_stack.extend(_kt_node.children)
-                    _kt_literals.sort(key=lambda n: n.start_byte)
-                    for lit in _kt_literals:
-                        lit_line = lit.start_point[0] + 1
-                        # Supertypes from the literal's delegation_specifiers,
-                        # shaped like the Kotlin class-branch handling:
-                        # constructor_invocation -> inherits, bare user_type
-                        # (or explicit_delegation) -> implements.
-                        lit_bases: list[tuple[str, str]] = []
-                        for dchild in lit.children:
-                            if dchild.type != "delegation_specifiers":
-                                continue
-                            for spec in dchild.children:
-                                if spec.type != "delegation_specifier":
-                                    continue
-                                relation = "implements"
-                                user_type_node = None
-                                for sub in spec.children:
-                                    if sub.type == "constructor_invocation":
-                                        relation = "inherits"
-                                        for inner in sub.children:
-                                            if inner.type == "user_type":
-                                                user_type_node = inner
-                                                break
-                                        break
-                                    if sub.type == "user_type":
-                                        user_type_node = sub
-                                        break
-                                    if sub.type == "explicit_delegation":
-                                        for inner in sub.children:
-                                            if inner.type == "user_type":
-                                                user_type_node = inner
-                                                break
-                                        break
-                                base = _kotlin_user_type_name(
-                                    user_type_node, source
-                                )
-                                if base:
-                                    lit_bases.append((base, relation))
-                        obj_label = (
-                            f"object:{lit_bases[0][0]}@L{lit_line}" if lit_bases
-                            else f"object@L{lit_line}"
-                        )
-                        obj_nid = _make_id(
-                            func_nid, f"object:{obj_label}", f"L{lit_line}"
-                        )
-                        add_node(obj_nid, obj_label, lit_line)
-                        add_edge(func_nid, obj_nid, "contains", lit_line)
-                        callable_def_nids.add(obj_nid)
-                        for base, relation in lit_bases:
-                            base_nid = ensure_named_node(base, lit_line)
-                            if base_nid != obj_nid:
-                                add_edge(obj_nid, base_nid, relation, lit_line)
-                        lit_body = next(
-                            (c for c in lit.children if c.type == "class_body"),
-                            None,
-                        )
-                        if lit_body is not None:
-                            for child in lit_body.children:
-                                walk(child, parent_class_nid=obj_nid)
+                    # node type `object_literal`).
+                    _kotlin_extract_object_literals(
+                        body, source, func_nid, add_node, add_edge,
+                        ensure_named_node, callable_def_nids, walk
+                    )
             return
 
         # JS/TS arrow functions and C# namespaces — language-specific extra handling

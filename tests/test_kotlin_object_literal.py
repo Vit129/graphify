@@ -172,3 +172,52 @@ def test_anonymous_object_does_not_steal_supertype_call_resolution(tmp_path):
     build_nid = next(n["id"] for n in r["nodes"] if n["label"] == ".build()")
     assert (build_nid, base_class) in calls, "Base() constructor call must resolve to Base class"
     assert (build_nid, obj_nid) not in calls, "Base() constructor call must not resolve to anonymous object"
+
+
+def test_class_property_object_literal_members_and_edges(tmp_path):
+    """Anonymous objects assigned to class properties must extract their owner node,
+    contains edge from class, implements edge to supertype, and member methods."""
+    r = _extract(tmp_path, {
+        "Holder.kt": (
+            "interface Listener {\n"
+            "    fun onEvent(e: String)\n"
+            "}\n"
+            "class Holder {\n"
+            "    private val listener = object : Listener {\n"
+            "        fun onEvent(e: String) { handleEvent(e) }\n"
+            "        fun handleEvent(e: String) { }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    holder_nid = next(n["id"] for n in r["nodes"] if n["label"] == "Holder")
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Listener"))
+    iface_nid = next(n["id"] for n in r["nodes"] if n["label"] == "Listener")
+    on_event = _find(r, ".onEvent()", "object")
+    handle_event = _find(r, ".handleEvent()", "object")
+
+    assert (holder_nid, obj_nid) in _edges(r, "contains"), "Holder must contain the anonymous object"
+    assert (obj_nid, iface_nid) in _edges(r, "implements"), "anonymous object must implement Listener"
+    methods = _edges(r, "method")
+    assert (obj_nid, on_event) in methods, "onEvent must belong to anonymous object"
+    assert (obj_nid, handle_event) in methods, "handleEvent must belong to anonymous object"
+    assert (on_event, handle_event) in _edges(r, "calls"), "onEvent must call handleEvent"
+
+
+def test_top_level_property_object_literal(tmp_path):
+    """Anonymous objects assigned to top-level properties must extract cleanly."""
+    r = _extract(tmp_path, {
+        "Global.kt": (
+            "interface Runner {\n"
+            "    fun run()\n"
+            "}\n"
+            "val globalRunner = object : Runner {\n"
+            "    fun run() { }\n"
+            "}\n"
+        ),
+    })
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Runner"))
+    runner_nid = next(n["id"] for n in r["nodes"] if n["label"] == "Runner")
+    run_method = _find(r, ".run()", "object")
+    assert (obj_nid, runner_nid) in _edges(r, "implements")
+    assert (obj_nid, run_method) in _edges(r, "method")
