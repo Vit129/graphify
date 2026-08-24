@@ -467,6 +467,13 @@ def _merge_csharp_partial_class_nodes(
     Must run BEFORE _disambiguate_colliding_node_ids / _rewire_unique_stub_nodes /
     _resolve_csharp_type_references and the resolver registry, so every later
     pass sees one definition per partial type.
+
+    Known limitation: partial-class merge collapses type definitions, reassigns
+    method ownership, and enables cross-half method calls (e.g. FooA calling a
+    method in FooB). However, receiver typing for field accesses across
+    partial-class files (a field declared in FooA.cs used in FooB.cs without
+    an explicit type) is not resolved because field types are harvested during
+    per-file AST extraction before cross-file partial merging.
     """
     groups: dict[tuple[str, str], list[dict]] = {}
     for n in all_nodes:

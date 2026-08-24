@@ -5499,7 +5499,7 @@ def _extract_generic(
     def walk_calls(
         node,
         caller_nid: str,
-        receiver_types: dict[str, str] | None = None,
+        receiver_types: tuple[dict[str, list[tuple[int, int, str | None]]], dict[str, str]] | None = None,
         extra_locals: frozenset[str] = frozenset(),
     ) -> None:
         if node.type in config.function_boundary_types:
