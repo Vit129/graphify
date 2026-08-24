@@ -81,6 +81,40 @@ class TestSwiftComputedProperties(unittest.TestCase):
         react_nid = next(n["id"] for n in r["nodes"] if n["label"] == ".react()")
         self.assertIn((score_nid, react_nid), call_pairs)
 
+    def test_computed_property_and_same_named_method_do_not_collide(self):
+        # A computed property and same-named method (`var foo` and `func foo()`)
+        # in the same type must not collide on node id or overwrite each other.
+        r = self._extract(
+            "struct C {\n"
+            "    var foo: Int { bar() }\n"
+            "    func foo() -> Int { 1 }\n"
+            "    func bar() -> Int { 2 }\n"
+            "}\n"
+        )
+        labels = _labels(r)
+        self.assertIn(".foo", labels, "computed property .foo must exist as a node")
+        self.assertIn(".foo()", labels, "method .foo() must exist as a node")
+        self.assertIn(".bar()", labels, "method .bar() must exist as a node")
+
+        # Distinct node IDs for property vs method
+        prop_node = next(n for n in r["nodes"] if n["label"] == ".foo")
+        method_node = next(n for n in r["nodes"] if n["label"] == ".foo()")
+        bar_node = next(n for n in r["nodes"] if n["label"] == ".bar()")
+        self.assertNotEqual(prop_node["id"], method_node["id"])
+
+        # Method foo() return type references Int
+        method_ref_targets = [
+            e["target"] for e in _rel(r, "references")
+            if e["source"] == method_node["id"]
+        ]
+        int_nid = next(n["id"] for n in r["nodes"] if n["label"] == "Int")
+        self.assertIn(int_nid, method_ref_targets, "method foo() must reference return type Int")
+
+        # Computed property calls bar()
+        call_pairs = {(e["source"], e["target"]) for e in _rel(r, "calls")}
+        self.assertIn((prop_node["id"], bar_node["id"]), call_pairs,
+                      "computed property .foo must call .bar()")
+
 
 if __name__ == "__main__":
     unittest.main()

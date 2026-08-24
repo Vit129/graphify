@@ -4521,7 +4521,7 @@ def _extract_generic(
             comp_bodies = [c for c in node.children
                            if c.type in ("computed_property", "willset_didset_block")]
             if comp_bodies and prop_name:
-                prop_nid = _make_id(parent_class_nid, prop_name)
+                prop_nid = _make_id(parent_class_nid, f"{prop_name}_prop")
                 add_node(prop_nid, f".{prop_name}", line)
                 add_edge(parent_class_nid, prop_nid, "method", line)
                 for body_block in comp_bodies:
