@@ -62,6 +62,17 @@ def test_resolve_python_module_path_walks_up_to_src_package_root(tmp_path):
     )
 
 
+def test_resolve_python_module_path_with_relative_paths(tmp_path, monkeypatch):
+    """_resolve_python_module_path resolves correctly when current_path is a relative Path."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "src" / "mypkg").mkdir(parents=True)
+    core = tmp_path / "src" / "mypkg" / "core.py"
+    core.write_text("class Engine: pass\n")
+    app = Path("src/mypkg/app.py")
+    resolved = _resolve_python_module_path("mypkg.core", app, Path("."), level=0)
+    assert resolved == core.resolve()
+
+
 def test_import_edges_identical_from_root_or_src(tmp_path):
     """Headline (#2072): the same project yields the same import edges whether
     scanned from the repo root or from src/ (modulo the `src_` id prefix)."""

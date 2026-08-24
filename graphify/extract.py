@@ -11642,6 +11642,14 @@ def _probe_python_module_candidate(candidate: Path) -> Path | None:
 
 
 def _resolve_python_module_path(module_name: str, current_path: Path, root: Path, level: int) -> Path | None:
+    try:
+        current_path = Path(current_path).resolve()
+    except OSError:
+        current_path = Path(current_path)
+    try:
+        root = Path(root).resolve()
+    except OSError:
+        root = Path(root)
     if level > 0:
         base = current_path.parent
         for _ in range(level - 1):
