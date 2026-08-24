@@ -1714,7 +1714,7 @@ def find_path_with_disambiguation(
     # treats every edge as equally worth crossing, so it can route through a
     # generic/protocol-conformance hub (e.g. `Int -> Sendable`) instead of the
     # real, meaningful call chain.
-    from graphify.analyze import _BUILTIN_NOISE_LABELS
+    from graphify.analyze import _BUILTIN_NOISE_LABELS, _is_builtin_noise_label
 
     # Deterministic path (#2074) & direction-aware routing (#2487):
     if undirected:
@@ -1757,7 +1757,7 @@ def find_path_with_disambiguation(
     noise_nodes = {
         n for n in G_weighted.nodes()
         if G_weighted.nodes[n].get("type") in ("module", "namespace")
-        or G_weighted.nodes[n].get("label", "") in _BUILTIN_NOISE_LABELS
+        or _is_builtin_noise_label(G_weighted, n)
         or degree.get(n, 0) >= hub_degree_threshold
     }
 

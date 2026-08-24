@@ -31,6 +31,31 @@ _LANGUAGE_BUILTIN_GLOBALS: frozenset[str] = frozenset({
     "callable", "getattr", "setattr", "hasattr", "delattr", "vars", "dir",
 })
 
+# Swift standard library / Foundation / SwiftUI (#2147). Value-type
+# initializers (Data(x), Int(x), UUID()) and protocol conformance targets
+# appear from virtually every file of a Swift codebase, scoped strictly to
+# Swift extraction/analysis to avoid filtering common names in other languages.
+_SWIFT_BUILTIN_GLOBALS: frozenset[str] = frozenset({
+    "Int", "Int8", "Int16", "Int32", "Int64",
+    "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
+    "Double", "Float", "Bool", "Character",
+    "Optional", "Result", "Dictionary",
+    "Sendable", "Codable", "Decodable", "Encodable", "Equatable", "Hashable",
+    "Identifiable", "Comparable", "CaseIterable", "RawRepresentable",
+    "CustomStringConvertible", "CustomDebugStringConvertible", "AnyObject",
+    "LocalizedError",
+    "Data", "UUID", "Decimal", "Calendar", "Locale", "TimeZone", "Bundle",
+    "IndexPath", "IndexSet", "NotificationCenter", "UserDefaults",
+    "FileManager", "URLSession", "URLRequest", "URLComponents",
+    "JSONDecoder", "JSONEncoder", "DateFormatter", "NumberFormatter",
+    "ISO8601DateFormatter", "Timer", "Task",
+    "NSObject", "NSString", "NSError", "NSLock", "NSAttributedString",
+    "DispatchQueue", "DispatchGroup", "OperationQueue", "RunLoop",
+    "View", "Color", "Font", "Text", "Image", "Button", "ForEach",
+    "VStack", "HStack", "ZStack", "NavigationStack",
+    "ObservableObject", "Published", "State", "Binding",
+})
+
 
 def _make_id(*parts: str) -> str:
     return make_id(*parts)

@@ -27,6 +27,7 @@ from .pascal_resolution import resolve_pascal_inherited_calls
 # --- migrated to graphify/extractors/ (see graphify/extractors/MIGRATION.md) ---
 from graphify.extractors.base import (  # noqa: F401
     _LANGUAGE_BUILTIN_GLOBALS,
+    _SWIFT_BUILTIN_GLOBALS,
     _file_stem,
     _make_id,
     _read_text,
@@ -4746,6 +4747,22 @@ def _extract_generic(
             prop_name = _swift_property_name(node, source)
             if prop_name and prop_type:
                 type_table[prop_name] = prop_type
+            # #2181: a computed property (`var body: some View { … }`) or an
+            # observed one (`willSet`/`didSet`) carries a body that the branches
+            # above never emitted — so the property node AND every call inside it
+            # were dropped. For SwiftUI this erases the whole view layer, since
+            # `body` is a computed property. Emit a function-like member node and
+            # defer its body to the call-walk via function_bodies (mirroring how
+            # methods register their bodies). Stored properties have no such body
+            # child, so their behaviour is unchanged (no regression).
+            comp_bodies = [c for c in node.children
+                           if c.type in ("computed_property", "willset_didset_block")]
+            if comp_bodies and prop_name:
+                prop_nid = _make_id(parent_class_nid, f"{prop_name}_prop")
+                add_node(prop_nid, f".{prop_name}", line)
+                add_edge(parent_class_nid, prop_nid, "method", line)
+                for body_block in comp_bodies:
+                    function_bodies.append((prop_nid, body_block))
             return
 
         if (config.ts_module == "tree_sitter_scala"
@@ -5733,7 +5750,9 @@ def _extract_generic(
                         # Try reading the node directly (e.g. Java name field is the callee)
                         callee_name = _read_text(func_node, source)
 
-            if callee_name and callee_name not in _LANGUAGE_BUILTIN_GLOBALS:
+            if callee_name and callee_name not in _LANGUAGE_BUILTIN_GLOBALS and (
+                config.ts_module != "tree_sitter_swift" or callee_name not in _SWIFT_BUILTIN_GLOBALS
+            ):
                 # A capitalized-receiver member call (`ClassName.method()`) must defer
                 # to receiver-based cross-file resolution: the bare method name can
                 # collide with an in-file node — even the calling method itself, when a
@@ -9999,6 +10018,54 @@ def _lang_is_case_insensitive(source_file: object) -> bool:
     return Path(str(source_file)).suffix.lower() in _CASE_INSENSITIVE_EXTS
 
 
+# Language interop families for cross-file call resolution. A call in one language
+# can never bind by name to a definition in another family — a TSX component does
+# not invoke a Kotlin method, and a Python function does not invoke a Java one.
+# Families are grouped by REAL interop so legitimate cross-language resolution
+# keeps working: Kotlin/Java/Scala/Groovy share the JVM, C/C++/Objective-C/CUDA
+# share headers and symbols (Swift bridges to Objective-C), and JS/TS variants
+# (plus Vue/Svelte/Astro SFC script blocks) compile into one module graph.
+# Extensions absent from this map (docs, configs, unknown languages) resolve to
+# no family and are never filtered — same permissive default as before.
+_LANG_FAMILY_BY_EXT: dict[str, str] = {
+    # JS/TS module graph (SFCs embed JS/TS)
+    ".js": "jsts", ".jsx": "jsts", ".mjs": "jsts", ".cjs": "jsts",
+    ".ts": "jsts", ".tsx": "jsts", ".mts": "jsts", ".cts": "jsts",
+    ".vue": "jsts", ".svelte": "jsts", ".astro": "jsts",
+    # JVM interop
+    ".java": "jvm", ".kt": "jvm", ".kts": "jvm",
+    ".scala": "jvm", ".groovy": "jvm", ".gradle": "jvm",
+    # C / C++ / CUDA / Metal
+    ".c": "c", ".cpp": "c", ".cc": "c", ".cxx": "c",
+    ".hpp": "c", ".cu": "c", ".cuh": "c", ".metal": "c",
+    # Apple ecosystem (Swift and Objective-C bridging)
+    ".m": "objc", ".mm": "objc", ".h": "objc",
+    ".swift": "swift",
+    # Single-language families
+    ".py": "python",
+    ".go": "go",
+    ".rs": "rust",
+    ".rb": "ruby", ".rake": "ruby",
+    ".php": "php", ".phtml": "php", ".php3": "php", ".php4": "php",
+    ".php5": "php", ".php7": "php", ".phps": "php",
+    ".cs": "dotnet", ".razor": "dotnet", ".cshtml": "dotnet", ".xaml": "dotnet",
+    ".lua": "lua", ".luau": "lua",
+    ".zig": "zig",
+    ".ex": "elixir", ".exs": "elixir",
+    ".jl": "julia",
+    ".dart": "dart",
+    ".sh": "shell", ".bash": "shell",
+    ".ps1": "powershell", ".psm1": "powershell", ".psd1": "powershell",
+}
+
+
+def _lang_family(source_file: object) -> str | None:
+    """Interop family of the file's language, or None when unknown/not code."""
+    if not source_file:
+        return None
+    return _LANG_FAMILY_BY_EXT.get(Path(str(source_file)).suffix.lower())
+
+
 def _node_label_key(node: dict, fold: bool = False) -> str:
     label = str(node.get("label", "")).strip()
     key = re.sub(r"[^a-zA-Z0-9]+", "", label)
@@ -11520,12 +11587,26 @@ def _merge_swift_extensions(
     if not extension_nids:
         return
 
+    # A genuine Swift type is the target of a `contains` edge from its file node;
+    # bare-reference shadow nodes (`let x: Foo`) carry a source_file but are NOT
+    # contained, so excluding them keeps a stub from making a real type look
+    # ambiguous — same predicate the Swift member-call resolver uses (#2538).
+    contained = {e.get("target") for e in all_edges if e.get("relation") == "contains"}
+
     label_to_canonical: dict[str, list[str]] = {}
     for n in all_nodes:
         if n.get("id") in extension_nids:
             continue
         label = n.get("label")
         if not label:
+            continue
+        # Restrict candidates to Swift's own family (Swift and Objective-C
+        # bridging), and skip builtin globals the way member-call resolvers do (#1726, #2147).
+        if _lang_family(n.get("source_file")) not in ("swift", "objc"):
+            continue
+        if label in _LANGUAGE_BUILTIN_GLOBALS or label in _SWIFT_BUILTIN_GLOBALS:
+            continue
+        if not (n.get("source_file") and n.get("id") in contained and _is_type_like_definition(n)):
             continue
         label_to_canonical.setdefault(label, []).append(n["id"])
 
@@ -11548,16 +11629,29 @@ def _merge_swift_extensions(
     # the type owns the methods, the files own their slice. Self-loops are
     # dropped (e.g. an in-file extension method whose call already pointed at
     # the canonical type).
+    def _key_of(e: dict, src: str, tgt: str) -> tuple:
+        return (src, tgt, e.get("relation"), e.get("source_file"), e.get("source_location"))
+
     rewritten: list[dict] = []
     seen_keys: set[tuple] = set()
     for e in all_edges:
-        src = remap.get(e.get("source"), e.get("source"))
-        tgt = remap.get(e.get("target"), e.get("target"))
+        src0, tgt0 = e.get("source"), e.get("target")
+        src = remap.get(src0, src0)
+        tgt = remap.get(tgt0, tgt0)
+        if src == src0 and tgt == tgt0:
+            # Untouched by the merge — keep verbatim. The key below ignores
+            # confidence/weight/context, so deduping edges this pass never
+            # rewrote prunes legitimate parallel edges emitted elsewhere in the
+            # pipeline; one Swift extension in a polyglot repo was enough to
+            # silently drop unrelated edges from other languages (#2538).
+            seen_keys.add(_key_of(e, src0, tgt0))
+            rewritten.append(e)
+            continue
         if src == tgt:
             continue
         e["source"] = src
         e["target"] = tgt
-        key = (src, tgt, e.get("relation"), e.get("source_file"), e.get("source_location"))
+        key = _key_of(e, src, tgt)
         if key in seen_keys:
             continue
         seen_keys.add(key)
@@ -11866,6 +11960,12 @@ def _resolve_swift_member_calls(
             type_name = type_table_by_file.get(rc.get("source_file", ""), {}).get(receiver)
             type_qualified = False
         if not type_name:
+            continue
+        # A builtin receiver type (Data, NSLock, DispatchQueue, ...) must not
+        # resolve to a same-named user symbol — the cross-file CALL resolver and
+        # the TS/Python member-call resolvers already skip these globals (#1726);
+        # do the same for Swift (#2147).
+        if type_name in _LANGUAGE_BUILTIN_GLOBALS or type_name in _SWIFT_BUILTIN_GLOBALS:
             continue
         type_defs = type_def_nids.get(_key(type_name), [])
         if len(type_defs) != 1:  # ambiguous or absent -> bail (god-node guard)
@@ -16954,6 +17054,7 @@ def extract(
     parallel: bool = True,
     max_workers: int | None = None,
     value_coupling: bool = False,
+    root: Path | None = None,
 ) -> dict:
     """Extract AST nodes and edges from a list of code files.
 
@@ -16971,6 +17072,8 @@ def extract(
             use ProcessPoolExecutor for multi-core extraction.
         max_workers: max subprocess count. Defaults to cpu_count (or the
             value of GRAPHIFY_MAX_WORKERS if set), bounded by len(uncached_work).
+        root: explicit anchor for source_file relativization, node ids, and
+            symbol resolution.
     """
     paths = [Path(p) for p in paths]
     _check_tree_sitter_version()
@@ -16979,6 +17082,7 @@ def extract(
     _WORKSPACE_PACKAGE_CACHE.clear()
     _XAML_CSHARP_CLASS_CACHE.clear()
 
+    anchor_root = root
     # Infer a common root for cache keys (use first diverging segment, not sum of all matches)
     try:
         if not paths:
@@ -16996,7 +17100,9 @@ def extract(
             root = Path(*paths[0].parts[:common_len]) if common_len else Path(".")
     except Exception:
         root = Path(".")
-    if cache_root is not None:
+    if anchor_root is not None:
+        root = anchor_root
+    elif cache_root is not None:
         root = cache_root
     root = root.resolve()
 
@@ -17133,6 +17239,17 @@ def extract(
                 e["source"] = id_remap[e["source"]]
             if e.get("target") in id_remap:
                 e["target"] = id_remap[e["target"]]
+        # swift_extensions[].nid is the same kind of id carrier as caller_nid
+        # above (cache.py remaps both), consumed by _merge_swift_extensions far
+        # below. Left stale it matches no node, so whether the extension merge
+        # runs at all depends on the FORM of the paths handed to extract() —
+        # relative input already yields the post-remap slug, absolute input does
+        # not (#2538). Remap it here so both agree.
+        for result in per_file:
+            for ext in result.get("swift_extensions", []) or []:
+                en = ext.get("nid")
+                if en in id_remap:
+                    ext["nid"] = id_remap[en]
     if prefix_remap:
         sym_remap: dict[str, str] = {}
         for n in all_nodes:
@@ -17177,6 +17294,12 @@ def extract(
                 cn = rc.get("caller_nid")
                 if cn in sym_remap:
                     rc["caller_nid"] = sym_remap[cn]
+            # Same for swift_extensions[].nid (see the id_remap pass above).
+            for result in per_file:
+                for ext in result.get("swift_extensions", []) or []:
+                    en = ext.get("nid")
+                    if en in sym_remap:
+                        ext["nid"] = sym_remap[en]
 
     _merge_swift_extensions(per_file, all_nodes, all_edges)
     _merge_csharp_partial_class_nodes(per_file, all_nodes, all_edges)
@@ -17337,6 +17460,8 @@ def extract(
         if not callee:
             continue
         if callee in _LANGUAGE_BUILTIN_GLOBALS:
+            continue
+        if str(rc.get("source_file", "")).endswith(".swift") and callee in _SWIFT_BUILTIN_GLOBALS:
             continue
         # Skip member-call callees: obj.log() → "log" has no import evidence
         # and collides with any top-level function named "log" in the corpus.

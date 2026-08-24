@@ -29,6 +29,23 @@ _BUILTIN_NOISE_LABELS = frozenset({
     "f32", "f64", "rune", "byte",
 })
 
+# Swift / Foundation / SwiftUI framework symbols and module imports that
+# otherwise dominate god-node rankings on Swift codebases (#2147).
+# Scoped strictly to Swift source files so ordinary classes named Color or View
+# in non-Swift projects are never excluded.
+_SWIFT_BUILTIN_NOISE_LABELS = frozenset({
+    "Foundation", "SwiftUI", "UIKit", "AppKit", "Combine",
+    "Data", "URL", "Date", "UUID", "Timer", "Task",
+    "Sendable", "Codable", "Decodable", "Encodable", "Equatable", "Hashable",
+    "Identifiable", "Comparable", "Error", "LocalizedError",
+    "NSObject", "NSString", "NSError", "NSLock", "NSAttributedString",
+    "DispatchQueue", "DispatchGroup", "OperationQueue", "RunLoop",
+    "View", "Color", "Font", "Text", "Image", "Button", "ForEach",
+    "VStack", "HStack", "ZStack", "NavigationStack",
+    "ObservableObject", "Published", "State", "Binding",
+    "Optional", "Result", "Dictionary",
+})
+
 # Language families — extensions sharing a runtime can legitimately call each other
 _LANG_FAMILY: dict[str, str] = {
     **{e: "python" for e in (".py", ".pyw")},
@@ -59,6 +76,19 @@ def _cross_language(src_a: str, src_b: str) -> bool:
 def _node_community_map(communities: dict[int, list[str]]) -> dict[str, int]:
     """Invert communities dict: node_id -> community_id."""
     return {n: cid for cid, nodes in communities.items() for n in nodes}
+
+
+def _is_builtin_noise_label(G: nx.Graph, node_id: str) -> bool:
+    """Return True if a node's label matches a language-agnostic or language-specific noise label."""
+    label = G.nodes[node_id].get("label", "")
+    if label in _BUILTIN_NOISE_LABELS:
+        return True
+    if label in _SWIFT_BUILTIN_NOISE_LABELS:
+        source_file = str(G.nodes[node_id].get("source_file") or "")
+        ext = Path(source_file).suffix.lower()
+        if _LANG_FAMILY.get(ext) == "swift":
+            return True
+    return False
 
 
 def _is_file_node(G: nx.Graph, node_id: str) -> bool:
@@ -148,7 +178,7 @@ def god_nodes(G: nx.Graph, top_n: int = 10, by: str = "degree") -> list[dict]:
     for node_id, node_score in sorted_nodes:
         if _is_file_node(G, node_id) or _is_concept_node(G, node_id) or _is_json_key_node(G, node_id):
             continue
-        if G.nodes[node_id].get("label", "") in _BUILTIN_NOISE_LABELS:
+        if _is_builtin_noise_label(G, node_id):
             continue
         # Import/module anchor nodes (#1327): `import Foundation` from N files collapses
         # to one shared node with type=module, which accumulates one edge per importing
@@ -191,7 +221,7 @@ def cross_cutting_nodes(
     for node_id in G.nodes():
         if _is_file_node(G, node_id) or _is_concept_node(G, node_id) or _is_json_key_node(G, node_id):
             continue
-        if G.nodes[node_id].get("label", "") in _BUILTIN_NOISE_LABELS:
+        if _is_builtin_noise_label(G, node_id):
             continue
         if G.nodes[node_id].get("type") in ("module", "namespace"):
             continue
