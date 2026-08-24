@@ -1778,3 +1778,30 @@ def test_save_manifest_preserves_entries_without_mtime(tmp_path):
     assert loaded["a.py"]["ast_hash"] == "zz"
     assert loaded["a.py"]["semantic_hash"] == "yy"
 
+
+def test_detect_returns_unclassified_files_and_walk_errors(tmp_path, monkeypatch):
+    """detect() must track walked-and-unclassified files and walk errors."""
+    (tmp_path / "main.py").write_text("print('hello')\n")
+    (tmp_path / "binary.dat").write_text("bin\n")
+    (tmp_path / "data.xyz").write_text("unknown format\n")
+
+    res = detect(tmp_path)
+    assert "unclassified" in res
+    unclass_names = [Path(p).name for p in res["unclassified"]]
+    assert "binary.dat" in unclass_names
+    assert "data.xyz" in unclass_names
+    assert res["walk_errors"] == []
+
+    # Test walk error capture
+    def mock_walk(top, followlinks=False, onerror=None):
+        if onerror:
+            onerror(OSError("Simulated permission denied on directory"))
+        return iter([])
+
+    monkeypatch.setattr("os.walk", mock_walk)
+    err_res = detect(tmp_path)
+    assert len(err_res["walk_errors"]) == 1
+    assert "Simulated permission denied" in err_res["walk_errors"][0]
+
+
+

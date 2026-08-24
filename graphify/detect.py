@@ -1080,9 +1080,14 @@ def detect(root: Path, *, follow_symlinks: bool | None = None, google_workspace:
     seen: set[Path] = set()
     all_files: list[Path] = []
 
+    walk_errors: list[str] = []
+
+    def _on_walk_error(err: OSError) -> None:
+        walk_errors.append(str(err))
+
     for scan_root in scan_paths:
         in_memory_tree = memory_dir.exists() and str(scan_root).startswith(str(memory_dir))
-        for dirpath, dirnames, filenames in os.walk(scan_root, followlinks=follow_symlinks):
+        for dirpath, dirnames, filenames in os.walk(scan_root, followlinks=follow_symlinks, onerror=_on_walk_error):
             dp = Path(dirpath)
             if follow_symlinks and os.path.islink(dirpath):
                 real = os.path.realpath(dirpath)
@@ -1128,6 +1133,7 @@ def detect(root: Path, *, follow_symlinks: bool | None = None, google_workspace:
     all_files.sort(key=lambda p: str(p))
 
     converted_dir = root / GRAPHIFY_OUT / "converted"
+    unclassified: list[str] = []
 
     for p in all_files:
         # For memory dir files, skip hidden/noise filtering
@@ -1182,6 +1188,8 @@ def detect(root: Path, *, follow_symlinks: bool | None = None, google_workspace:
             files[ftype].append(str(p))
             if ftype != FileType.VIDEO:
                 total_words += count_words(p)
+        else:
+            unclassified.append(str(p))
 
     for ftype in files:
         files[ftype].sort()
@@ -1212,6 +1220,8 @@ def detect(root: Path, *, follow_symlinks: bool | None = None, google_workspace:
         "skipped_sensitive": skipped_sensitive,
         "graphifyignore_patterns": len(ignore_patterns),
         "scan_root": str(root.resolve()),
+        "unclassified": sorted(unclassified),
+        "walk_errors": walk_errors,
     }
 
 
