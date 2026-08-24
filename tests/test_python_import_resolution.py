@@ -149,3 +149,57 @@ def test_ordinary_relative_import_still_resolves(tmp_path: Path):
     target_symbol = _node_id(result, "helper()", "pkg/sibling.py")
 
     assert _has_edge(result, source_file, target_symbol, "imports")
+
+
+def test_relative_subpackage_import_cache_warmth_consistency(tmp_path: Path):
+    """Refactoring a module into a package directory (graphs.py -> graphs/__init__.py)
+    must produce identical import edges whether the importing file's AST cache
+    entry is warm or cold (#2688)."""
+    cache_dir = tmp_path / "cache"
+    init = _write(tmp_path / "src/mypkg/__init__.py", "")
+    api_init = _write(tmp_path / "src/mypkg/api/__init__.py", "")
+    routes_init = _write(tmp_path / "src/mypkg/api/routes/__init__.py", "")
+    graphs_py = _write(
+        tmp_path / "src/mypkg/graphs.py",
+        "def build_graph():\n    return {}\n",
+    )
+    health = _write(
+        tmp_path / "src/mypkg/api/routes/health.py",
+        "from ...graphs import build_graph\n",
+    )
+
+    # Initial extraction: graphs is a module file. Populates AST cache.
+    res_mod = extract([init, api_init, routes_init, graphs_py, health], cache_root=cache_dir, root=tmp_path)
+    health_file = _node_id(res_mod, "health.py", "src/mypkg/api/routes/health.py")
+    graphs_file = _node_id(res_mod, "graphs.py", "src/mypkg/graphs.py")
+    assert _has_edge(res_mod, health_file, graphs_file, "imports_from")
+
+    # Refactor: graphs.py -> graphs/__init__.py. health.py is untouched (cache is warm).
+    graphs_py.unlink()
+    graphs_pkg_init = _write(
+        tmp_path / "src/mypkg/graphs/__init__.py",
+        "def build_graph():\n    return {}\n",
+    )
+
+    # Warm-cache extraction
+    res_warm = extract(
+        [init, api_init, routes_init, graphs_pkg_init, health], cache_root=cache_dir, root=tmp_path
+    )
+    # Cold-cache extraction (fresh cache dir)
+    res_cold = extract(
+        [init, api_init, routes_init, graphs_pkg_init, health], cache_root=tmp_path / "cache_cold", root=tmp_path
+    )
+
+    graphs_pkg = _node_id(res_warm, "__init__.py", "src/mypkg/graphs/__init__.py")
+    assert _has_edge(res_warm, health_file, graphs_pkg, "imports_from")
+    assert _has_edge(res_cold, health_file, graphs_pkg, "imports_from")
+
+    warm_health_targets = [
+        e["target"] for e in res_warm["edges"]
+        if e["source"] == health_file and e["relation"] == "imports_from"
+    ]
+    cold_health_targets = [
+        e["target"] for e in res_cold["edges"]
+        if e["source"] == health_file and e["relation"] == "imports_from"
+    ]
+    assert warm_health_targets == cold_health_targets == [graphs_pkg]

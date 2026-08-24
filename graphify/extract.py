@@ -2012,21 +2012,8 @@ def _import_python(node, source: bytes, file_nid: str, stem: str, edges: list, s
                 base = Path(str_path).parent
                 for _ in range(dots - 1):
                     base = base.parent
-                # A relative import can name a subpackage (a directory with an
-                # __init__.py), not a module file. Probing the candidate on disk
-                # (mirroring the companion `imports` edge's
-                # _resolve_python_module_path) resolves `graphs` -> graphs/__init__.py
-                # instead of a nonexistent graphs.py: without it the target keeps an
-                # absolute-path-derived slug that the target_file stamp below can't
-                # heal, so it dangles per-checkout (#2455).
-                candidate = base / module_name.replace(".", "/") if module_name else base
-                resolved = _probe_python_module_candidate(candidate)
-                if resolved is not None:
-                    target_path = resolved
-                else:
-                    rel = (module_name.replace(".", "/") + ".py") if module_name else "__init__.py"
-                    target_path = base / rel
-                tgt_nid = _make_id(str(target_path))
+                rel = (module_name.replace(".", "/") + ".py") if module_name else "__init__.py"
+                tgt_nid = _make_id(str(base / rel))
             else:
                 tgt_nid = _make_id(raw)
             edges.append({
@@ -17781,6 +17768,35 @@ def extract(
             old_prefs.append((old_pref_abs, new_id))
         if old_prefs:
             prefix_remap[path.resolve()] = old_prefs
+    # If a scanned file is a package __init__, also register the virtual module path
+    # (e.g. pkg/subpkg.py -> pkg/subpkg/__init__.py) so relative imports
+    # (`from .subpkg import x` or `from ..graphs import y`) resolved via pure
+    # string manipulation in _import_python remap to this __init__ file node
+    # in the post-pass without needing disk probing during cached per-file AST extraction (#2688).
+    for path in paths:
+        if path.name in ("__init__.py", "__init__.pyi"):
+            try:
+                rel = path.relative_to(root)
+            except ValueError:
+                try:
+                    rel = path.resolve().relative_to(root)
+                except ValueError:
+                    continue
+            new_id = _file_node_id(rel)
+            for cand in (
+                path.parent.with_suffix(".py"),
+                path.parent.with_suffix(".pyi"),
+                path.parent,
+            ):
+                cand_id = _make_id(str(cand))
+                if cand_id not in id_remap:
+                    id_remap[cand_id] = new_id
+                try:
+                    cand_id_abs = _make_id(str(cand.resolve()))
+                    if cand_id_abs not in id_remap:
+                        id_remap[cand_id_abs] = new_id
+                except (ValueError, OSError):
+                    pass
     if id_remap:
         for n in all_nodes:
             if n.get("id") in id_remap:
