@@ -35,11 +35,15 @@ _BUILTIN_NOISE_LABELS = frozenset({
 # in non-Swift projects are never excluded.
 _SWIFT_BUILTIN_NOISE_LABELS = frozenset({
     "Foundation", "SwiftUI", "UIKit", "AppKit", "Combine",
-    "Data", "URL", "Date", "UUID",
+    "Data", "URL", "Date", "UUID", "Timer", "Task",
     "Sendable", "Codable", "Decodable", "Encodable", "Equatable", "Hashable",
     "Identifiable", "Comparable", "Error", "LocalizedError",
-    "NSObject", "NSString", "NSError", "NSLock",
-    "View", "Color", "Font", "DispatchQueue",
+    "NSObject", "NSString", "NSError", "NSLock", "NSAttributedString",
+    "DispatchQueue", "DispatchGroup", "OperationQueue", "RunLoop",
+    "View", "Color", "Font", "Text", "Image", "Button", "ForEach",
+    "VStack", "HStack", "ZStack", "NavigationStack",
+    "ObservableObject", "Published", "State", "Binding",
+    "Optional", "Result", "Dictionary",
 })
 
 # Language families — extensions sharing a runtime can legitimately call each other

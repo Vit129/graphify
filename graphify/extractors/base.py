@@ -39,6 +39,7 @@ _SWIFT_BUILTIN_GLOBALS: frozenset[str] = frozenset({
     "Int", "Int8", "Int16", "Int32", "Int64",
     "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
     "Double", "Float", "Bool", "Character",
+    "Optional", "Result", "Dictionary",
     "Sendable", "Codable", "Decodable", "Encodable", "Equatable", "Hashable",
     "Identifiable", "Comparable", "CaseIterable", "RawRepresentable",
     "CustomStringConvertible", "CustomDebugStringConvertible", "AnyObject",
@@ -47,10 +48,12 @@ _SWIFT_BUILTIN_GLOBALS: frozenset[str] = frozenset({
     "IndexPath", "IndexSet", "NotificationCenter", "UserDefaults",
     "FileManager", "URLSession", "URLRequest", "URLComponents",
     "JSONDecoder", "JSONEncoder", "DateFormatter", "NumberFormatter",
-    "ISO8601DateFormatter",
+    "ISO8601DateFormatter", "Timer", "Task",
     "NSObject", "NSString", "NSError", "NSLock", "NSAttributedString",
     "DispatchQueue", "DispatchGroup", "OperationQueue", "RunLoop",
-    "View", "Color", "Font",
+    "View", "Color", "Font", "Text", "Image", "Button", "ForEach",
+    "VStack", "HStack", "ZStack", "NavigationStack",
+    "ObservableObject", "Published", "State", "Binding",
 })
 
 
