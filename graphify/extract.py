@@ -1757,7 +1757,7 @@ def _js_local_bound_names(func_node, source: bytes) -> set[str]:
                 # binding is the `left` pattern, NOT wrapped in a
                 # variable_declarator, so the branch above misses it and `entry`
                 # read as a by-name reference to any same-named module callable
-                # (#2606). C-style `for (let i = 0; ...)` uses a lexical_declaration
+                # (#2568). C-style `for (let i = 0; ...)` uses a lexical_declaration
                 # with real declarators, already covered by the recursion below.
                 left = c.child_by_field_name("left")
                 if left is not None:
@@ -5787,7 +5787,7 @@ def _extract_generic(
                 if first_key:
                     segment = first_key.split(".")[0]
                     tgt_nid = (label_to_nid_ci.get(segment.lower())
-                                or label_to_nid_ci.get(f"{segment}.php".lower()))
+                              or label_to_nid_ci.get(f"{segment}.php".lower()))
                     if tgt_nid and tgt_nid != caller_nid:
                         relation = f"uses_{callee_name}"
                         pair3 = (caller_nid, tgt_nid, relation)

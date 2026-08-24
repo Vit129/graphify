@@ -6,7 +6,7 @@ pattern, NOT wrapped in a `variable_declarator`. So `entry` contributed nothing
 to the shadow set: used in an object-shorthand argument (`push({ entry })`) it
 read as an unresolved by-name reference, resolved against the corpus-wide label
 index, and fabricated an INFERRED `indirect_call` edge to an unrelated same-named
-module callable (#2606). A generic fixture/helper name then became a false
+module callable (#2568). A generic fixture/helper name then became a false
 high-betweenness hub, distorting god-node and community analysis.
 
 C-style `for (let i = 0; ...)` uses a `lexical_declaration` with real
