@@ -1309,7 +1309,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'all'" },
     { name = "matplotlib", marker = "extra == 'svg'" },
     { name = "mcp", marker = "extra == 'all'" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1,<3" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.27.0,<3" },
     { name = "neo4j", marker = "extra == 'all'" },
     { name = "neo4j", marker = "extra == 'neo4j'" },
     { name = "networkx", specifier = ">=3.4" },
