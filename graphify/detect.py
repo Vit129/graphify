@@ -1372,7 +1372,9 @@ def save_manifest(
     def _normalise_entry(entry):
         if isinstance(entry, (int, float)):
             return {"mtime": entry, "ast_hash": "", "semantic_hash": ""}
-        if isinstance(entry, dict) and "mtime" in entry:
+        if isinstance(entry, dict) and "hash" in entry and "ast_hash" not in entry:
+            return {"mtime": entry.get("mtime", 0), "ast_hash": entry["hash"], "semantic_hash": ""}
+        if isinstance(entry, dict):
             return entry
         return None
 

@@ -1738,3 +1738,43 @@ def test_detect_incremental_exclusion_stable_across_runs(tmp_path):
     assert inc2["deleted_files"] == []
     assert inc2["excluded_files"] == []
 
+
+def test_save_manifest_migrates_legacy_hash_to_ast_hash(tmp_path):
+    """A legacy manifest entry {mtime, hash} must migrate to {mtime, ast_hash, semantic_hash}."""
+    import json
+    a = tmp_path / "a.py"
+    a.write_text("x = 1\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(manifest_path).write_text(
+        json.dumps({"a.py": {"mtime": 100, "hash": "abc123hash"}}),
+        encoding="utf-8",
+    )
+
+    # Save manifest with an incremental subset that does not touch a.py
+    save_manifest({}, manifest_path, root=tmp_path)
+    loaded = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert "a.py" in loaded
+    assert loaded["a.py"]["ast_hash"] == "abc123hash"
+    assert loaded["a.py"]["mtime"] == 100
+    assert loaded["a.py"]["semantic_hash"] == ""
+
+
+def test_save_manifest_preserves_entries_without_mtime(tmp_path):
+    """Manifest entries without an explicit mtime key must be preserved as-is."""
+    import json
+    a = tmp_path / "a.py"
+    a.write_text("x = 1\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(manifest_path).write_text(
+        json.dumps({"a.py": {"ast_hash": "zz", "semantic_hash": "yy"}}),
+        encoding="utf-8",
+    )
+
+    save_manifest({}, manifest_path, root=tmp_path)
+    loaded = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert "a.py" in loaded
+    assert loaded["a.py"]["ast_hash"] == "zz"
+    assert loaded["a.py"]["semantic_hash"] == "yy"
+
