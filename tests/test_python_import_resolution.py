@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from graphify.extract import extract
+from graphify.extract import extract, _resolve_python_module_path
 
 
 def _write(path: Path, text: str) -> Path:
@@ -84,3 +84,122 @@ def test_python_parameter_return_and_generic_contexts(tmp_path: Path):
     assert ("process()", "Payload", "parameter_type") in pairs
     assert ("process()", "Result", "return_type") in pairs
     assert ("process_many()", "Payload", "generic_arg") in pairs
+
+
+def test_relative_subpackage_import_from_targets_package_init(tmp_path: Path):
+    # `from ...graphs import build_graph` where `graphs/` is a package (a dir
+    # with __init__.py, not a graphs.py module). The imports_from edge must
+    # target the package's __init__.py file node, matching the companion
+    # `imports` edge — not an absolute-scan-path slug for a nonexistent
+    # graphs.py that dangles per-checkout (#2455).
+    init = _write(tmp_path / "src/mypkg/__init__.py", "")
+    api_init = _write(tmp_path / "src/mypkg/api/__init__.py", "")
+    routes_init = _write(tmp_path / "src/mypkg/api/routes/__init__.py", "")
+    graphs_init = _write(
+        tmp_path / "src/mypkg/graphs/__init__.py",
+        "def build_graph():\n    return {}\n",
+    )
+    health = _write(
+        tmp_path / "src/mypkg/api/routes/health.py",
+        "from ...graphs import build_graph\n",
+    )
+
+    result = extract(
+        [init, api_init, routes_init, graphs_init, health], cache_root=tmp_path
+    )
+
+    health_file = _node_id(result, "health.py", "src/mypkg/api/routes/health.py")
+    graphs_pkg = _node_id(result, "__init__.py", "src/mypkg/graphs/__init__.py")
+
+    assert _has_edge(result, health_file, graphs_pkg, "imports_from")
+    # No imports_from edge out of health may carry an unresolved absolute-path
+    # slug (the pre-fix `<scan>_src_mypkg_graphs_py` target).
+    health_targets = [
+        e["target"]
+        for e in result["edges"]
+        if e["source"] == health_file and e["relation"] == "imports_from"
+    ]
+    assert all(t.endswith("graphs_init") for t in health_targets), health_targets
+
+
+def test_overdeep_relative_import_is_unresolved_not_fatal(tmp_path: Path):
+    source = _write(
+        tmp_path / "pkg" / "mod.py",
+        "from ........................... import missing\n\n"
+        "def ok():\n"
+        "    return 1\n",
+    )
+
+    assert _resolve_python_module_path("", source, tmp_path, level=27) is None
+
+    result = extract([source], cache_root=tmp_path)
+
+    assert _node_id(result, "mod.py", "pkg/mod.py")
+    assert _node_id(result, "ok()", "pkg/mod.py")
+
+
+def test_ordinary_relative_import_still_resolves(tmp_path: Path):
+    target = _write(tmp_path / "pkg" / "sibling.py", "def helper():\n    return 1\n")
+    source = _write(tmp_path / "pkg" / "mod.py", "from .sibling import helper\n")
+
+    assert _resolve_python_module_path("sibling", source, tmp_path, level=1) == target
+
+    result = extract([source, target], cache_root=tmp_path)
+    source_file = _node_id(result, "mod.py", "pkg/mod.py")
+    target_symbol = _node_id(result, "helper()", "pkg/sibling.py")
+
+    assert _has_edge(result, source_file, target_symbol, "imports")
+
+
+def test_relative_subpackage_import_cache_warmth_consistency(tmp_path: Path):
+    """Refactoring a module into a package directory (graphs.py -> graphs/__init__.py)
+    must produce identical import edges whether the importing file's AST cache
+    entry is warm or cold (#2688)."""
+    cache_dir = tmp_path / "cache"
+    init = _write(tmp_path / "src/mypkg/__init__.py", "")
+    api_init = _write(tmp_path / "src/mypkg/api/__init__.py", "")
+    routes_init = _write(tmp_path / "src/mypkg/api/routes/__init__.py", "")
+    graphs_py = _write(
+        tmp_path / "src/mypkg/graphs.py",
+        "def build_graph():\n    return {}\n",
+    )
+    health = _write(
+        tmp_path / "src/mypkg/api/routes/health.py",
+        "from ...graphs import build_graph\n",
+    )
+
+    # Initial extraction: graphs is a module file. Populates AST cache.
+    res_mod = extract([init, api_init, routes_init, graphs_py, health], cache_root=cache_dir, root=tmp_path)
+    health_file = _node_id(res_mod, "health.py", "src/mypkg/api/routes/health.py")
+    graphs_file = _node_id(res_mod, "graphs.py", "src/mypkg/graphs.py")
+    assert _has_edge(res_mod, health_file, graphs_file, "imports_from")
+
+    # Refactor: graphs.py -> graphs/__init__.py. health.py is untouched (cache is warm).
+    graphs_py.unlink()
+    graphs_pkg_init = _write(
+        tmp_path / "src/mypkg/graphs/__init__.py",
+        "def build_graph():\n    return {}\n",
+    )
+
+    # Warm-cache extraction
+    res_warm = extract(
+        [init, api_init, routes_init, graphs_pkg_init, health], cache_root=cache_dir, root=tmp_path
+    )
+    # Cold-cache extraction (fresh cache dir)
+    res_cold = extract(
+        [init, api_init, routes_init, graphs_pkg_init, health], cache_root=tmp_path / "cache_cold", root=tmp_path
+    )
+
+    graphs_pkg = _node_id(res_warm, "__init__.py", "src/mypkg/graphs/__init__.py")
+    assert _has_edge(res_warm, health_file, graphs_pkg, "imports_from")
+    assert _has_edge(res_cold, health_file, graphs_pkg, "imports_from")
+
+    warm_health_targets = [
+        e["target"] for e in res_warm["edges"]
+        if e["source"] == health_file and e["relation"] == "imports_from"
+    ]
+    cold_health_targets = [
+        e["target"] for e in res_cold["edges"]
+        if e["source"] == health_file and e["relation"] == "imports_from"
+    ]
+    assert warm_health_targets == cold_health_targets == [graphs_pkg]
