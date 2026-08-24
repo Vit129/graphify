@@ -5104,6 +5104,89 @@ def _extract_generic(
                         function_bodies.append((m_nid, m_body))
             if body:
                 function_bodies.append((func_nid, body))
+                if config.ts_module == "tree_sitter_kotlin":
+                    # #2347: Kotlin anonymous objects (`object : Foo { … }`,
+                    # node type `object_literal`). The function branch never
+                    # recurses into bodies and object_literal is not a
+                    # class_type, so the literal's members (and every call
+                    # inside them) got no nodes at all. Scan this body for
+                    # object_literal descendants — without crossing a nested
+                    # function_declaration boundary (a local fun's literals
+                    # are not this function's) and without descending into a
+                    # found literal — then emit an owner node per literal and
+                    # walk its class_body exactly like the class branch, so
+                    # members and their calls flow through the normal
+                    # machinery (walk_calls' function_boundary_types already
+                    # keep the enclosing function from absorbing them).
+                    _kt_literals = []
+                    _kt_stack = list(body.children)
+                    while _kt_stack:
+                        _kt_node = _kt_stack.pop()
+                        if _kt_node.type == "function_declaration":
+                            continue
+                        if _kt_node.type == "object_literal":
+                            _kt_literals.append(_kt_node)
+                            continue
+                        _kt_stack.extend(_kt_node.children)
+                    _kt_literals.sort(key=lambda n: n.start_byte)
+                    for lit in _kt_literals:
+                        lit_line = lit.start_point[0] + 1
+                        # Supertypes from the literal's delegation_specifiers,
+                        # shaped like the Kotlin class-branch handling:
+                        # constructor_invocation -> inherits, bare user_type
+                        # (or explicit_delegation) -> implements.
+                        lit_bases: list[tuple[str, str]] = []
+                        for dchild in lit.children:
+                            if dchild.type != "delegation_specifiers":
+                                continue
+                            for spec in dchild.children:
+                                if spec.type != "delegation_specifier":
+                                    continue
+                                relation = "implements"
+                                user_type_node = None
+                                for sub in spec.children:
+                                    if sub.type == "constructor_invocation":
+                                        relation = "inherits"
+                                        for inner in sub.children:
+                                            if inner.type == "user_type":
+                                                user_type_node = inner
+                                                break
+                                        break
+                                    if sub.type == "user_type":
+                                        user_type_node = sub
+                                        break
+                                    if sub.type == "explicit_delegation":
+                                        for inner in sub.children:
+                                            if inner.type == "user_type":
+                                                user_type_node = inner
+                                                break
+                                        break
+                                base = _kotlin_user_type_name(
+                                    user_type_node, source
+                                )
+                                if base:
+                                    lit_bases.append((base, relation))
+                        obj_label = (
+                            lit_bases[0][0] if lit_bases
+                            else f"object@L{lit_line}"
+                        )
+                        obj_nid = _make_id(
+                            func_nid, f"object:{obj_label}", f"L{lit_line}"
+                        )
+                        add_node(obj_nid, obj_label, lit_line)
+                        add_edge(func_nid, obj_nid, "contains", lit_line)
+                        callable_def_nids.add(obj_nid)
+                        for base, relation in lit_bases:
+                            base_nid = ensure_named_node(base, lit_line)
+                            if base_nid != obj_nid:
+                                add_edge(obj_nid, base_nid, relation, lit_line)
+                        lit_body = next(
+                            (c for c in lit.children if c.type == "class_body"),
+                            None,
+                        )
+                        if lit_body is not None:
+                            for child in lit_body.children:
+                                walk(child, parent_class_nid=obj_nid)
             return
 
         # JS/TS arrow functions and C# namespaces — language-specific extra handling
