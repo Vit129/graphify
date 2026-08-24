@@ -95,3 +95,45 @@ def test_genuine_reference_outside_the_loop_still_emits(tmp_path):
         "export function elsewhere(pool) { pool.submit(entry); }\n"
     )})
     assert (nid["elsewhere"], nid["entry"]) in _indirect(r)
+
+
+def test_genuine_outer_reference_before_loop_in_same_function_still_emits(tmp_path):
+    """A loop binding in `for (const entry of rows)` is block-scoped to the loop
+    body, so a genuine reference to an outer `entry` before the loop inside the
+    SAME enclosing function must still emit an indirect_call edge."""
+    r, nid = _extract_js_dir(tmp_path, {"a.js": (
+        "function entry(x){ return x; }\n"
+        "export function findNamed(rows, pool) {\n"
+        "  pool.submit(entry);\n"
+        "  for (const entry of rows) { rows.push(entry); }\n"
+        "}\n"
+    )})
+    assert (nid["findNamed"], nid["entry"]) in _indirect(r)
+
+
+def test_genuine_outer_reference_after_loop_in_same_function_still_emits(tmp_path):
+    """A loop binding in `for (const entry of rows)` is block-scoped to the loop
+    body, so a genuine reference to an outer `entry` after the loop inside the
+    SAME enclosing function must still emit an indirect_call edge."""
+    r, nid = _extract_js_dir(tmp_path, {"a.js": (
+        "function entry(x){ return x; }\n"
+        "export function findNamed(rows, pool) {\n"
+        "  for (const entry of rows) { rows.push(entry); }\n"
+        "  pool.submit(entry);\n"
+        "}\n"
+    )})
+    assert (nid["findNamed"], nid["entry"]) in _indirect(r)
+
+
+def test_for_of_var_binding_is_function_scoped(tmp_path):
+    """`for (var entry of rows)` is function-scoped in JS, so it shadows throughout
+    the enclosing function."""
+    r, nid = _extract_js_dir(tmp_path, {"a.js": (
+        "function entry(x){ return x; }\n"
+        "export function findNamed(rows, pool) {\n"
+        "  pool.submit(entry);\n"
+        "  for (var entry of rows) { rows.push(entry); }\n"
+        "}\n"
+    )})
+    assert (nid["findNamed"], nid["entry"]) not in _indirect(r)
+

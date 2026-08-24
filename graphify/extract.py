@@ -1752,16 +1752,14 @@ def _js_local_bound_names(func_node, source: bytes) -> set[str]:
                 name = c.child_by_field_name("name")
                 if name is not None:
                     _js_collect_pattern_idents(name, source, bound)
-            elif c.type == "for_in_statement":
-                # `for (const entry of xs)` / `for (const {k} of xs)`: the loop
-                # binding is the `left` pattern, NOT wrapped in a
-                # variable_declarator, so the branch above misses it and `entry`
-                # read as a by-name reference to any same-named module callable
-                # (#2568). C-style `for (let i = 0; ...)` uses a lexical_declaration
-                # with real declarators, already covered by the recursion below.
-                left = c.child_by_field_name("left")
-                if left is not None:
-                    _js_collect_pattern_idents(left, source, bound)
+            elif c.type in ("for_in_statement", "for_of_statement"):
+                # `for (var x of xs)`: var-declared loop bindings are function-scoped in JS (#2568).
+                # const/let bindings are block-scoped to the loop subtree and handled in walk_calls.
+                kind = c.child_by_field_name("kind")
+                if kind is not None and _read_text(kind, source) == "var":
+                    left = c.child_by_field_name("left")
+                    if left is not None:
+                        _js_collect_pattern_idents(left, source, bound)
             walk(c)
 
     body = func_node.child_by_field_name("body")
@@ -5938,6 +5936,23 @@ def _extract_generic(
                 caught: set[str] = set()
                 _js_collect_pattern_idents(param, source, caught)
                 extra_locals = extra_locals | frozenset(caught)
+
+        # `for (const entry of xs)` / `for (let { k } in obj)` loop bindings are
+        # block-scoped to the loop body (#2568). Fold them into extra_locals for
+        # this loop subtree only so references to same-named callables outside the
+        # loop (before or after) remain resolvable. `for (var ...)` bindings are
+        # function-scoped in JS and collected in `_js_local_bound_names`.
+        if (
+            config.ts_module in ("tree_sitter_javascript", "tree_sitter_typescript")
+            and node.type in ("for_in_statement", "for_of_statement")
+        ):
+            kind = node.child_by_field_name("kind")
+            if kind is None or _read_text(kind, source) != "var":
+                left = node.child_by_field_name("left")
+                if left is not None:
+                    loop_locals: set[str] = set()
+                    _js_collect_pattern_idents(left, source, loop_locals)
+                    extra_locals = extra_locals | frozenset(loop_locals)
 
         for child in node.children:
             walk_calls(child, caller_nid, extra_locals)
