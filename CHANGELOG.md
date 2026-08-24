@@ -3,6 +3,58 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.0] - 2026-08-24
+
+### Documentation
+- Migrate stale Claude Code auto-memory into portable agent-memory ([`ae07da8`](https://github.com/Vit129/graphify/commit/ae07da82ffad274d2de6c134f5643f4b5f6e5d63))
+
+### Fixed
+- Close stored XSS and broken neighbor links in graph.html ([#1838](https://github.com/Vit129/graphify/pull/1838)) ([`a6426f1`](https://github.com/Vit129/graphify/commit/a6426f17521d8b4b73d5a5321200e2d7c5d9dbb5))
+- Make the query log opt-in, off by default ([#1797](https://github.com/Vit129/graphify/pull/1797)) ([`fc92d51`](https://github.com/Vit129/graphify/commit/fc92d513d8f144526afe3b92da9ab1accc902133))
+- Correct stale README wording, drop vacuous test, harden querylog perms ([`7c52c39`](https://github.com/Vit129/graphify/commit/7c52c3900386ec60dca3fdbaf62372c7bb600f04))
+- Make MCP server dual-compat with mcp SDK 1.x and 2.x ([#2308](https://github.com/Vit129/graphify/pull/2308)) ([`9fb3590`](https://github.com/Vit129/graphify/commit/9fb3590d8348422e97223b1103ad0259a1696548))
+- Correct mcp version floor, use positive-test SDK-version detection ([`c4b52a8`](https://github.com/Vit129/graphify/commit/c4b52a854e51f31fc0d1f93dd224eb393b46393f))
+- Preserve semantic edges of re-extracted sources ([#1865](https://github.com/Vit129/graphify/pull/1865)) ([`215f331`](https://github.com/Vit129/graphify/commit/215f331345bb4ec0b4c938def036a2f4635f111c))
+- Require deletion evidence before evicting a missing source ([#1795](https://github.com/Vit129/graphify/pull/1795)) ([`f4a7d6c`](https://github.com/Vit129/graphify/commit/f4a7d6c2d4c9cbfa3b408ee111a454f7343b219f))
+- Stop AST-quick-scanning docs that already have semantic nodes ([#1915](https://github.com/Vit129/graphify/pull/1915)) ([`c54620a`](https://github.com/Vit129/graphify/commit/c54620ac7f0cc256b329a9a69aaba7ddbac84f0d))
+- Write graph.json and manifest.json atomically ([#1952](https://github.com/Vit129/graphify/pull/1952)) ([`551ed5b`](https://github.com/Vit129/graphify/commit/551ed5ba08eea6ecd720b43af97df343f532a459))
+- Don't force-write a partial graph over a complete one ([#1951](https://github.com/Vit129/graphify/pull/1951)) ([`54de3ff`](https://github.com/Vit129/graphify/commit/54de3ff7935c645944e7fc8db4cfa1a65d1eed0e))
+- Excluded files are pruned from graph and manifest, not misreported as deleted (#1908 #1909) ([`8cc15b5`](https://github.com/Vit129/graphify/commit/8cc15b5f2ed2de45b18980fb6697ef816ab8c327))
+- Evict legacy untagged AST edges on re-extraction while preserving semantic edges ([`a4800ce`](https://github.com/Vit129/graphify/commit/a4800ceaa5863f413be0b5234f2ef3c6cd39cb70))
+- Keep excluded-alive nodes across full rebuilds to honor deletion-evidence guard ([`287ab26`](https://github.com/Vit129/graphify/commit/287ab266e55d8b3c188dc6fd5169495edc17ada1))
+- Restore legacy manifest entry normalization and preserve entries without mtime ([`5060411`](https://github.com/Vit129/graphify/commit/5060411d702bdac59a6b405c89b9dbe9be3bb281))
+- Return unclassified files and walk errors from detect to support guards ([`aff1748`](https://github.com/Vit129/graphify/commit/aff1748cae8103bb85758884db8fe632937a50c7))
+- Eliminate global umask race condition in atomic replace ([`527bb95`](https://github.com/Vit129/graphify/commit/527bb957176cec53b4d6761877c037c027102e16))
+- Restore accidentally dropped stages.mark export timing call ([`f58386c`](https://github.com/Vit129/graphify/commit/f58386c848a698619c50655dc7ebb8ed8dedb91f))
+- Deterministic route and honest edge relation in path finding ([#2074](https://github.com/Vit129/graphify/pull/2074)) ([`c14de1f`](https://github.com/Vit129/graphify/commit/c14de1f5515a287fae867bdf8922158231a4b7a8))
+- Recover edge direction from _src/_tgt markers in path and explain ([#2309](https://github.com/Vit129/graphify/pull/2309)) ([`974afa5`](https://github.com/Vit129/graphify/commit/974afa5485067a5ae3e8332d320840b7dffccc72))
+- Respect edge direction by default in path and shortest_path ([#2487](https://github.com/Vit129/graphify/pull/2487)) ([`92162d6`](https://github.com/Vit129/graphify/commit/92162d6b164bf75e396464569832dd97a779d13e))
+- Guarantee per-term BFS seed diversity in query ([#1596](https://github.com/Vit129/graphify/pull/1596)) ([`714a349`](https://github.com/Vit129/graphify/commit/714a34958bb9b9d0683ae5624d0864faca43281b))
+- Dedup seeds by label to prevent generic-symbol flooding ([#1832](https://github.com/Vit129/graphify/pull/1832)) ([`cb97df3`](https://github.com/Vit129/graphify/commit/cb97df313d8104fcef300b0efa1418e22c0de72a))
+- Add German and Romance question stopwords to query filtering ([#1900](https://github.com/Vit129/graphify/pull/1900)) ([`52c31bb`](https://github.com/Vit129/graphify/commit/52c31bb569faa84f8b3c1c6e47ca3346fcfcee24))
+- Exclude relational-intent verbs from query seed guarantee ([#2507](https://github.com/Vit129/graphify/pull/2507)) ([`81c585e`](https://github.com/Vit129/graphify/commit/81c585e4f4a65533c35784e43e99ae846d4340db))
+- Resolve punctuated and non-ASCII node ids in find_node ([#2467](https://github.com/Vit129/graphify/pull/2467)) ([`2621046`](https://github.com/Vit129/graphify/commit/2621046b4a8c36bd4fafe3cab4130421d262a7cf))
+- Default path finding to undirected and expose opt-in directed traversal ([`9b84798`](https://github.com/Vit129/graphify/commit/9b847982001041fd4b81f7d9521366d0cbec479f))
+- Cap per-term BFS seed guarantee to keep seed count bounded on multi-term queries ([`85facf0`](https://github.com/Vit129/graphify/commit/85facf084d9bb55d64375d3465896d490bfa4280))
+- Dedup seeds by label in community fill loop to prevent generic-symbol flooding ([`8b899c6`](https://github.com/Vit129/graphify/commit/8b899c6de0feaeff5797ef69d35e6aa92063094d))
+- Recover edge direction from _src markers in _blast_radius_hops ([`8a98012`](https://github.com/Vit129/graphify/commit/8a98012cb6ac16782128184d97c991acc77aa72a))
+- Gate multigraph loaders on require_multigraph_capabilities ([`1c15915`](https://github.com/Vit129/graphify/commit/1c15915aa95f4d8c1aea56a84feeec464f8cdaaf))
+- Retain whole lowercased tokens in _query_terms alongside sub-tokens ([`61daa5f`](https://github.com/Vit129/graphify/commit/61daa5f88bde8ad250b62aea4e9044e680f1b7f4))
+- Align affected graph loader and reverse traversal with direction recovery ([`5f29782`](https://github.com/Vit129/graphify/commit/5f297828370965d1969146248d20e30d26fd6255))
+
+## [0.23.0] - 2026-07-30
+
+### Changed
+- Remove Chinese query segmentation and jieba dependency ([`2ce72de`](https://github.com/Vit129/graphify/commit/2ce72dee8dfcef70fcff81653a2ae2ed67aee6c6))
+
+### Documentation
+- Surface --backend claude-cli in the env var table and troubleshooting ([`9a0274a`](https://github.com/Vit129/graphify/commit/9a0274a3e043ee3093013e1126e0ab4908b1e590))
+
+### Fixed
+- Pin mcp<2.0, fix AnyUrl import — mcp 2.0 broke the MCP server entirely ([`d5a5f4f`](https://github.com/Vit129/graphify/commit/d5a5f4ff570acd875544b5aa37bfbb5d172abf47))
+- Stamp the correct repo's commit hash, not the caller's cwd ([`c1ee787`](https://github.com/Vit129/graphify/commit/c1ee78722f98e76fecac955a20430e3590ad74a8))
+- List claude-cli and bedrock in extract --backend help/usage text ([`7eea123`](https://github.com/Vit129/graphify/commit/7eea1233e7f6863727457da5090cb7667773825d))
+
 ## [0.22.0] - 2026-07-26
 
 ### Added
