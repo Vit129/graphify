@@ -3469,80 +3469,138 @@ def _read_csharp_type_name(node, source: bytes) -> tuple[str, bool, str] | None:
     return None
 
 
-def _csharp_member_type_table(root, source: bytes) -> dict[str, str]:
-    """Collect ``name -> TypeName`` for C# receiver typing (#1609): class fields,
-    properties, method parameters, and local variable declarations.
+def _csharp_receiver_type_name(type_node, source: bytes) -> str | None:
+    """Resolve a C# declared type to a receiver-typable class name, or None.
 
-    File-scoped with conflict POISONING (#1620): a name bound to two different
-    resolvable types anywhere in the file — or bound once to a resolvable type and
-    redeclared with an unresolvable one (``var x = Compute();``, a primitive, a
-    ``dynamic``) — is dropped from the table entirely, so a local shadowing a field
-    of a DIFFERENT type can never produce a wrong edge (the resolver simply emits
-    none). Consistent rebindings (the same resolved type) keep the single entry.
-    Only a resolvable, non-`var` type name is recorded; `var` without a `new T()`
-    initializer, and predefined/lower-cased primitives, are unresolvable (precision
-    over recall — an untypable receiver is left for the resolver to drop rather
-    than guess). `var v = new T()` is typed from the object-creation.
+    A genuine C# class name is Pascal-cased; predefined primitives
+    (int/bool/string) and ``dynamic`` never own a resolvable method definition
+    here, and ``var`` (``implicit_type``) carries no name at all.
     """
-    table: dict[str, str] = {}
-    poisoned: set[str] = set()
-
-    def _bind(name: str | None, resolved: str | None) -> None:
-        if not name:
-            return
-        if resolved is None or table.get(name, resolved) != resolved:
-            # An unresolvable redeclaration, or a second binding with a different
-            # type: the name is scope-ambiguous at file granularity — poison it.
-            poisoned.add(name)
-        else:
-            table[name] = resolved
-
-    def _typed(type_node) -> str | None:
-        info = _read_csharp_type_name(type_node, source)
-        if not info:
-            return None
-        name = info[0]
-        # A genuine C# class name is Pascal-cased; skip predefined primitives
-        # (int/bool/string) which never own a resolvable method definition here.
-        return name if name and name[:1].isupper() else None
-
-    def _decl_names(var_decl):
-        for c in var_decl.children:
-            if c.type == "variable_declarator":
-                nm = c.child_by_field_name("name") or next(
-                    (g for g in c.children if g.type == "identifier"), None)
-                if nm is not None:
-                    yield _read_text(nm, source), c
-
-    def _new_type(declarator) -> str | None:
-        # `var v = new Server()` — recover the type from the object_creation_expression.
-        for g in declarator.children:
-            if g.type == "object_creation_expression":
-                return _typed(g.child_by_field_name("type"))
+    info = _read_csharp_type_name(type_node, source)
+    if not info:
         return None
+    name = info[0]
+    return name if name and name[:1].isupper() else None
 
-    stack = [root]
+
+def _csharp_method_receiver_types(
+    method_node,
+    source: bytes,
+    field_types: dict[str, str],
+) -> dict[str, str]:
+    """Build the receiver type table visible to one C# method (#2299).
+
+    The C# twin of ``_java_method_receiver_types``: current-class fields and
+    properties are the base scope, and parameters plus local declarations bind
+    on top of them for the full method. C# scoping is per-method, so a name
+    rebound in a DIFFERENT method never poisons this one — the #2299 regression
+    under the old file-wide table, where ``var item = items[i]`` in one method
+    (untypable) silently deleted the true edge for a same-named, explicitly
+    typed parameter elsewhere in the file.
+
+    Poisoning stays method-local and conservative, because raw call facts do
+    not retain lexical position inside the method: a name is dropped entirely on
+    an unresolvable binding (``var x = Compute();``, a primitive, ``dynamic``,
+    an untyped lambda parameter), a same-method conflict, or a conflict with
+    the class field's type for that name. ``var v = new T()`` is typed from the
+    object-creation (precision over recall — an untypable receiver is left for
+    the resolver to drop rather than guess).
+    """
+    method_types: dict[str, str] = {}
+    ambiguous: set[str] = set()
+
+    def bind(name: str | None, type_name: str | None) -> None:
+        if not name or name in ambiguous:
+            return
+        if (
+            type_name is None
+            or method_types.get(name, type_name) != type_name
+            or field_types.get(name) not in (None, type_name)
+        ):
+            method_types.pop(name, None)
+            ambiguous.add(name)
+        else:
+            method_types[name] = type_name
+
+    def bind_parameter(param) -> None:
+        name_node = param.child_by_field_name("name")
+        if name_node is not None:
+            bind(
+                _read_text(name_node, source),
+                _csharp_receiver_type_name(param.child_by_field_name("type"), source),
+            )
+
+    params = method_node.child_by_field_name("parameters")
+    if params is not None:
+        for param in params.children:
+            if param.type == "parameter":
+                bind_parameter(param)
+
+    body = method_node.child_by_field_name("body")
+    stack = list(body.children) if body is not None else []
     while stack:
-        n = stack.pop()
-        t = n.type
-        if t in ("field_declaration", "local_declaration_statement"):
-            vd = next((c for c in n.children if c.type == "variable_declaration"), None)
+        node = stack.pop()
+        if node.type in (
+            "class_declaration",
+            "struct_declaration",
+            "interface_declaration",
+            "record_declaration",
+            "enum_declaration",
+        ):
+            continue
+        if node.type == "lambda_expression":
+            # Raw calls are method-scoped, so a lambda-local binding cannot be
+            # distinguished from an enclosing binding with the same name: a
+            # typed lambda parameter binds, an untyped one (`x => ...`,
+            # `(z) => ...`) binds None and poisons the name method-locally.
+            lam_params = node.child_by_field_name("parameters")
+            if lam_params is not None:
+                if lam_params.type == "implicit_parameter":
+                    bind(_read_text(lam_params, source), None)
+                else:
+                    for param in lam_params.children:
+                        if param.type == "parameter":
+                            bind_parameter(param)
+                        elif param.type == "implicit_parameter":
+                            bind(_read_text(param, source), None)
+        elif node.type == "local_function_statement":
+            lf_params = node.child_by_field_name("parameters")
+            if lf_params is not None:
+                for param in lf_params.children:
+                    if param.type == "parameter":
+                        bind_parameter(param)
+        elif node.type == "local_declaration_statement":
+            vd = next(
+                (c for c in node.children if c.type == "variable_declaration"), None
+            )
             if vd is not None:
-                type_node = vd.child_by_field_name("type")
-                declared = _typed(type_node)
-                for name, decl in _decl_names(vd):
-                    _bind(name, declared or _new_type(decl))
-        elif t == "property_declaration":
-            nm = n.child_by_field_name("name")
-            if nm is not None:
-                _bind(_read_text(nm, source), _typed(n.child_by_field_name("type")))
-        elif t == "parameter":
-            nm = n.child_by_field_name("name")
-            if nm is not None:
-                _bind(_read_text(nm, source), _typed(n.child_by_field_name("type")))
-        for c in n.children:
-            stack.append(c)
-    for name in poisoned:
+                declared = _csharp_receiver_type_name(
+                    vd.child_by_field_name("type"), source
+                )
+                for declarator in vd.children:
+                    if declarator.type != "variable_declarator":
+                        continue
+                    name_node = declarator.child_by_field_name("name") or next(
+                        (g for g in declarator.children if g.type == "identifier"),
+                        None,
+                    )
+                    if name_node is None:
+                        continue
+                    type_name = declared
+                    if type_name is None:
+                        # `var v = new T()` — recover T from the object-creation.
+                        for g in declarator.children:
+                            if g.type == "object_creation_expression":
+                                type_name = _csharp_receiver_type_name(
+                                    g.child_by_field_name("type"), source
+                                )
+                                break
+                    bind(_read_text(name_node, source), type_name)
+        stack.extend(node.children)
+
+    table = dict(field_types)
+    table.update(method_types)
+    for name in ambiguous:
         table.pop(name, None)
     return table
 
@@ -3699,6 +3757,13 @@ def _extract_generic(
     # threaded out as `swift_type_table` so member calls (`vm.update()`) can be
     # resolved to the receiver's real definition in _resolve_swift_member_calls.
     type_table: dict[str, str] = {}
+
+    # C# receiver typing is method-scoped (#2299): class fields/properties
+    # are shared, parameters and locals belong only to their declaring method —
+    # the old file-wide table let one method's untypable rebinding poison a
+    # same-named, explicitly typed receiver in a different method.
+    csharp_field_types: dict[str, dict[str, str]] = {}
+    csharp_method_scopes: dict[int, tuple[object, str]] = {}
 
     csharp_interface_names: set[str] = set()
     if config.ts_module == "tree_sitter_c_sharp":
@@ -4388,6 +4453,24 @@ def _extract_generic(
                 )
                 if not type_name or type_name in csharp_type_params:
                     return
+                # Record the field's declared type for the method-scoped
+                # receiver tables (#2299) — the C# twin of java_field_types.
+                # Pascal-case only: primitives never own a resolvable method.
+                if type_name[:1].isupper():
+                    fields = csharp_field_types.setdefault(parent_class_nid, {})
+                    for child in node.children:
+                        if child.type != "variable_declaration":
+                            continue
+                        for declarator in child.children:
+                            if declarator.type != "variable_declarator":
+                                continue
+                            name_node = declarator.child_by_field_name("name") or next(
+                                (g for g in declarator.children
+                                 if g.type == "identifier"),
+                                None,
+                            )
+                            if name_node is not None:
+                                fields[_read_text(name_node, source)] = type_name
                 line = node.start_point[0] + 1
                 metadata = {"ref_token": type_name}
                 if qualified:
@@ -4411,6 +4494,15 @@ def _extract_generic(
             # Widget generic_arg ref.
             type_node = node.child_by_field_name("type")
             if type_node is not None:
+                # Record the property's declared type for the method-scoped
+                # receiver tables (#2299), like a field: `Main.Render()` on a
+                # `public Widget Main { get; set; }` types Main as Widget.
+                prop_name_node = node.child_by_field_name("name")
+                prop_type = _csharp_receiver_type_name(type_node, source)
+                if prop_name_node is not None and prop_type:
+                    csharp_field_types.setdefault(parent_class_nid, {})[
+                        _read_text(prop_name_node, source)
+                    ] = prop_type
                 line = node.start_point[0] + 1
                 refs: list[tuple[str, str, bool, str]] = []
                 _csharp_collect_type_refs(type_node, source, False, refs)
@@ -4988,6 +5080,8 @@ def _extract_generic(
                     if m_body:
                         function_bodies.append((m_nid, m_body))
             if body:
+                if config.ts_module == "tree_sitter_c_sharp" and parent_class_nid:
+                    csharp_method_scopes[id(body)] = (node, parent_class_nid)
                 function_bodies.append((func_nid, body))
             return
 
@@ -5267,7 +5361,12 @@ def _extract_generic(
             return None
         return _read_text(scope, source)
 
-    def walk_calls(node, caller_nid: str) -> None:
+    def walk_calls(
+        node,
+        caller_nid: str,
+        receiver_types: dict[str, str] | None = None,
+        extra_locals: frozenset[str] = frozenset(),
+    ) -> None:
         if node.type in config.function_boundary_types:
             return
 
@@ -5278,7 +5377,7 @@ def _extract_generic(
                                       edges, seen_dyn_import_pairs):
                     # Still recurse into children (import().then(...) may have calls)
                     for child in node.children:
-                        walk_calls(child, caller_nid)
+                        walk_calls(child, caller_nid, receiver_types, extra_locals)
                     return
 
             callee_name: str | None = None
@@ -5557,11 +5656,16 @@ def _extract_generic(
                     # suffix sets, so a source_file suffix alone can't separate them.
                     if config.ts_module == "tree_sitter_cpp":
                         rc_entry["lang"] = "cpp"
-                    # C#: tag the raw_call so _resolve_csharp_member_calls claims it
-                    # and types the receiver against the file's field/param/local
-                    # type table (#1609).
+                    # C#: tag the raw_call so _resolve_csharp_member_calls claims
+                    # it, and stamp the receiver's type from the METHOD-scoped
+                    # table (#1609, per-method since #2299). `this.field.M()` is
+                    # covered too: member_receiver is the bare field name, and
+                    # class fields/properties are in the table.
                     if config.ts_module == "tree_sitter_c_sharp":
                         rc_entry["lang"] = "csharp"
+                        receiver_type = (receiver_types or {}).get(member_receiver or "")
+                        if receiver_type:
+                            rc_entry["receiver_type"] = receiver_type
                     # Swift: capture the call site's argument labels so the cross-file
                     # resolver can pick the exact overload when the receiver's type
                     # declares more than one method by this bare name (#1356 cont'd).
@@ -5775,7 +5879,7 @@ def _extract_generic(
                 _emit_indirect_ref(ident, caller_nid, enclosing_locals, "return")
 
         for child in node.children:
-            walk_calls(child, caller_nid)
+            walk_calls(child, caller_nid, receiver_types, extra_locals)
 
     if config.ts_module == "tree_sitter_ruby":
         for caller_nid, body_node in function_bodies:
@@ -5796,8 +5900,20 @@ def _extract_generic(
         for _caller_nid, body_node in function_bodies:
             _swift_local_var_types(body_node, source, type_table)
 
+    csharp_receiver_types = {
+        body_id: _csharp_method_receiver_types(
+            method_node,
+            source,
+            csharp_field_types.get(class_nid, {}),
+        )
+        for body_id, (method_node, class_nid) in csharp_method_scopes.items()
+    }
     for caller_nid, body_node in function_bodies:
-        walk_calls(body_node, caller_nid)
+        walk_calls(
+            body_node,
+            caller_nid,
+            csharp_receiver_types.get(id(body_node)),
+        )
 
     # #1356: walk property/field initializers (collected above). walk_calls
     # self-guards against re-entering function bodies and dedups via
@@ -5913,13 +6029,6 @@ def _extract_generic(
             result["ts_type_table"] = {"path": str_path, "table": type_table}
         elif config.ts_module == "tree_sitter_cpp":
             result["cpp_type_table"] = {"path": str_path, "table": type_table}
-    # C#: a file-wide receiver type table (field/property/param/local -> Type) for
-    # _resolve_csharp_member_calls (#1609). Built from the whole tree, not just
-    # function bodies, so class-level fields/properties are in scope for every method.
-    if config.ts_module == "tree_sitter_c_sharp":
-        cs_table = _csharp_member_type_table(root, source)
-        if cs_table:
-            result["csharp_type_table"] = {"path": str_path, "table": cs_table}
     return result
 
 
@@ -12115,12 +12224,6 @@ def _resolve_csharp_member_calls(
 
     Must run after id-disambiguation so node ids and caller_nids are final.
     """
-    type_table_by_file: dict[str, dict[str, str]] = {}
-    for result in per_file:
-        tt = result.get("csharp_type_table")
-        if tt and tt.get("path"):
-            type_table_by_file[tt["path"]] = tt.get("table", {})
-
     def _key(label: str) -> str:
         return re.sub(r"[^a-zA-Z0-9]+", "", str(label)).lower()
 
@@ -12259,13 +12362,13 @@ def _resolve_csharp_member_calls(
             # explicit-type lookup misses).
             type_nid = _resolve_type_name_nid(receiver, caller_node, src_file)
             if not type_nid:
-                type_name = type_table_by_file.get(src_file, {}).get(receiver)
+                type_name = rc.get("receiver_type")
                 type_nid = _resolve_type_name_nid(type_name, caller_node, src_file)
                 if not type_nid:
                     continue
             type_qualified = True
         else:
-            type_name = type_table_by_file.get(src_file, {}).get(receiver)
+            type_name = rc.get("receiver_type")
             if not type_name:
                 continue
             type_nid = _resolve_type_name_nid(type_name, caller_node, src_file)
