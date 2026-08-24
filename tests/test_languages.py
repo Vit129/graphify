@@ -612,6 +612,41 @@ def test_kotlin_enum_entries_have_case_of_edge():
     assert ("ChatType", "NORMAL") in _edge_labels(r, "case_of")
     assert ("ChatType", "SYSTEM") in _edge_labels(r, "case_of")
 
+def test_kotlin_enum_entry_and_same_named_method_do_not_collide(tmp_path):
+    # A Kotlin enum entry and same-named method (ERROR and fun error())
+    # in the same enum class must not collide on node id or overwrite each other.
+    p = tmp_path / "State.kt"
+    p.write_text(
+        "enum class State {\n"
+        "    ERROR,\n"
+        "    OK;\n"
+        "    fun error() {}\n"
+        "    fun ok() {}\n"
+        "}\n"
+    )
+    r = extract_kotlin(p)
+    labels = _labels(r)
+    assert "ERROR" in labels, "enum entry ERROR must exist as a node"
+    assert "OK" in labels, "enum entry OK must exist as a node"
+    assert ".error()" in labels, "method .error() must exist as a node"
+    assert ".ok()" in labels, "method .ok() must exist as a node"
+
+    error_entry = next(n for n in r["nodes"] if n["label"] == "ERROR")
+    error_method = next(n for n in r["nodes"] if n["label"] == ".error()")
+    ok_entry = next(n for n in r["nodes"] if n["label"] == "OK")
+    ok_method = next(n for n in r["nodes"] if n["label"] == ".ok()")
+    assert error_entry["id"] != error_method["id"]
+    assert ok_entry["id"] != ok_method["id"]
+
+    assert ("State", "ERROR") in _edge_labels(r, "case_of")
+    assert ("State", "OK") in _edge_labels(r, "case_of")
+    assert ("State", "error") in _edge_labels(r, "method")
+    assert ("State", "ok") in _edge_labels(r, "method")
+    method_edges = {(e["source"], e["target"]) for e in r["edges"] if e["relation"] == "method"}
+    state_nid = next(n["id"] for n in r["nodes"] if n["label"] == "State")
+    assert (state_nid, error_method["id"]) in method_edges
+    assert (state_nid, ok_method["id"]) in method_edges
+
 def test_kotlin_emits_in_file_calls():
     """Regression test for the call-walker `simple_identifier` /
     `identifier` rename — see graphify-kmp's PythonParityTest."""

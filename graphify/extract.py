@@ -3166,7 +3166,7 @@ def _kotlin_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: 
             return True
         const_name = _read_text(name_node, source)
         line = node.start_point[0] + 1
-        const_nid = _make_id(parent_class_nid, const_name)
+        const_nid = _make_id(parent_class_nid, f"{const_name}_entry")
         add_node_fn(const_nid, const_name, line)
         add_edge_fn(parent_class_nid, const_nid, "case_of", line)
         for child in node.children:
