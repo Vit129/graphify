@@ -54,3 +54,23 @@ def test_networkx_duplicate_key_overwrite_trap_is_real() -> None:
 
     assert graph.number_of_edges("a", "b") == 1
     assert graph["a"]["b"]["same"]["relation"] == "second"
+
+
+def test_loaders_call_require_multigraph_capabilities(monkeypatch, tmp_path) -> None:
+    """Verify that loaders in serve.py and __main__.py pass through
+    require_multigraph_capabilities() before creating MultiDiGraphs."""
+    called = []
+    import graphify.multigraph_compat as mc
+    real_fn = mc.require_multigraph_capabilities
+    def _tracking():
+        called.append(True)
+        return real_fn()
+    monkeypatch.setattr(mc, "require_multigraph_capabilities", _tracking)
+
+    from graphify.serve import _load_graph
+    import json
+    p = tmp_path / "graph.json"
+    p.write_text(json.dumps({"nodes": [{"id": "a"}], "links": []}), encoding="utf-8")
+    _load_graph(str(p))
+    assert len(called) >= 1
+

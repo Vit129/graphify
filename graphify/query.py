@@ -49,8 +49,8 @@ def _is_searchable(term: str) -> bool:
     return True
 
 
-# English question/filler words dropped from query terms so content words drive
-# BFS seeding. Without this, "how does the frontier cache work" seeds on "how"/
+# Question/filler words dropped from query terms so content words drive BFS
+# seeding. Without this, "how does the frontier cache work" seeds on "how"/
 # "the"/"work" (which prefix-match prose labels like "Working Principles" at the
 # 100x prefix tier) instead of "frontier"/"cache", landing in the wrong part of
 # the graph. Merged from this fork's own P1-reopen stopword set and upstream's
@@ -58,16 +58,53 @@ def _is_searchable(term: str) -> bool:
 # overlapped heavily but each had words the other missed. Applied to query terms
 # only via `_query_terms`'s fallback-to-unfiltered behavior below — node text is
 # never filtered, so a symbol literally named `work` stays findable via
-# explain/path.
+# explain/path. `work`/`works`/`working` are included because "how does X work" /
+# "how X works" is the most common question phrasing.
+#
+# Non-English question words are just as damaging (#1900): in a mostly-English
+# code corpus, German "wie"/"funktioniert" are rare, so they get HIGH IDF weight
+# and out-seed the actual content noun by orders of magnitude. So this also
+# carries a curated German set plus a trimmed French/Spanish/Portuguese/Italian
+# set of question/filler words. Diacritics are kept intact (the query tokenizer
+# does not NFKD-strip).
+#
+# Collision tradeoff: a few foreign stopwords are also English content words.
+# We include high-German-value ones like "die"/"hat" (the all-stopword fallback
+# in _query_terms and the unfiltered find_node path keep an English "die"/"hat"
+# query workable), but deliberately OMIT "war"/"bald" (German was/soon) so
+# English queries about "war" or "bald" are not clobbered. On the Romance side
+# we likewise omit "comment" (FR how), "come" (IT how), "son"/"sin"/"con" (ES),
+# and "pour"/"des" (FR) — all too common as English/code terms.
 _STOPWORDS = frozenset({
-    "how", "does", "is", "are", "the", "a", "an", "to", "of", "in", "on",
-    "for", "and", "or", "what", "which", "that", "do", "did", "will",
-    "would", "should", "can", "could", "with", "from", "at", "by", "this",
-    "why", "when", "where", "who", "whom", "whose", "was", "were", "be",
-    "been", "being", "shall", "may", "might", "must", "has", "have", "had",
-    "but", "not", "without", "into", "onto", "off", "these", "those",
-    "there", "here", "its", "their", "them", "they", "about", "any", "all",
-    "some", "work", "works", "working",
+    # English
+    "how", "what", "why", "when", "where", "which", "who", "whom", "whose",
+    "does", "did", "do", "is", "are", "was", "were", "be", "been", "being",
+    "can", "could", "should", "would", "will", "shall", "may", "might", "must",
+    "has", "have", "had", "the", "a", "an", "to", "of", "in", "on", "for",
+    "and", "or", "but", "not", "with", "from", "at", "by",
+    "without", "into", "onto", "off", "that", "this", "these", "those", "there",
+    "here", "its", "their", "them", "they", "about", "any", "all", "some",
+    "work", "works", "working",
+    # German (articles/conjunctions/question words/auxiliaries/prepositions)
+    "der", "die", "das", "den", "dem", "ein", "eine", "und", "oder", "nicht",
+    "wie", "wer", "wann", "wo", "warum", "wieso",
+    "welche", "welcher", "welches",
+    "ist", "sind", "wird", "wurde", "hat", "haben",
+    "kann", "koennen", "können", "soll", "muss", "sich",
+    "bei", "mit", "von", "fuer", "für", "ueber", "über", "nach", "aus",
+    "gibt", "es",
+    "funktioniert", "geaendert", "geändert", "aendert", "ändert",
+    # French
+    "pourquoi", "quand", "quel", "quelle", "quels", "quelles", "quoi",
+    "qui", "que", "est", "sont", "fonctionne", "cette", "dans", "avec", "où",
+    # Spanish
+    "cómo", "como", "qué", "cuál", "cuáles", "cuándo", "dónde", "donde",
+    "porque", "por", "para", "funciona", "está", "están", "hay",
+    # Portuguese
+    "qual", "quais", "quando", "onde", "são", "estão", "tem", "uma", "não",
+    # Italian
+    "perché", "cosa", "quale", "quali", "dove", "funziona", "sono", "che",
+    "della",
 })
 
 
@@ -140,9 +177,15 @@ def _query_terms(question: str) -> list[str]:
     the unfiltered terms if the query is all stopwords, e.g. "how does it work",
     so it still seeds on something), then expand synonyms."""
     terms: list[str] = []
+    seen: set[str] = set()
     for raw in question.split():
-        for tok in re.findall(r"\w+", raw.lower()):
-            if _is_searchable(tok):
+        for whole in re.findall(r"\w+", raw.lower()):
+            if _is_searchable(whole) and whole not in seen:
+                seen.add(whole)
+                terms.append(whole)
+        for tok in _search_tokens(raw):
+            if _is_searchable(tok) and tok not in seen:
+                seen.add(tok)
                 terms.append(tok)
     content = [t for t in terms if t not in _STOPWORDS]
     return _expand_synonyms(content or terms, question)
@@ -590,7 +633,13 @@ def _node_search_text(data: dict, nid: str) -> str:
     label_tokens = " ".join(_search_tokens(data.get("label") or ""))
     source = (data.get("source_file") or "").lower()
     source_tokens = " ".join(_search_tokens(data.get("source_file") or ""))
-    return "\x00".join((norm_label, label_tokens, str(nid).lower(), source, source_tokens))
+    nid_text = str(nid).lower()
+    fields = (norm_label, label_tokens, nid_text, source, source_tokens)
+    if not nid_text.isascii():
+        nid_folded = _strip_diacritics(str(nid)).lower()
+        if nid_folded != nid_text:
+            fields += (nid_folded,)
+    return "\x00".join(fields)
 
 
 def _get_trigram_index(G: nx.Graph) -> dict:
@@ -874,12 +923,27 @@ def _pick_seeds(
 
         scored = [(score * _seed_penalty(nid), nid) for score, nid in scored]
         scored.sort(key=lambda s: (-s[0], len(G.nodes[s[1]].get("label") or s[1]), s[1]))
+    def _seed_label_key(nid: str) -> str:
+        if G is None:
+            return nid
+        data = G.nodes[nid]
+        return (data.get("norm_label")
+                or _strip_diacritics(data.get("label") or "").lower()) or nid
+
     top_score = scored[0][0]
-    seeds = []
-    for score, nid in scored[:max_k]:
+    seeds: list[str] = []
+    seen_labels: set[str] = set()
+    for score, nid in scored:
+        if len(seeds) >= max_k:
+            break
         if seeds and score < top_score * gap_ratio:
             break
+        key = _seed_label_key(nid)
+        if key in seen_labels:
+            continue
+        seen_labels.add(key)
         seeds.append(nid)
+
     if G is not None and multi_term:
         seen_communities = {G.nodes[n].get("community") for n in seeds}
         candidates = scored
@@ -907,13 +971,63 @@ def _pick_seeds(
             comm = G.nodes[nid].get("community")
             if comm in seen_communities:
                 continue
+            key = _seed_label_key(nid)
+            if key in seen_labels:
+                continue
             seen_communities.add(comm)
+            seen_labels.add(key)
             seeds.append(nid)
+
+    if G is not None and terms:
+        max_guarantee_cap = max(max_k + 2, max_communities)
+        scored_nids = {nid for _, nid in scored}
+        norm_terms = sorted({tok for t in terms for tok in _search_tokens(t)})
+        intent = {t for t in norm_terms if t in _RELATIONAL_INTENT_TERMS}
+        if intent and any(t not in _RELATIONAL_INTENT_TERMS for t in norm_terms):
+            effective_terms = [t for t in norm_terms if t not in intent]
+        else:
+            effective_terms = norm_terms
+        for term in effective_terms:
+            if len(seeds) >= max_guarantee_cap:
+                break
+            term_scored = [(s, nid) for s, nid in _score_nodes(G, [term]) if nid in scored_nids]
+            if not term_scored:
+                continue
+            best_score = term_scored[0][0]
+            tied = [nid for s, nid in term_scored if s == best_score]
+            best_nid = max(tied, key=lambda n: G.degree(n)) if len(tied) > 1 else term_scored[0][1]
+            key = _seed_label_key(best_nid)
+            if best_nid not in seeds and key not in seen_labels:
+                seen_labels.add(key)
+                seeds.append(best_nid)
     return seeds
 
 
+# Verb-shaped tokens that express the RELATION a query asks about ("who calls
+# X", "what uses Y") rather than a symbol to look up. `_query_terms` keeps them
+# on purpose (a corpus can legitimately define an identifier named `calls`, see
+# #1597), but they must not be handed a guaranteed seed slot in `_pick_seeds`:
+# an incidental prefix match (e.g. "calls" prefixing `.callStoreWithAmount()`)
+# would otherwise seat an unrelated decoy as a BFS root (#2507). Demotion
+# happens when non-intent query terms exist, so `_score_nodes`' ranking —
+# where such a verb can still win a seat on merit via the gap window — is
+# untouched. Deliberately verbs only; relation NOUNS (module, field, return)
+# stay eligible for the guarantee.
+_RELATIONAL_INTENT_TERMS: frozenset[str] = frozenset({
+    "call", "calls", "called", "caller", "callers",
+    "invoke", "invokes", "invoked",
+    "use", "uses", "used", "using",
+    "import", "imports", "imported",
+    "export", "exports", "exported",
+    "extend", "extends", "extended",
+    "implement", "implements", "implemented",
+    "depend", "depends",
+    "reference", "references", "referenced",
+})
+
+
 _CONTEXT_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("call", ("call", "calls", "called", "invoke", "invokes", "invoked")),
+    ("call", ("call", "calls", "called", "caller", "callers", "invoke", "invokes", "invoked")),
     ("import", ("import", "imports", "imported", "module", "modules")),
     ("field", ("field", "fields", "member", "members", "property", "properties")),
     ("parameter_type", ("parameter", "parameters", "param", "params", "argument", "arguments")),
@@ -1091,12 +1205,24 @@ def _blast_radius_hops(
         next_frontier: list[str] = []
         for n in frontier:
             neighbors: list[tuple[str, str]] = []
-            if direction in ("callees", "both"):
+            if G.is_directed():
                 for nb in G.successors(n):
-                    neighbors.append((nb, str(edge_data(G, n, nb).get("confidence", ""))))
-            if direction in ("callers", "both"):
+                    d = edge_data(G, n, nb)
+                    conf = str(d.get("confidence", ""))
+                    is_callee = (d.get("_src", n) == n)
+                    if (direction in ("callees", "both") and is_callee) or (direction in ("callers", "both") and not is_callee):
+                        neighbors.append((nb, conf))
                 for nb in G.predecessors(n):
-                    neighbors.append((nb, str(edge_data(G, nb, n).get("confidence", ""))))
+                    d = edge_data(G, nb, n)
+                    conf = str(d.get("confidence", ""))
+                    is_caller = (d.get("_src", nb) == nb)
+                    if (direction in ("callers", "both") and is_caller) or (direction in ("callees", "both") and not is_caller):
+                        neighbors.append((nb, conf))
+            else:
+                for nb in G.neighbors(n):
+                    d = edge_data(G, n, nb)
+                    conf = str(d.get("confidence", ""))
+                    neighbors.append((nb, conf))
             for nb, conf in neighbors:
                 if nb not in visited:
                     visited.add(nb)
@@ -1384,11 +1510,12 @@ def _find_node_tiers(
     term = " ".join(_search_tokens(label))
     if not term:
         return [], [], [], [], []
+    norm_query = _strip_diacritics(str(label)).lower().strip()
     source_exact: list[str] = []
     exact: list[str] = []
     prefix: list[str] = []
     substring: list[str] = []
-    candidate_ids = _trigram_candidates(G, [term])
+    candidate_ids = _trigram_candidates(G, [term, norm_query] if norm_query != term else [term])
     node_iter = (
         G.nodes(data=True) if candidate_ids is None
         else ((nid, G.nodes[nid]) for nid in candidate_ids)
@@ -1399,9 +1526,13 @@ def _find_node_tiers(
         label_tokens = " ".join(_search_tokens(d.get("label") or ""))
         source_tokens = " ".join(_search_tokens(d.get("source_file") or ""))
         nid_lower = nid.lower()
+        nid_norm = nid_lower if nid.isascii() else _strip_diacritics(nid).lower()
         if term == source_tokens:
             source_exact.append(nid)
-        elif term == norm_label or term == bare_label or term == label_tokens or term == nid_lower:
+        elif (
+            term == norm_label or term == bare_label or term == label_tokens or term == nid_lower
+            or norm_query == norm_label or norm_query == bare_label or norm_query == nid_norm
+        ):
             exact.append(nid)
         elif (
             norm_label.startswith(term)
@@ -1497,11 +1628,16 @@ def find_path_with_disambiguation(
     target_label: str,
     source_path: str | None = None,
     target_path: str | None = None,
+    undirected: bool = True,
 ) -> dict:
     """Resolve `source_label`/`target_label` to nodes and find a
     degree-weighted, hub-avoiding shortest path, retrying every near-tied
     candidate pair (not just the top-scored node on each side) before
     giving up.
+
+    Undirected by default: paths are found ignoring edge direction (the
+    common use case). Pass ``undirected=False`` to require a caller→callee
+    directed path.
 
     `source_path`/`target_path` (P16): optional source_file-prefix filters
     that narrow each endpoint's candidates before the tie-retry loop, so a
@@ -1525,7 +1661,7 @@ def find_path_with_disambiguation(
       - "same_node_error": str              (both sides resolved to one node)
       - the full result: "warnings" (list[str]), "path_nodes" (list[str] | None),
         "src_nid", "tgt_nid" (resolved endpoints, or None if no path found),
-        "used_hub_fallback" (bool), "tried_pairs" (int)
+        "used_hub_fallback" (bool), "tried_pairs" (int), "undirected" (bool)
     """
     import networkx as _nx
 
@@ -1580,7 +1716,28 @@ def find_path_with_disambiguation(
     # real, meaningful call chain.
     from graphify.analyze import _BUILTIN_NOISE_LABELS
 
-    G_weighted = G.to_undirected()
+    # Deterministic path (#2074) & direction-aware routing (#2487):
+    if undirected:
+        G_weighted = _nx.Graph()
+        G_weighted.add_nodes_from(sorted(G.nodes(data=True), key=lambda x: str(x[0])))
+        G_weighted.add_edges_from(sorted((min(str(u), str(v)), max(str(u), str(v))) for u, v in G.edges()))
+    else:
+        # Directed by default (#2487). True direction is NOT raw arc order:
+        # legacy canonicalized files persist a flipped arc with _src/_tgt
+        # markers (#2309), so build the digraph from _src/_tgt (falling back
+        # to the loaded arc) rather than to_directed().
+        G_weighted = _nx.DiGraph()
+        G_weighted.add_nodes_from(sorted(G.nodes(data=True), key=lambda x: str(x[0])))
+        directed_edges = set()
+        for u, v, d in G.edges(data=True):
+            if "_src" in d and "_tgt" in d:
+                directed_edges.add((d["_src"], d["_tgt"]))
+            elif G.is_directed():
+                directed_edges.add((u, v))
+            else:
+                directed_edges.add((u, v))
+                directed_edges.add((v, u))
+        G_weighted.add_edges_from(sorted(directed_edges))
     degree = dict(G_weighted.degree())
     for u, v in G_weighted.edges():
         G_weighted[u][v]["_pathweight"] = 1 + degree.get(u, 0) + degree.get(v, 0)
@@ -1639,4 +1796,5 @@ def find_path_with_disambiguation(
         "tgt_nid": resolved_tgt,
         "used_hub_fallback": used_hub_fallback,
         "tried_pairs": len(pairs),
+        "undirected": undirected,
     }

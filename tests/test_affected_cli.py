@@ -122,6 +122,48 @@ def test_affected_cli_forces_directed_on_undirected_graph(monkeypatch, tmp_path,
     assert "No affected nodes found." not in out
 
 
+def test_affected_cli_direction_recovered_from_src_tgt_markers(monkeypatch, tmp_path, capsys):
+    """#2309: affected must recover caller/callee direction from _src/_tgt markers
+    even if the persisted link order is flipped (target -> caller)."""
+    data = {
+        "directed": False,
+        "multigraph": False,
+        "graph": {},
+        "nodes": [
+            {"id": "callee", "label": "CalleeFn", "source_file": "callee.py", "source_location": "L1"},
+            {"id": "caller", "label": "CallerFn", "source_file": "caller.py", "source_location": "L2"},
+        ],
+        "links": [
+            # Flipped persisted order: source is callee, target is caller,
+            # but _src is caller, _tgt is callee (caller calls callee).
+            {
+                "source": "callee",
+                "target": "caller",
+                "_src": "caller",
+                "_tgt": "callee",
+                "relation": "calls",
+                "confidence": "EXTRACTED",
+            }
+        ],
+    }
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps(data), encoding="utf-8")
+
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(
+        mainmod.sys,
+        "argv",
+        ["graphify", "affected", "CalleeFn", "--relation", "calls", "--graph", str(graph_path)],
+    )
+
+    mainmod.main()
+
+    out = capsys.readouterr().out
+    assert "Affected nodes for CalleeFn" in out
+    assert "CallerFn" in out
+    assert "calls" in out
+
+
 def test_affected_cli_loads_edges_keyed_graph(monkeypatch, tmp_path, capsys):
     """graphify's `extract` writes graph.json with an "edges" key (not networkx's
     default "links"). affected.load_graph must handle it; before the edges/links

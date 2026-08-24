@@ -299,3 +299,25 @@ def test_cli_api_key_from_env(monkeypatch):
     monkeypatch.setattr(serve_mod, "serve_http", lambda gp, **k: captured.update(**k))
     serve_mod._main(["g.json", "--transport", "http"])
     assert captured["api_key"] == "from-env"
+
+
+def test_shortest_path_tool_declares_undirected_parameter(tmp_path):
+    """Review Finding 2 & 3: shortest_path MCP tool inputSchema must declare
+    the optional 'undirected' boolean parameter defaulting to True."""
+    app = serve_mod._build_http_app(_graph_file(tmp_path), json_response=True)
+    with _client(app) as client:
+        headers = _init_session(client)
+        resp = client.post(
+            "/mcp",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
+        tools = {t["name"]: t for t in resp.json()["result"]["tools"]}
+        assert "shortest_path" in tools
+        schema = tools["shortest_path"]["inputSchema"]
+        props = schema["properties"]
+        assert "undirected" in props
+        assert props["undirected"]["type"] == "boolean"
+        assert props["undirected"]["default"] is True
+        assert "undirected" not in schema.get("required", [])
+

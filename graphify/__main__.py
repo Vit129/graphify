@@ -3489,7 +3489,7 @@ def main() -> None:
         if len(sys.argv) < 4:
             print(
                 'Usage: graphify path "<source>" "<target>" [--path P] '
-                "[--source-path P] [--target-path P] [--graph path]",
+                "[--source-path P] [--target-path P] [--directed] [--graph path]",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -3503,6 +3503,7 @@ def main() -> None:
         # --target-path narrow each independently (needed when both labels are
         # duplicated in different dirs). Per-endpoint value wins over --path.
         shared_path = source_path = target_path = None
+        undirected = True
         args = sys.argv[4:]
         i = 0
         while i < len(args):
@@ -3518,6 +3519,12 @@ def main() -> None:
             elif args[i] == "--target-path" and i + 1 < len(args):
                 target_path = args[i + 1]
                 i += 2
+            elif args[i] == "--directed":
+                undirected = False
+                i += 1
+            elif args[i] == "--undirected":
+                undirected = True
+                i += 1
             else:
                 i += 1
         source_path = source_path or shared_path
@@ -3530,15 +3537,37 @@ def main() -> None:
         _raw = json.loads(gp.read_text(encoding="utf-8"))
         if "links" not in _raw and "edges" in _raw:
             _raw = dict(_raw, links=_raw["edges"])
-        # Force directed so the renderer can recover stored caller→callee direction.
-        _raw = {**_raw, "directed": True}
+        from graphify.multigraph_compat import require_multigraph_capabilities
+        require_multigraph_capabilities()
+        # Preserve stored edge direction across undirected node_link_graph (#2261).
+        # Keep in-file markers when present (#2309): unconditionally
+        # overwriting them with source/target would clobber the true
+        # direction of a link persisted in flipped endpoint order.
+        _raw = dict(
+            _raw,
+            links=[
+                {
+                    **link,
+                    "_src": link.get("_src", link.get("source")),
+                    "_tgt": link.get("_tgt", link.get("target")),
+                }
+                for link in _raw.get("links", [])
+            ],
+            directed=True,
+            multigraph=True,
+        )
         try:
             G = json_graph.node_link_graph(_raw, edges="links")
         except TypeError:
             G = json_graph.node_link_graph(_raw)
         _warn_if_graph_stale(gp, _raw)
         result = find_path_with_disambiguation(
-            G, source_label, target_label, source_path=source_path, target_path=target_path
+            G,
+            source_label,
+            target_label,
+            source_path=source_path,
+            target_path=target_path,
+            undirected=undirected,
         )
         if "error" in result:
             print(result["error"], file=sys.stderr)
@@ -3552,7 +3581,13 @@ def main() -> None:
         if path_nodes is None:
             tried = result["tried_pairs"]
             suffix = f" (tried {tried} candidate pair{'s' if tried != 1 else ''})" if tried > 1 else ""
-            print(f"No path found between '{source_label}' and '{target_label}'.{suffix}")
+            if undirected:
+                print(f"No path found between '{source_label}' and '{target_label}'.{suffix}")
+            else:
+                print(
+                    f"No directed path found between '{source_label}' and '{target_label}'.{suffix}\n"
+                    "  Omit --directed to search ignoring edge direction."
+                )
             sys.exit(0)
         if result["used_hub_fallback"]:
             print(
@@ -3562,19 +3597,26 @@ def main() -> None:
             )
         hops = len(path_nodes) - 1
         segments = []
-        from graphify.build import edge_data
+        from graphify.build import edge_datas
         for i in range(len(path_nodes) - 1):
             u, v = path_nodes[i], path_nodes[i + 1]
-            # Check which direction the stored edge points.
-            if G.has_edge(u, v):
-                edata = edge_data(G, u, v)
-                forward = True
-            else:
-                edata = edge_data(G, v, u)
-                forward = False
-            rel = edata.get("relation", "")
-            conf = edata.get("confidence", "")
-            conf_str = f" [{conf}]" if conf else ""
+            # Direction truth lives in the per-link _src/_tgt markers (#2309):
+            # undirected NetworkX storage canonicalizes endpoint order, so the
+            # persisted source/target arc can be flipped relative to the real
+            # caller→callee direction. Recover it from _src when present, else
+            # fall back to the loaded arc tail (markerless canonical files keep
+            # today's behavior).
+            fwd, bwd = [], []
+            for a, b in ((u, v), (v, u)):
+                if G.has_edge(a, b):
+                    for d in edge_datas(G, a, b):
+                        (fwd if d.get("_src", a) == u else bwd).append(d)
+            datas = fwd or bwd
+            forward = bool(fwd)
+            rels = sorted({d.get("relation") for d in datas if d.get("relation")})
+            rel = "/".join(rels) if rels else "related"
+            confs = sorted({d.get("confidence") for d in datas if d.get("confidence")})
+            conf_str = f" [{'/'.join(confs)}]" if confs else ""
             if i == 0:
                 segments.append(G.nodes[u].get("label", u))
             if forward:
@@ -3628,8 +3670,25 @@ def main() -> None:
         _raw = json.loads(gp.read_text(encoding="utf-8"))
         if "links" not in _raw and "edges" in _raw:
             _raw = dict(_raw, links=_raw["edges"])
-        # Force directed so the renderer can recover stored caller→callee direction.
-        _raw = {**_raw, "directed": True}
+        from graphify.multigraph_compat import require_multigraph_capabilities
+        require_multigraph_capabilities()
+        # Preserve stored edge direction across undirected node_link_graph (#2261).
+        # Keep in-file markers when present (#2309): unconditionally
+        # overwriting them with source/target would clobber the true
+        # direction of a link persisted in flipped endpoint order.
+        _raw = dict(
+            _raw,
+            links=[
+                {
+                    **link,
+                    "_src": link.get("_src", link.get("source")),
+                    "_tgt": link.get("_tgt", link.get("target")),
+                }
+                for link in _raw.get("links", [])
+            ],
+            directed=True,
+            multigraph=True,
+        )
         try:
             G = json_graph.node_link_graph(_raw, edges="links")
         except TypeError:
@@ -3688,10 +3747,20 @@ def main() -> None:
         print(f"  Degree:    {G.degree(nid)}")
         from graphify.build import edge_data
         connections: list[tuple[str, str, dict]] = []  # (direction, neighbor_id, edge_data)
+        # Classify by the edge's TRUE direction, not the loaded arc order:
+        # a link persisted in flipped endpoint order carries its truth in the
+        # per-edge _src marker (#2309). Markerless edges fall back to the arc
+        # tail (today's behavior).
         for nb in G.successors(nid):
-            connections.append(("out", nb, edge_data(G, nid, nb)))
+            _ed = edge_data(G, nid, nb)
+            connections.append(
+                ("out" if _ed.get("_src", nid) == nid else "in", nb, _ed)
+            )
         for nb in G.predecessors(nid):
-            connections.append(("in", nb, edge_data(G, nb, nid)))
+            _ed = edge_data(G, nb, nid)
+            connections.append(
+                ("in" if _ed.get("_src", nb) == nb else "out", nb, _ed)
+            )
         if context_filters:
             connections = [c for c in connections if c[2].get("context") in context_filters]
         if connections:

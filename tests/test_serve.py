@@ -32,8 +32,9 @@ from graphify.serve import (
     _fuse_embedding_rrf,
     _get_embedding_index,
     _embedding_corpus_hash,
+    _shortest_path_text,
 )
-from graphify.query import _find_node_tied_group
+from graphify.query import _find_node_tied_group, _strip_diacritics
 
 
 def _make_call_chain() -> nx.DiGraph:
@@ -271,12 +272,38 @@ def test_find_node_matches_full_punctuated_unicode_label():
     assert _find_node(G, "Skill /auditar — Auditoría inquisitiva de enlaces") == ["n1"]
 
 
+def test_find_node_matches_punctuated_node_id_exactly():
+    # #2467: the id is only ever compared against `term`, which tokenizes on \w+
+    # ("concept:domain:widget" -> "concept domain widget"), so no id carrying
+    # punctuation could equal it. Only the symmetric `norm_query == nid_norm`
+    # match resolves an exactly-typed node id.
+    G = nx.Graph()
+    G.add_node("concept:domain:widget", label="Widget", norm_label="widget",
+               source_file="docs/domain.md", source_location="L1")
+    G.add_node("plain_node_id", label="Plain", norm_label="plain",
+               source_file="docs/plain.md", source_location="L1")
+    assert _find_node(G, "concept:domain:widget") == ["concept:domain:widget"]
+    assert _find_node(G, "plain_node_id") == ["plain_node_id"]   # unpunctuated ids as before
+    assert _find_node(G, "Widget") == ["concept:domain:widget"]  # label lookup as before
+
+
+def test_find_node_matches_merge_graphs_namespaced_node_id():
+    # #2467: `prefix_graph_for_global` namespaces every id with "<repo>::", so on a
+    # merged graph no node at all resolved by id — including the id that `explain`
+    # itself had just printed.
+    G = nx.Graph()
+    G.add_node("backend::src_server_router_go", label="Router()",
+               norm_label="router()", source_file="src/server/router.go",
+               source_location="L12")
+    assert _find_node(G, "backend::src_server_router_go") == ["backend::src_server_router_go"]
+
+
 # --- trigram candidate prefilter (the trigram index that shrinks the O(N) scan) ---
 
 
 def _force_full_scan(monkeypatch):
     """Disable the prefilter so a call exercises the original full-node scan."""
-    monkeypatch.setattr("graphify.serve._trigram_candidates", lambda *a, **k: None)
+    monkeypatch.setattr("graphify.query._trigram_candidates", lambda *a, **k: None)
 
 
 def _make_big_graph(n: int = 150) -> nx.Graph:
@@ -289,6 +316,23 @@ def _make_big_graph(n: int = 150) -> nx.Graph:
     G.add_node("rareA", label="ZebraQuokkaWidget", source_file="zoo/zqw.py")
     G.add_node("rareB", label="MarmosetGadget handler", source_file="zoo/marmoset.py")
     G.add_node("punct", label="Foo.Bar:Baz", source_file="pkg/foobar.py")
+    return G
+
+
+def _make_non_ascii_id_graph(n: int = 40) -> nx.Graph:
+    """A graph whose ids carry Hangul, large enough that the prefilter really runs.
+
+    The filler nodes are load-bearing: `_trigram_candidates` bails out to a full
+    scan when `min(present) > int(n * 0.10)`, so on a two-node graph any present
+    trigram trips the guard and the index path — where #2467's second defect lives —
+    is never exercised at all."""
+    G = nx.Graph()
+    for i in range(n):
+        G.add_node(f"id{i}", label=f"item node {i}", source_file=f"pkg/item_{i}.py")
+    G.add_node("concept:domain:한글", label="Hangul domain",
+               source_file="docs/한글.md", source_location="L1")
+    G.add_node("문서_목록", label="DocumentList",
+               source_file="src/문서_목록.py", source_location="L1")
     return G
 
 
@@ -309,6 +353,19 @@ def test_node_search_text_includes_all_matched_fields():
     assert parts[2] == "punct"                # nid
     assert parts[3] == "pkg/foobar.py"        # source_file
     assert parts[4] == "pkg foobar py"        # source_file tokens
+    assert len(parts) == 5                    # no folded-id field for an ASCII id (#2467)
+
+
+def test_node_search_text_appends_folded_non_ascii_node_id():
+    # #2467: for a Hangul id the raw and folded forms differ — precomposed syllables
+    # against conjoining jamo. Queries are trigrammed from the folded form, so the
+    # index has to carry it too, appended so the other field positions do not move.
+    G = _make_non_ascii_id_graph()
+    nid = "concept:domain:한글"
+    parts = _node_search_text(G.nodes[nid], nid).split("\x00")
+    assert parts[2] == nid
+    assert parts[5] == _strip_diacritics(nid).lower()
+    assert parts[5] != parts[2]
 
 
 def test_trigram_candidates_fast_path_fires_for_rare_term():
@@ -349,6 +406,36 @@ def test_find_node_prefilter_is_identical_to_full_scan(monkeypatch):
     # includes the punctuated label, exercised via its tokenized (label_tokens) form
     for label in ["ZebraQuokkaWidget", "MarmosetGadget handler", "Foo Bar Baz",
                   "item node 7", "missing"]:
+        fast = _find_node(G, label)
+        _force_full_scan(monkeypatch)
+        full = _find_node(G, label)
+        monkeypatch.undo()
+        assert fast == full, f"_find_node prefilter diverged (order!) for {label!r}"
+
+
+def test_find_node_matches_non_ascii_node_id_through_prefilter():
+    # #2467: `_node_search_text` indexed the id raw while every query folds through
+    # `_strip_diacritics`. NFKD decomposes a Hangul syllable into conjoining jamo,
+    # which have combining class 0 and so survive the combining-character filter —
+    # the needle's trigrams and the posting's trigrams were disjoint and the node
+    # was dropped from the candidate list before any predicate could see it.
+    import unicodedata
+    G = _make_non_ascii_id_graph()
+    for nid in ("concept:domain:한글", "문서_목록"):
+        assert unicodedata.normalize("NFKD", nid) != nid   # fixture must stay NFKD-sensitive
+        needles = [" ".join(_search_tokens(nid)), _strip_diacritics(nid).lower()]
+        candidates = _trigram_candidates(G, needles)
+        assert candidates is not None                      # index path, not the full-scan fallback
+        assert nid in candidates
+        assert _find_node(G, nid) == [nid]
+
+
+def test_find_node_node_id_prefilter_is_identical_to_full_scan(monkeypatch):
+    # #2467: an id must resolve the same way whether the candidates came from the
+    # trigram index or from the full scan.
+    G = _make_non_ascii_id_graph()
+    for label in ["concept:domain:한글", "문서_목록", "id7", "item node 7",
+                  "DocumentList", "missing"]:
         fast = _find_node(G, label)
         _force_full_scan(monkeypatch)
         full = _find_node(G, label)
@@ -412,6 +499,39 @@ def test_query_terms_drops_question_stopwords():
 def test_query_terms_all_stopwords_falls_back_to_unfiltered():
     # An all-stopword query keeps its terms rather than seeding on nothing.
     assert _query_terms("how does it work") == ["how", "does", "work"]
+
+
+def test_query_terms_drops_german_question_stopwords():
+    # #1900: German full-sentence queries must reduce to the content noun.
+    # In a mostly-English corpus "wie"/"funktioniert" are rare, get high IDF
+    # weight, and out-seed the actual keyword unless dropped here.
+    assert _query_terms("Wie funktioniert die Authentifizierung?") == ["authentifizierung"]
+
+
+def test_query_terms_all_german_stopwords_falls_back_to_unfiltered():
+    # Existing all-stopword fallback applies to German fillers too: the query
+    # keeps its terms rather than seeding on nothing.
+    terms = _query_terms("wie funktioniert das")
+    assert terms == ["wie", "funktioniert", "das"]
+
+
+def test_pick_seeds_german_query_seeds_content_node_not_heading_noise():
+    """End-to-end for #1900: a German question over a graph with German
+    heading-noise nodes must seed on the content noun, not on nodes that
+    happen to contain 'die'/'wie'/'wird'."""
+    G = nx.DiGraph()
+    G.add_node("cfg", label="Die Konfiguration", source_file="docs/konfiguration.md")
+    G.add_node("sec", label="Wie wird gesichert", source_file="docs/sicherheit.md")
+    G.add_node("auth", label="Authentifizierung", source_file="src/auth.py")
+    G.add_node("helper", label="login_helper", source_file="src/auth.py")
+    G.add_edge("helper", "auth")
+
+    q = "Wie funktioniert die Authentifizierung?"
+    terms = _query_terms(q)
+    seeds = _pick_seeds(_score_nodes(G, terms), G=G, terms=terms)
+    assert "auth" in seeds
+    assert "cfg" not in seeds
+    assert "sec" not in seeds
 
 
 def test_query_terms_filters_only_short_english_terms():
@@ -1387,6 +1507,16 @@ def test_query_terms_stopword_filter_does_not_remove_real_short_terms():
     assert "for" not in terms
 
 
+def test_query_terms_retains_composite_identifier_splitting_into_stopwords():
+    """A composite identifier like 'doWork' splits into 'do' and 'work' (both stopwords),
+    but the whole token 'dowork' must survive as a searchable term."""
+    terms = _query_terms("how does doWork run")
+    assert "dowork" in terms
+    assert "run" in terms
+    assert "how" not in terms
+    assert "does" not in terms
+
+
 def test_score_nodes_bm25_short_label_does_not_arbitrarily_dominate_broad_match():
     """A single-token node that exact-matches ONE query term must not
     automatically outrank a node whose label substring-matches THREE query
@@ -1588,6 +1718,33 @@ def test_blast_radius_hops_reports_edge_confidence_per_node():
     assert conf["guess"] == "INFERRED"
 
 
+def test_blast_radius_hops_flipped_marker_direction():
+    """#2309: blast_radius must recover true direction from _src/_tgt markers.
+    If an edge is stored as hub->spoke but markers say spoke->hub (_src=spoke),
+    spoke is a CALLER of hub and hub is a CALLEE of spoke."""
+    G = nx.DiGraph()
+    G.add_node("hub", label="hub.ts")
+    G.add_node("spoke", label="spoke.ts")
+    # Arc is stored hub -> spoke, but _src says spoke calls hub
+    G.add_edge("hub", "spoke", _src="spoke", _tgt="hub", relation="calls", confidence="EXTRACTED")
+
+    # Callers of hub: should find spoke
+    hops_callers, _, _, _ = _blast_radius_hops(G, "hub", 1, "callers")
+    assert hops_callers == [["spoke"]]
+
+    # Callees of hub: should be empty
+    hops_callees, _, _, _ = _blast_radius_hops(G, "hub", 1, "callees")
+    assert hops_callees == []
+
+    # Callees of spoke: should find hub
+    hops_spoke_callees, _, _, _ = _blast_radius_hops(G, "spoke", 1, "callees")
+    assert hops_spoke_callees == [["hub"]]
+
+    # Callers of spoke: should be empty
+    hops_spoke_callers, _, _, _ = _blast_radius_hops(G, "spoke", 1, "callers")
+    assert hops_spoke_callers == []
+
+
 # --- query path scoping (--path / --exclude-path) --------------------------
 
 def _make_path_scope_graph() -> nx.Graph:
@@ -1632,3 +1789,234 @@ def test_query_graph_text_exclude_path_falls_through_to_no_match():
     G.remove_node("code_fn")
     text = _query_graph_text(G, "concentration", exclude_paths=["kb/"])
     assert text == "No matching nodes found."
+
+
+# --- _shortest_path_text direction (#2487) ---
+
+def _directed_chain() -> nx.DiGraph:
+    """alpha --calls--> beta --calls--> gamma, as _load_graph would load it
+    (directed storage, arc order = true direction on post-#563 files)."""
+    G = nx.DiGraph()
+    for n in ("alpha", "beta", "gamma"):
+        G.add_node(n, label=n)
+    G.add_edge("alpha", "beta", relation="calls")
+    G.add_edge("beta", "gamma", relation="calls")
+    return G
+
+
+def test_shortest_path_tool_directed_respects_direction():
+    out = _shortest_path_text(
+        _directed_chain(), {"source": "alpha", "target": "gamma", "undirected": False}
+    )
+    assert "Shortest path (2 hops)" in out
+    assert out.count("-->") == 2
+    assert "<--" not in out
+
+
+def test_shortest_path_tool_directed_backwards_is_no_path():
+    # Opting into directed mode: walking the chain backwards must report
+    # no directed path, with the undirected opt-out hint.
+    out = _shortest_path_text(
+        _directed_chain(), {"source": "gamma", "target": "alpha", "undirected": False}
+    )
+    assert "No directed path found" in out
+    assert "undirected=true" in out
+    assert "-->" not in out
+    assert "<--" not in out
+
+
+def test_shortest_path_tool_undirected_by_default():
+    # Undirected by default: walking the chain backwards works out-of-the-box.
+    out = _shortest_path_text(_directed_chain(), {"source": "gamma", "target": "alpha"})
+    assert "Shortest path (2 hops)" in out
+    assert out.count("<--calls--") == 2
+    assert "-->" not in out
+
+
+# --- #1596: per-term seed diversity ---
+
+def test_pick_seeds_diversity_recovers_starved_term():
+    """Reproduces #1445: a vague natural-language query where one term's
+    incidental EXACT match on an unrelated node (e.g. a common word also used
+    as an unrelated field/identifier) outscores every match on the
+    query's other, actually-relevant terms by ~1000x. Without G/terms, the
+    gap cutoff discards the relevant candidate entirely; with them, it is
+    recovered as a guaranteed per-term seed.
+    """
+    G = nx.DiGraph()
+    G.add_node("noise", label="unrelated", source_file="design_tokens.json")
+    G.add_node("target", label="rate_limit_widget", source_file="src/widget.py")
+    G.add_node("other", label="something_else", source_file="src/other.py")
+    G.add_edge("other", "target")
+
+    terms = ["unrelated", "widget"]
+    scored = [(1000.0, "noise"), (1.0, "target")]
+
+    # Sanity check the premise: without diversity, only the top match survives.
+    seeds_before = _pick_seeds(scored)
+    assert seeds_before == ["noise"]
+
+    seeds_after = _pick_seeds(scored, G=G, terms=terms)
+    assert "noise" in seeds_after
+    assert "target" in seeds_after
+
+
+def test_pick_seeds_many_terms_stays_bounded():
+    """A query with many terms must not produce an unbounded number of seeds
+    from the per-term guarantee (#1596 cap)."""
+    G = nx.DiGraph()
+    terms = [f"term{i}" for i in range(19)]
+    for i, t in enumerate(terms):
+        G.add_node(f"node{i}", label=f"{t}_fn", source_file=f"src/{t}.py", community=i)
+    scored = _score_nodes(G, terms)
+    seeds = _pick_seeds(scored, G=G, multi_term=True, terms=terms)
+    assert len(seeds) <= 5
+
+
+# --- generic-symbol seed flooding (#1766 / #1832) ---
+
+def test_pick_seeds_dedups_homonymous_generic_labels():
+    """Many nodes sharing one generic label (e.g. framework `GET` handlers)
+    must contribute at most ONE seed, not consume every slot (#1766). A
+    distinct, relevant label still gets its own seed."""
+    G = nx.DiGraph()
+    for i in range(5):
+        G.add_node(f"get{i}", label="GET", source_file=f"routes/r{i}.py")
+    G.add_node("um", label="users_model", source_file="models/users.py")
+    # Score all the GET nodes above users_model so, pre-fix, they'd take every slot.
+    scored = [(1000.0, f"get{i}") for i in range(5)] + [(900.0, "um")]
+    seeds = _pick_seeds(scored, G=G)
+    get_seeds = [s for s in seeds if s.startswith("get")]
+    assert len(get_seeds) == 1, f"expected one GET representative, got {get_seeds}"
+    # A different, well-within-gap label is not starved out by the GET flood.
+    assert "um" in seeds
+
+
+def test_pick_seeds_dedup_key_is_case_and_diacritic_normalized():
+    """`GET`/`Get`/`get` are the same generic label and must dedup together."""
+    G = nx.DiGraph()
+    G.add_node("a", label="GET", source_file="a.py")
+    G.add_node("b", label="Get", source_file="b.py")
+    G.add_node("c", label="get", source_file="c.py")
+    scored = [(1000.0, "a"), (990.0, "b"), (980.0, "c")]
+    seeds = _pick_seeds(scored, G=G)
+    assert len(seeds) == 1, f"case-variant duplicates not collapsed: {seeds}"
+
+
+def test_pick_seeds_per_term_guarantee_does_not_reintroduce_generic_dupe():
+    """The per-term guarantee loop must honor the same per-label cap, so it can't
+    add a second `GET` after dedup already seeded one (#1766)."""
+    G = nx.DiGraph()
+    for i in range(3):
+        G.add_node(f"get{i}", label="GET", source_file=f"r{i}.py")
+    G.add_node("um", label="users_model", source_file="users.py")
+    G.add_edge("um", "get0")
+    scored = _score_nodes(G, ["get", "users"])
+    seeds = _pick_seeds(scored, G=G, terms=["get", "users"])
+    get_seeds = [s for s in seeds if s.startswith("get")]
+    assert len(get_seeds) == 1, f"per-term guarantee reintroduced a GET dupe: {seeds}"
+
+
+def test_pick_seeds_community_fill_dedups_homonymous_generic_labels():
+    """The community-fill loop must honor the per-label dedup cap across
+    different communities (#1832), preventing homonymous generic labels from
+    flooding community diversity slots."""
+    G = nx.DiGraph()
+    for i in range(5):
+        G.add_node(f"get{i}", label="GET", source_file=f"r{i}.py", community=i)
+    G.add_node("unique_fn", label="UniqueFunction", source_file="unique.py", community=99)
+    scored = [(1000.0, f"get{i}") for i in range(5)] + [(500.0, "unique_fn")]
+    seeds = _pick_seeds(scored, G=G, multi_term=True)
+    get_seeds = [s for s in seeds if s.startswith("get")]
+    assert len(get_seeds) == 1, f"community fill flooded GET duplicates: {seeds}"
+    assert "unique_fn" in seeds
+
+
+def test_score_nodes_scores_identical_labels_equally():
+    """Guard against a per-label multiplicity penalty leaking into _score_nodes
+    (shared by shortest_path / explain endpoint resolution): two nodes with the
+    SAME label must receive the SAME score for a query, i.e. the fix lives in
+    seed selection, not in the shared scorer (#1766 followup)."""
+    G = nx.DiGraph()
+    G.add_node("g1", label="GET", source_file="a.py")
+    G.add_node("g2", label="GET", source_file="b.py")
+    G.add_node("g3", label="GET", source_file="c.py")
+    by_id = {nid: s for s, nid in _score_nodes(G, ["get"])}
+    assert by_id["g1"] == by_id["g2"] == by_id["g3"], (
+        f"identical-label nodes scored differently: {by_id}"
+    )
+
+
+# --- relational-intent verbs must not seat decoy seeds (#2507) ---
+
+def _make_callers_graph() -> nx.Graph:
+    """A service, three callers wired via context='call' edges, and a decoy
+    whose tokenized label ('callstorewithamount') prefix-matches the intent
+    verb 'calls' — the #2507 pollution vector."""
+    G = nx.Graph()
+    G.add_node("svc", label="ChargeCustomerService", source_file="billing/charge.py")
+    G.add_node("c1", label="BillingJob", source_file="billing/job.py")
+    G.add_node("c2", label="CheckoutFlow", source_file="checkout/flow.py")
+    G.add_node("c3", label="RetryWorker", source_file="workers/retry.py")
+    for caller in ("c1", "c2", "c3"):
+        G.add_edge(caller, "svc", relation="calls", context="call")
+    G.add_node("decoy", label=".callStoreWithAmount()", source_file="store/amount.py")
+    return G
+
+
+def test_relational_verb_does_not_seat_decoy_seed():
+    """'Who calls X?' must seed on X, not on a decoy that merely prefix-matches
+    the intent verb 'calls' via its tokenized label (#2507). The gap window
+    already excludes the decoy; the per-term guarantee must not re-seat it."""
+    G = _make_callers_graph()
+    text = _query_graph_text(G, "Who calls ChargeCustomerService?", mode="bfs", depth=2)
+    header = text.splitlines()[0]
+    assert "ChargeCustomerService" in header.split("Start:")[1]
+    assert ".callStoreWithAmount()" not in header
+    for caller in ("BillingJob", "CheckoutFlow", "RetryWorker"):
+        assert caller in text
+
+
+def test_relational_verb_as_bare_query_still_seeds_symbol():
+    """All-intent fallback: a query that is ONLY intent words keeps the seed
+    guarantee, so a corpus-legit identifier literally named 'calls' stays
+    reachable via the bare query 'calls' (#2507, preserving #1597's intent)."""
+    G = nx.Graph()
+    G.add_node("calls_fn", label="calls", source_file="src/calls.py")
+    G.add_node("other", label="unrelated_helper", source_file="src/other.py")
+    text = _query_graph_text(G, "calls", mode="bfs", depth=1)
+    assert "No matching nodes found." not in text
+    assert "calls" in text.splitlines()[0].split("Start:")[1]
+
+
+def test_relational_verb_symbol_still_wins_seat_on_merit():
+    """Demotion only strips the GUARANTEE: a node literally named 'calls' whose
+    score sits within the gap window is still seeded alongside the other term's
+    node on a multi-term query (#2507)."""
+    G = nx.Graph()
+    G.add_node("calls_fn", label="calls", source_file="src/calls.py")
+    G.add_node("ext", label="extract", source_file="src/extract.py")
+    text = _query_graph_text(G, "calls extract", mode="bfs", depth=1)
+    start = text.splitlines()[0].split("Start:")[1]
+    assert "calls" in start
+    assert "extract" in start
+
+
+def test_uses_phrasing_does_not_seat_decoy_seed():
+    """'what uses X' must not seat a decoy that prefix-matches the intent verb
+    'uses' (#2507). 'uses' is deliberately NOT a _CONTEXT_HINTS alias (its
+    relation is ambiguous); the demotion set alone handles it."""
+    G = nx.Graph()
+    G.add_node("svc", label="ChargeCustomerService", source_file="billing/charge.py")
+    G.add_node("c1", label="BillingJob", source_file="billing/job.py")
+    G.add_edge("c1", "svc", relation="uses", context="call")
+    G.add_node("decoy", label="usesDiscountCode()", source_file="promo/discount.py")
+    text = _query_graph_text(G, "what uses ChargeCustomerService?", mode="bfs", depth=2)
+    header = text.splitlines()[0]
+    assert "ChargeCustomerService" in header.split("Start:")[1]
+    assert "usesDiscountCode()" not in header
+
+
+def test_infer_context_filters_for_callers_question():
+    """'callers of X' phrasing infers the call context (#2507 companion)."""
+    assert _infer_context_filters("callers of ChargeCustomerService") == ["call"]
