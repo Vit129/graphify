@@ -44,9 +44,9 @@ def test_god_nodes_excludes_swift_builtin_labels(builtin_label: str) -> None:
     G.add_node(
         "builtin_node",
         label=builtin_label,
-        source_file="",
+        source_file="Sources/App.swift",
         file_type="code",
-        source_location="",
+        source_location="L1",
     )
     for i in range(20):
         peer = f"user_type_{i}"
