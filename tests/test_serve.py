@@ -1507,6 +1507,16 @@ def test_query_terms_stopword_filter_does_not_remove_real_short_terms():
     assert "for" not in terms
 
 
+def test_query_terms_retains_composite_identifier_splitting_into_stopwords():
+    """A composite identifier like 'doWork' splits into 'do' and 'work' (both stopwords),
+    but the whole token 'dowork' must survive as a searchable term."""
+    terms = _query_terms("how does doWork run")
+    assert "dowork" in terms
+    assert "run" in terms
+    assert "how" not in terms
+    assert "does" not in terms
+
+
 def test_score_nodes_bm25_short_label_does_not_arbitrarily_dominate_broad_match():
     """A single-token node that exact-matches ONE query term must not
     automatically outrank a node whose label substring-matches THREE query

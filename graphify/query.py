@@ -177,9 +177,15 @@ def _query_terms(question: str) -> list[str]:
     the unfiltered terms if the query is all stopwords, e.g. "how does it work",
     so it still seeds on something), then expand synonyms."""
     terms: list[str] = []
+    seen: set[str] = set()
     for raw in question.split():
+        for whole in re.findall(r"\w+", raw.lower()):
+            if _is_searchable(whole) and whole not in seen:
+                seen.add(whole)
+                terms.append(whole)
         for tok in _search_tokens(raw):
-            if _is_searchable(tok):
+            if _is_searchable(tok) and tok not in seen:
+                seen.add(tok)
                 terms.append(tok)
     content = [t for t in terms if t not in _STOPWORDS]
     return _expand_synonyms(content or terms, question)
