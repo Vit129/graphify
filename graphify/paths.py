@@ -26,6 +26,18 @@ from pathlib import Path, PurePosixPath
 GRAPHIFY_OUT = os.environ.get("GRAPHIFY_OUT", "graphify-out")
 
 
+def _read_initial_umask() -> int:
+    try:
+        val = os.umask(0)
+        os.umask(val)
+        return val
+    except Exception:
+        return 0o022
+
+
+_CACHED_UMASK = _read_initial_umask()
+
+
 def _atomic_replace(path: "str | Path", write_fn) -> None:
     """Atomically replace ``path`` with content written by ``write_fn(f)``.
 
@@ -56,9 +68,7 @@ def _atomic_replace(path: "str | Path", write_fn) -> None:
         try:
             mode = stat.S_IMODE(os.stat(real).st_mode)
         except OSError:
-            umask = os.umask(0)
-            os.umask(umask)
-            mode = 0o666 & ~umask
+            mode = 0o666 & ~_CACHED_UMASK
         try:
             os.chmod(tmp, mode)
         except OSError:
