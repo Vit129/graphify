@@ -910,9 +910,15 @@ def _build_server(graph_path: str):
         except Exception as exc:
             return [types.TextContent(type="text", text=f"Error executing {name}: {exc}")]
 
-    if hasattr(Server, "list_tools"):
+    import inspect
+
+    if "on_list_tools" not in inspect.signature(Server.__init__).parameters:
         # mcp 1.x: decorator-based registration. The SDK wraps the raw returns
         # (list[Tool] -> ListToolsResult, str -> resource contents) itself.
+        # Checked positively (2.x's on_* constructor param present) rather
+        # than by the 1.x decorator's absence, so a future 2.x minor that
+        # re-adds a list_tools() compat shim can't misroute this onto the
+        # 1.x branch and fail registration on a 2.x SDK.
         server = Server("graphify")
         server.list_tools()(list_tools)
         server.call_tool()(call_tool)
