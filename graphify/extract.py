@@ -2532,10 +2532,18 @@ def _require_imports_js(node, source: bytes, file_nid: str, stem: str, edges: li
     return found
 
 
-# Node types whose value is a callable, for the JS/TS assignment / class-field
-# / function-expression forms below. Older tree-sitter-javascript grammars
-# label a function expression `function`; current ones use `function_expression`.
-_JS_FUNCTION_VALUE_TYPES = frozenset({"arrow_function", "function_expression", "function"})
+_JS_FUNCTION_VALUE_TYPES = frozenset({"arrow_function", "function_expression", "function", "generator_function"})
+
+
+def _js_topmost_closures(node, out: list) -> None:
+    """Collect the TOPMOST closure nodes (arrow / function expressions) under
+    ``node``, without descending into a found closure — its nested closures
+    belong to it and are reached by the walk_calls closure descend (#1630)."""
+    for c in node.children:
+        if c.type in _JS_FUNCTION_VALUE_TYPES:
+            out.append(c)
+        else:
+            _js_topmost_closures(c, out)
 
 
 def _js_member_assignment_target(left, source: bytes):
@@ -2869,7 +2877,8 @@ def _js_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
                    nodes: list, edges: list, seen_ids: set, function_bodies: list,
                    parent_class_nid: str | None, add_node_fn, add_edge_fn,
                    callable_def_nids: set | None = None,
-                   local_bound_names: dict | None = None) -> bool:
+                   local_bound_names: dict | None = None,
+                   closure_locals_by_body: dict | None = None) -> bool:
     """Handle lexical_declaration (arrow functions, CJS requires, module-level const literals) for JS/TS. Returns True if handled."""
     # Playwright/Jest-style test('description', ...) / describe('description', ...)
     # calls -> a node per test case, so a spec.ts test block is individually
@@ -3027,6 +3036,31 @@ def _js_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
                                 _js_emit_content_data_items(value, source, const_nid,
                                                             add_node_fn, add_edge_fn)
                             const_found = True
+                            # #2552 / #2568: Track each TOPMOST closure in the
+                            # initializer under the const's nid.
+                            inner = value
+                            while inner is not None and inner.type in (
+                                    "as_expression", "satisfies_expression"):
+                                inner = (inner.named_children[0]
+                                         if inner.named_children else None)
+                            if inner is not None and inner.type in (
+                                    "call_expression", "new_expression"):
+                                closures: list = []
+                                _js_topmost_closures(inner, closures)
+                                for closure in closures:
+                                    # #2568: keep each sibling closure's
+                                    # params/locals scoped to its OWN body
+                                    # (keyed by id(body), fed to walk_calls as
+                                    # extra_locals) instead of unioning them
+                                    # under const_nid — the union let closure
+                                    # A's param suppress a real indirect_call
+                                    # to the same name in sibling closure B.
+                                    body = closure.child_by_field_name("body")
+                                    if body:
+                                        if closure_locals_by_body is not None:
+                                            closure_locals_by_body[id(body)] = (
+                                                _js_local_bound_names(closure, source))
+                                        function_bodies.append((const_nid, body))
         if arrow_found:
             return True
         if const_found:
@@ -3157,7 +3191,7 @@ _JS_CONFIG = LanguageConfig(
     call_accessor_node_types=frozenset({"member_expression"}),
     call_accessor_field="property",
     call_accessor_object_field="object",
-    function_boundary_types=frozenset({"function_declaration", "arrow_function", "method_definition"}),
+    function_boundary_types=frozenset({"function_declaration", "generator_function_declaration", "arrow_function", "method_definition", "function_expression", "generator_function"}),
     import_handler=_import_js,
 )
 
@@ -3178,7 +3212,7 @@ _TS_CONFIG = LanguageConfig(
     call_accessor_node_types=frozenset({"member_expression"}),
     call_accessor_field="property",
     call_accessor_object_field="object",
-    function_boundary_types=frozenset({"function_declaration", "arrow_function", "method_definition"}),
+    function_boundary_types=frozenset({"function_declaration", "generator_function_declaration", "arrow_function", "method_definition", "function_expression", "generator_function"}),
     import_handler=_import_js,
 )
 
@@ -3690,6 +3724,7 @@ def _extract_generic(
     # guard skips any call-argument identifier in the enclosing function's set,
     # so a param/local that shadows a module function name yields no edge.
     local_bound_names: dict[str, set[str]] = {}
+    closure_locals_by_body: dict[int, set[str]] = {}
     pending_listen_edges: list[tuple[str, str, int]] = []
     # tree-sitter-swift parses both `class Foo` and `extension Foo` as
     # `class_declaration`. Same-file pairs collapse via seen_ids, but cross-file
@@ -5002,7 +5037,8 @@ def _extract_generic(
             if _js_extra_walk(node, source, file_nid, stem, str_path,
                               nodes, edges, seen_ids, function_bodies,
                               parent_class_nid, add_node, add_edge,
-                              callable_def_nids, local_bound_names):
+                              callable_def_nids, local_bound_names,
+                              closure_locals_by_body):
                 return
 
         if config.ts_module == "tree_sitter_c_sharp":
@@ -5278,7 +5314,10 @@ def _extract_generic(
         return _read_text(scope, source)
 
     _tracked_body_ids: set[int] = set()
-    _JS_CLOSURE_TYPES = ("arrow_function", "function_expression")
+    _JS_CLOSURE_TYPES = (
+        "arrow_function", "function_expression", "generator_function",
+        "function_declaration", "generator_function_declaration",
+    )
 
     def walk_calls(
         node,
@@ -5839,7 +5878,11 @@ def _extract_generic(
     _tracked_body_ids.update(id(b) for _, b in function_bodies)
 
     for caller_nid, body_node in function_bodies:
-        walk_calls(body_node, caller_nid)
+        walk_calls(
+            body_node,
+            caller_nid,
+            extra_locals=frozenset(closure_locals_by_body.get(id(body_node), ())),
+        )
 
     # #1356: walk property/field initializers (collected above). walk_calls
     # self-guards against re-entering function bodies and dedups via
