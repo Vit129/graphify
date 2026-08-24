@@ -275,7 +275,11 @@ class CsharpNameResolver:
           * ``(None, False)`` — scoping knows nothing about the name; a caller
             may fall back (e.g. to the corpus-wide unique bare-name match).
         """
-        if label in self.aliases_by_file.get(source_file, {}):
+        in_scope_aliases = [
+            entry for entry in self.aliases_by_file.get(source_file, {}).get(label, [])
+            if self._using_in_scope(entry[1], entry[2], source_node)
+        ]
+        if in_scope_aliases:
             return self._resolve_alias(label, source_node, source_file), True
         candidates: list[str] = []
         for namespace in self._scopes_for(source_node, source_file):

@@ -752,3 +752,29 @@ def test_struct_primary_constructor_parameter_emits_references_edge(tmp_path):
     idep = _find(r, "IDep", "idep")
     assert (holder, idep) in _refs(r), \
         "a struct primary-constructor parameter type must produce a references edge"
+
+
+def test_out_of_scope_alias_in_same_file_does_not_suppress_fallback_resolution(tmp_path):
+    """An alias declared in one namespace block of a file must not claim the name
+    in a different namespace block of the same file, allowing corpus-wide fallback
+    resolution to succeed for the unrelated symbol."""
+    calls, r = _calls(tmp_path, {
+        "Target.cs": (
+            "namespace Unrelated {\n"
+            "    public class Svc { public bool Run() => true; }\n"
+            "}\n"
+        ),
+        "Multi.cs": (
+            "namespace A {\n"
+            "    using Svc = N.OtherSvc;\n"
+            "    public class InA { public bool M(Svc s) { return true; } }\n"
+            "}\n"
+            "namespace B {\n"
+            "    public class InB { public bool M(Svc s) { return s.Run(); } }\n"
+            "}\n"
+        ),
+    })
+    in_b_m = _find(r, ".M()", "inb")
+    svc_run = _find(r, ".Run()", "unrelated_svc")
+    assert (in_b_m, svc_run) in calls, \
+        "out-of-scope alias in namespace A must not suppress fallback resolution in namespace B"
