@@ -9760,10 +9760,12 @@ _LANG_FAMILY_BY_EXT: dict[str, str] = {
     # JVM interop
     ".java": "jvm", ".kt": "jvm", ".kts": "jvm",
     ".scala": "jvm", ".groovy": "jvm", ".gradle": "jvm",
-    # C-family: shared headers, Objective-C/C++ mix, Swift↔ObjC bridging
-    ".c": "native", ".h": "native", ".cpp": "native", ".cc": "native",
-    ".cxx": "native", ".hpp": "native", ".cu": "native", ".cuh": "native",
-    ".metal": "native", ".m": "native", ".mm": "native", ".swift": "native",
+    # C / C++ / CUDA / Metal
+    ".c": "c", ".cpp": "c", ".cc": "c", ".cxx": "c",
+    ".hpp": "c", ".cu": "c", ".cuh": "c", ".metal": "c",
+    # Apple ecosystem (Swift and Objective-C bridging)
+    ".m": "objc", ".mm": "objc", ".h": "objc",
+    ".swift": "swift",
     # Single-language families
     ".py": "python",
     ".go": "go",
@@ -11323,13 +11325,9 @@ def _merge_swift_extensions(
         label = n.get("label")
         if not label:
             continue
-        # The merge matches on label alone, so without a language gate
-        # `extension Data` / `extension Store` — idiomatic Swift — would absorb a
-        # same-named TypeScript or Python class in a polyglot repo and invent
-        # cross-language edges. Restrict candidates to Swift's own family, which
-        # keeps the intended Swift↔Objective-C folding, and skip builtin globals
-        # the way the member-call resolvers do (#1726, #2147).
-        if _lang_family(n.get("source_file")) != "native":
+        # Restrict candidates to Swift's own family (Swift and Objective-C
+        # bridging), and skip builtin globals the way member-call resolvers do (#1726, #2147).
+        if _lang_family(n.get("source_file")) not in ("swift", "objc"):
             continue
         if label in _LANGUAGE_BUILTIN_GLOBALS or label in _SWIFT_BUILTIN_GLOBALS:
             continue

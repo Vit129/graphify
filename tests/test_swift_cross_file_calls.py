@@ -358,3 +358,28 @@ def test_extension_merge_does_not_prune_unrelated_edges(tmp_path: Path):
         return sum(1 for e in result["edges"] if str(e.get("source_file", "")).endswith(".py"))
 
     assert _py_edges(with_ext) == _py_edges(without_ext), "the extension merge pruned unrelated .py edges"
+
+
+def test_extension_does_not_merge_into_cpp_class(tmp_path: Path):
+    # Swift extensions bridge with Objective-C (.m, .mm, .h), but cannot
+    # extend plain C++ or Metal classes (.cpp, .metal, etc.). A same-named
+    # C++ class and Swift extension must remain distinct nodes.
+    files = [
+        _write(tmp_path / "src/cpp/Renderer.cpp",
+               "class Renderer {\npublic:\n    void render() {}\n};\n"),
+        _write(tmp_path / "src/ios/RendererExt.swift",
+               "extension Renderer {\n    func reset() {}\n}\n"),
+    ]
+    result = extract(files, cache_root=tmp_path / "src", parallel=False)
+
+    cpp_nodes = [n for n in result["nodes"]
+                 if str(n.get("source_file", "")).endswith(".cpp") and n.get("label") == "Renderer"]
+    swift_ext_nodes = [n for n in result["nodes"]
+                       if str(n.get("source_file", "")).endswith(".swift")]
+    assert len(cpp_nodes) == 1, "C++ Renderer node must exist"
+    assert len([n for n in result["nodes"] if n.get("label") == "Renderer"]) == 2, (
+        "C++ Renderer and Swift extension Renderer must not merge"
+    )
+    for e in result["edges"]:
+        if str(e.get("source_file", "")).endswith(".swift"):
+            assert e.get("target") != cpp_nodes[0]["id"], "Swift edge must not bind to C++ Renderer"
