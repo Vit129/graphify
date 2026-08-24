@@ -965,7 +965,11 @@ def _pick_seeds(
             comm = G.nodes[nid].get("community")
             if comm in seen_communities:
                 continue
+            key = _seed_label_key(nid)
+            if key in seen_labels:
+                continue
             seen_communities.add(comm)
+            seen_labels.add(key)
             seeds.append(nid)
 
     if G is not None and terms:

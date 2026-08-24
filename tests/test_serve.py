@@ -1880,6 +1880,21 @@ def test_pick_seeds_per_term_guarantee_does_not_reintroduce_generic_dupe():
     assert len(get_seeds) == 1, f"per-term guarantee reintroduced a GET dupe: {seeds}"
 
 
+def test_pick_seeds_community_fill_dedups_homonymous_generic_labels():
+    """The community-fill loop must honor the per-label dedup cap across
+    different communities (#1832), preventing homonymous generic labels from
+    flooding community diversity slots."""
+    G = nx.DiGraph()
+    for i in range(5):
+        G.add_node(f"get{i}", label="GET", source_file=f"r{i}.py", community=i)
+    G.add_node("unique_fn", label="UniqueFunction", source_file="unique.py", community=99)
+    scored = [(1000.0, f"get{i}") for i in range(5)] + [(500.0, "unique_fn")]
+    seeds = _pick_seeds(scored, G=G, multi_term=True)
+    get_seeds = [s for s in seeds if s.startswith("get")]
+    assert len(get_seeds) == 1, f"community fill flooded GET duplicates: {seeds}"
+    assert "unique_fn" in seeds
+
+
 def test_score_nodes_scores_identical_labels_equally():
     """Guard against a per-label multiplicity penalty leaking into _score_nodes
     (shared by shortest_path / explain endpoint resolution): two nodes with the
