@@ -74,7 +74,15 @@ def log_query(
         if result is not None and _log_responses():
             rec["response"] = result
         path.parent.mkdir(parents=True, exist_ok=True)
+        is_new = not path.exists()
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        if is_new:
+            # Opting into the log shouldn't opt into sharing it — os.open's
+            # mode and Path.touch() are both masked by umask, so chmod
+            # explicitly to keep other local accounts from reading query
+            # history (and full responses, if GRAPHIFY_QUERY_LOG_RESPONSES
+            # is set) regardless of the process's umask.
+            os.chmod(path, 0o600)
     except Exception:
         pass

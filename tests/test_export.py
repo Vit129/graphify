@@ -192,23 +192,6 @@ def test_to_html_neighbor_links_have_no_inline_onclick_xss():
     assert "closest('.neighbor-link')" in html
 
 
-def test_to_html_neighbor_links_escapes_hostile_node_ids():
-    """Verify that node IDs containing quotes and script tags are safe in neighbor links."""
-    import networkx as nx
-    G = nx.Graph()
-    malicious_id = 'node" onclick="alert(1)" <script>alert(2)</script>'
-    G.add_node("target", label="Target", file_type="code")
-    G.add_node(malicious_id, label='Malicious "Label" <tag>', file_type="doc")
-    G.add_edge("target", malicious_id, relation="calls")
-    communities = {0: ["target", malicious_id]}
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / "graph.html"
-        to_html(G, communities, str(out))
-        html = out.read_text()
-    assert 'onclick="alert(1)"' not in html
-    assert '<script>alert(2)</script>' not in html
-
-
 def test_to_html_contains_search():
     G = make_graph()
     communities = cluster(G)

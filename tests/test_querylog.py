@@ -221,3 +221,21 @@ def test_log_query_writes_nothing_by_default(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     log_query(kind="query", question="secret internal ticket TICKET-123", corpus=".", result="1 node found")
     assert not (tmp_path / ".cache" / "graphify-queries.log").exists()
+
+
+def test_log_query_creates_file_not_world_readable(monkeypatch, tmp_path):
+    """Opting in shouldn't opt into sharing: the log file must not be group/other
+    readable regardless of the process umask."""
+    import os
+    import stat
+
+    _clear_log_env(monkeypatch)
+    log_path = tmp_path / "q.log"
+    monkeypatch.setenv("GRAPHIFY_QUERY_LOG", str(log_path))
+    old_umask = os.umask(0o022)  # world-readable-by-default umask
+    try:
+        log_query(kind="query", question="secret internal ticket TICKET-123", corpus=".", result="1 node found")
+    finally:
+        os.umask(old_umask)
+    mode = stat.S_IMODE(log_path.stat().st_mode)
+    assert mode == 0o600, f"expected 0600, got {oct(mode)}"
