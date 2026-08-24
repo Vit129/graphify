@@ -1824,6 +1824,18 @@ def test_pick_seeds_diversity_recovers_starved_term():
     assert "target" in seeds_after
 
 
+def test_pick_seeds_many_terms_stays_bounded():
+    """A query with many terms must not produce an unbounded number of seeds
+    from the per-term guarantee (#1596 cap)."""
+    G = nx.DiGraph()
+    terms = [f"term{i}" for i in range(19)]
+    for i, t in enumerate(terms):
+        G.add_node(f"node{i}", label=f"{t}_fn", source_file=f"src/{t}.py", community=i)
+    scored = _score_nodes(G, terms)
+    seeds = _pick_seeds(scored, G=G, multi_term=True, terms=terms)
+    assert len(seeds) <= 5
+
+
 # --- generic-symbol seed flooding (#1766 / #1832) ---
 
 def test_pick_seeds_dedups_homonymous_generic_labels():

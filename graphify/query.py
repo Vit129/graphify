@@ -938,25 +938,6 @@ def _pick_seeds(
         seen_labels.add(key)
         seeds.append(nid)
 
-    if G is not None and terms:
-        scored_nids = {nid for _, nid in scored}
-        norm_terms = sorted({tok for t in terms for tok in _search_tokens(t)})
-        intent = {t for t in norm_terms if t in _RELATIONAL_INTENT_TERMS}
-        if intent and any(t not in _RELATIONAL_INTENT_TERMS for t in norm_terms):
-            effective_terms = [t for t in norm_terms if t not in intent]
-        else:
-            effective_terms = norm_terms
-        for term in effective_terms:
-            term_scored = [(s, nid) for s, nid in _score_nodes(G, [term]) if nid in scored_nids]
-            if not term_scored:
-                continue
-            best_score = term_scored[0][0]
-            tied = [nid for s, nid in term_scored if s == best_score]
-            best_nid = max(tied, key=lambda n: G.degree(n)) if len(tied) > 1 else term_scored[0][1]
-            key = _seed_label_key(best_nid)
-            if best_nid not in seeds and key not in seen_labels:
-                seen_labels.add(key)
-                seeds.append(best_nid)
     if G is not None and multi_term:
         seen_communities = {G.nodes[n].get("community") for n in seeds}
         candidates = scored
@@ -986,6 +967,29 @@ def _pick_seeds(
                 continue
             seen_communities.add(comm)
             seeds.append(nid)
+
+    if G is not None and terms:
+        max_guarantee_cap = max(max_k + 2, max_communities)
+        scored_nids = {nid for _, nid in scored}
+        norm_terms = sorted({tok for t in terms for tok in _search_tokens(t)})
+        intent = {t for t in norm_terms if t in _RELATIONAL_INTENT_TERMS}
+        if intent and any(t not in _RELATIONAL_INTENT_TERMS for t in norm_terms):
+            effective_terms = [t for t in norm_terms if t not in intent]
+        else:
+            effective_terms = norm_terms
+        for term in effective_terms:
+            if len(seeds) >= max_guarantee_cap:
+                break
+            term_scored = [(s, nid) for s, nid in _score_nodes(G, [term]) if nid in scored_nids]
+            if not term_scored:
+                continue
+            best_score = term_scored[0][0]
+            tied = [nid for s, nid in term_scored if s == best_score]
+            best_nid = max(tied, key=lambda n: G.degree(n)) if len(tied) > 1 else term_scored[0][1]
+            key = _seed_label_key(best_nid)
+            if best_nid not in seeds and key not in seen_labels:
+                seen_labels.add(key)
+                seeds.append(best_nid)
     return seeds
 
 
