@@ -139,3 +139,23 @@ def test_lowercase_callee_does_not_leak_into_generic_resolver(tmp_path):
         "TGamma.Run must not resolve an unrelated lowercase call to TAlpha.prepare -- "
         "Pascal raw_calls must not leak into the generic corpus-wide resolver"
     )
+
+
+def test_inherits_edge_retains_stub_when_base_file_excluded_from_corpus(tmp_path):
+    """When a base class file exists on disk (under the project root) but is
+    excluded from the extracted corpus (e.g. only DerivedGadget.pas is passed to
+    extract()), the inherits edge must point to a synthesized stub node rather
+    than dangling and being dropped by build_from_json."""
+    from graphify.build import build_from_json
+    graph = extract([DERIVED], cache_root=tmp_path, parallel=False)
+    inherits_edges = [e for e in graph["edges"] if e.get("relation") == "inherits"]
+    assert len(inherits_edges) == 1, f"expected 1 inherits edge in extraction, got {inherits_edges}"
+
+    G = build_from_json(graph)
+    inherits_in_g = [
+        (u, v) for u, v, d in G.edges(data=True) if d.get("relation") == "inherits"
+    ]
+    assert len(inherits_in_g) == 1, (
+        "inherits edge must survive build_from_json via a stub node when base class's "
+        "file is excluded from extraction"
+    )

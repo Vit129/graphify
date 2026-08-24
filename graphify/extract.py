@@ -13156,7 +13156,7 @@ def _extract_pascal_regex(path: Path) -> dict:
                 "source_location": f"L{line}",
             })
 
-    def _add_edge(src: str, tgt: str, relation: str, line: int, context: str | None = None) -> None:
+    def _add_edge(src: str, tgt: str, relation: str, line: int, context: str | None = None, target_label: str | None = None) -> None:
         # A class method declared in the interface section and defined in the
         # implementation section both emit a `method` edge to the same node, so
         # dedup on (src, tgt, relation) to keep the graph from carrying doubled
@@ -13176,6 +13176,8 @@ def _extract_pascal_regex(path: Path) -> dict:
         }
         if context:
             edge["context"] = context
+        if target_label:
+            edge["target_label"] = target_label
         edges.append(edge)
 
     def _lineno(text: str, offset: int) -> int:
@@ -13244,7 +13246,7 @@ def _extract_pascal_regex(path: Path) -> dict:
                     base_nid = _make_id(base_name)
                     if base_nid not in seen_ids:
                         _add_node(base_nid, base_name, line)
-            _add_edge(cls_nid, base_nid, "inherits", line)
+            _add_edge(cls_nid, base_nid, "inherits", line, target_label=base_name)
 
         # Find class body (up to next end;)
         end_m = _PAS_END_SEMI_RE.search(search_text, hm.end())
@@ -13392,7 +13394,7 @@ def extract_pascal(path: Path) -> dict:
     def add_edge(
         src: str, tgt: str, relation: str, line: int,
         confidence: str = "EXTRACTED", weight: float = 1.0,
-        context: str | None = None,
+        context: str | None = None, target_label: str | None = None,
     ) -> None:
         # A class method declared in the interface section and defined in the
         # implementation section both emit a `method` edge to the same node, so
@@ -13409,6 +13411,8 @@ def extract_pascal(path: Path) -> dict:
         }
         if context:
             edge["context"] = context
+        if target_label:
+            edge["target_label"] = target_label
         edges.append(edge)
 
     file_nid = _make_id(str(path))
@@ -13482,7 +13486,7 @@ def extract_pascal(path: Path) -> dict:
                                 if base_nid not in seen_ids:
                                     # Stub for RTL/external base classes.
                                     add_node(base_nid, base_name, line)
-                        add_edge(cls_nid, base_nid, "inherits", line)
+                        add_edge(cls_nid, base_nid, "inherits", line, target_label=base_name)
                 for child in kind_node.children:
                     walk(child, cls_nid)
                 return
@@ -16672,6 +16676,25 @@ def extract(
         all_nodes.extend(result.get("nodes", []))
         all_edges.extend(result.get("edges", []))
         all_raw_calls.extend(result.get("raw_calls", []))
+
+    # Synthesize a stub for any cross-file inherits/implements target that was
+    # resolved to a target node ID but whose defining file was excluded from
+    # this extraction run (or not found in corpus). Prevents dangling inherits
+    # edges from being dropped during build_from_json.
+    node_ids = {n["id"] for n in all_nodes if n.get("id")}
+    for e in all_edges:
+        if e.get("relation") in ("inherits", "implements"):
+            tgt = e.get("target")
+            if tgt and tgt not in node_ids:
+                node_ids.add(tgt)
+                label = e.get("target_label") or tgt.split("_")[-1]
+                all_nodes.append({
+                    "id": tgt,
+                    "label": label,
+                    "file_type": "code",
+                    "source_file": "",
+                    "source_location": "",
+                })
     # Function / method / class def ids for the cross-file indirect_call callable
     # guard. Built from the `_callable` node marker AFTER the id-remap / disambiguation
     # passes below (which rewrite node ids), so it can never go stale — see the
