@@ -792,3 +792,5 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for module responsibilities and how to ad
 ## License
 
 MIT — see [LICENSE](./LICENSE).
+
+**Note on upstream's later relicense:** [safishamsi/graphify](https://github.com/safishamsi/graphify) relicensed from MIT to Apache-2.0 on 2026-07-22 (commit [`ba7f9ea`](https://github.com/safishamsi/graphify/commit/ba7f9ea9d8c2c7c7807957010bec34543c20e20a)). This fork's fork point (2026-07-04, `d89ec68`) predates that change, so everything in this repository — including code adopted from upstream's `v8` branch afterward and reimplemented here — is under the MIT terms upstream published at the time this fork was taken. This fork has not adopted the Apache-2.0 relicense and stays MIT throughout.
