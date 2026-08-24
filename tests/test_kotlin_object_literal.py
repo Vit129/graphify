@@ -1,0 +1,223 @@
+"""Kotlin anonymous-object members (#2347).
+
+`object : Foo { ... }` (node type `object_literal`) got no nodes at all:
+object_literal is not a class_type (it has no name), and the function branch
+never recurses into function bodies — so the literal's members AND every call
+inside them were silently dropped. The extractor now emits an owner node per
+literal (labeled after its first supertype with object: prefix and line), a `contains`
+edge from the enclosing function, the implements/inherits edge to the supertype, and walks
+the literal's class_body like a class so members flow normally.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from graphify.extract import extract
+
+
+def _extract(tmp_path, files: dict[str, str]):
+    for name, body in files.items():
+        p = tmp_path / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body)
+    old = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        r = extract([Path(n) for n in files], cache_root=tmp_path / ".cache")
+    finally:
+        os.chdir(old)
+    return r
+
+
+def _edges(r, relation):
+    return {(e["source"], e["target"]) for e in r["edges"] if e["relation"] == relation}
+
+
+def _find(r, label, id_contains=""):
+    return next(n["id"] for n in r["nodes"]
+                if n["label"] == label and id_contains in n["id"])
+
+
+_REGISTRY = {
+    "Registry.kt": (
+        "interface EventListener {\n"
+        "    fun process(e: Event)\n"
+        "}\n"
+        "class Event\n"
+        "class Registry {\n"
+        "    fun register() {\n"
+        "        val listener = object : EventListener {\n"
+        "            fun process(e: Event) { handleSomething(e) }\n"
+        "            fun handleSomething(e: Event) { }\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+    ),
+}
+
+
+def test_object_literal_members_get_nodes_and_method_edges(tmp_path):
+    r = _extract(tmp_path, _REGISTRY)
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:EventListener"))
+    process = _find(r, ".process()", "object")
+    handle = _find(r, ".handleSomething()", "object")
+    methods = _edges(r, "method")
+    assert (obj_nid, process) in methods, "anonymous-object member must hang off the owner"
+    assert (obj_nid, handle) in methods, "anonymous-object member must hang off the owner"
+    # The owner itself is contained by the enclosing function.
+    register = _find(r, ".register()", "registry")
+    assert (register, obj_nid) in _edges(r, "contains"), \
+        "the enclosing function contains the anonymous object"
+
+
+def test_object_literal_implements_supertype(tmp_path):
+    r = _extract(tmp_path, _REGISTRY)
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:EventListener"))
+    iface = next(n["id"] for n in r["nodes"] if n["label"] == "EventListener")
+    assert (obj_nid, iface) in _edges(r, "implements"), \
+        "object : EventListener must implement the in-corpus interface"
+
+
+def test_object_literal_member_calls_sibling_member(tmp_path):
+    r = _extract(tmp_path, _REGISTRY)
+    process = _find(r, ".process()", "object")
+    handle = _find(r, ".handleSomething()", "object")
+    assert (process, handle) in _edges(r, "calls"), \
+        "a call between two anonymous-object members must resolve"
+
+
+def test_two_object_literals_in_one_function_do_not_collide(tmp_path):
+    r = _extract(tmp_path, {
+        "Make.kt": (
+            "interface Alpha {\n"
+            "    fun one()\n"
+            "}\n"
+            "interface Beta {\n"
+            "    fun two()\n"
+            "}\n"
+            "class Maker {\n"
+            "    fun make() {\n"
+            "        val a = object : Alpha {\n"
+            "            fun one() { }\n"
+            "        }\n"
+            "        val b = object : Beta {\n"
+            "            fun two() { }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    obj_a = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Alpha"))
+    obj_b = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Beta"))
+    assert obj_a != obj_b
+    methods = _edges(r, "method")
+    one = _find(r, ".one()", "object")
+    two = _find(r, ".two()", "object")
+    assert (obj_a, one) in methods
+    assert (obj_b, two) in methods
+    assert (obj_a, two) not in methods, "members must not leak across sibling literals"
+    assert (obj_b, one) not in methods, "members must not leak across sibling literals"
+
+
+def test_named_object_and_plain_class_unchanged(tmp_path):
+    """Keep-the-bar: named `object` declarations and plain classes extract
+    exactly as before — the literal handling is purely additive."""
+    r = _extract(tmp_path, {
+        "Mix.kt": (
+            "object Singleton {\n"
+            "    fun go() { }\n"
+            "}\n"
+            "class Plain {\n"
+            "    fun run() { go2() }\n"
+            "    fun go2() { }\n"
+            "}\n"
+        ),
+    })
+    singleton = _find(r, "Singleton")
+    plain = _find(r, "Plain")
+    methods = _edges(r, "method")
+    go = _find(r, ".go()")
+    run = _find(r, ".run()")
+    go2 = _find(r, ".go2()")
+    assert (singleton, go) in methods
+    assert (plain, run) in methods and (plain, go2) in methods
+    assert (run, go2) in _edges(r, "calls")
+    assert not any(n["label"].startswith("object:") or n["label"].startswith("object@")
+                   for n in r["nodes"]), "no phantom object-literal owner nodes"
+
+
+def test_anonymous_object_does_not_steal_supertype_call_resolution(tmp_path):
+    """Regression test: anonymous object literal node must not steal supertype's
+    name in label_to_nid, preserving same-file and cross-file call resolution."""
+    r = _extract(tmp_path, {
+        "Base.kt": (
+            "open class Base {\n"
+            "    fun execute() { }\n"
+            "}\n"
+            "class Factory {\n"
+            "    fun make() = object : Base() {\n"
+            "        fun extra() { }\n"
+            "    }\n"
+            "    fun build(): Base {\n"
+            "        return Base()\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    base_class = next(n["id"] for n in r["nodes"] if n["label"] == "Base")
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Base"))
+    assert base_class != obj_nid
+    calls = _edges(r, "calls")
+    build_nid = next(n["id"] for n in r["nodes"] if n["label"] == ".build()")
+    assert (build_nid, base_class) in calls, "Base() constructor call must resolve to Base class"
+    assert (build_nid, obj_nid) not in calls, "Base() constructor call must not resolve to anonymous object"
+
+
+def test_class_property_object_literal_members_and_edges(tmp_path):
+    """Anonymous objects assigned to class properties must extract their owner node,
+    contains edge from class, implements edge to supertype, and member methods."""
+    r = _extract(tmp_path, {
+        "Holder.kt": (
+            "interface Listener {\n"
+            "    fun onEvent(e: String)\n"
+            "}\n"
+            "class Holder {\n"
+            "    private val listener = object : Listener {\n"
+            "        fun onEvent(e: String) { handleEvent(e) }\n"
+            "        fun handleEvent(e: String) { }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    holder_nid = next(n["id"] for n in r["nodes"] if n["label"] == "Holder")
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Listener"))
+    iface_nid = next(n["id"] for n in r["nodes"] if n["label"] == "Listener")
+    on_event = _find(r, ".onEvent()", "object")
+    handle_event = _find(r, ".handleEvent()", "object")
+
+    assert (holder_nid, obj_nid) in _edges(r, "contains"), "Holder must contain the anonymous object"
+    assert (obj_nid, iface_nid) in _edges(r, "implements"), "anonymous object must implement Listener"
+    methods = _edges(r, "method")
+    assert (obj_nid, on_event) in methods, "onEvent must belong to anonymous object"
+    assert (obj_nid, handle_event) in methods, "handleEvent must belong to anonymous object"
+    assert (on_event, handle_event) in _edges(r, "calls"), "onEvent must call handleEvent"
+
+
+def test_top_level_property_object_literal(tmp_path):
+    """Anonymous objects assigned to top-level properties must extract cleanly."""
+    r = _extract(tmp_path, {
+        "Global.kt": (
+            "interface Runner {\n"
+            "    fun run()\n"
+            "}\n"
+            "val globalRunner = object : Runner {\n"
+            "    fun run() { }\n"
+            "}\n"
+        ),
+    })
+    obj_nid = next(n["id"] for n in r["nodes"] if n["label"].startswith("object:Runner"))
+    runner_nid = next(n["id"] for n in r["nodes"] if n["label"] == "Runner")
+    run_method = _find(r, ".run()", "object")
+    assert (obj_nid, runner_nid) in _edges(r, "implements")
+    assert (obj_nid, run_method) in _edges(r, "method")

@@ -604,6 +604,49 @@ def test_kotlin_finds_function():
     r = extract_kotlin(FIXTURES / "sample.kt")
     assert any("createClient" in l for l in _labels(r))
 
+def test_kotlin_enum_entries_have_case_of_edge():
+    # #1700 (Kotlin half): enum entries must be nodes with case_of edges to the enum.
+    r = extract_kotlin(FIXTURES / "sample.kt")
+    labels = _labels(r)
+    assert "NORMAL" in labels and "GROUP" in labels and "SYSTEM" in labels
+    assert ("ChatType", "NORMAL") in _edge_labels(r, "case_of")
+    assert ("ChatType", "SYSTEM") in _edge_labels(r, "case_of")
+
+def test_kotlin_enum_entry_and_same_named_method_do_not_collide(tmp_path):
+    # A Kotlin enum entry and same-named method (ERROR and fun error())
+    # in the same enum class must not collide on node id or overwrite each other.
+    p = tmp_path / "State.kt"
+    p.write_text(
+        "enum class State {\n"
+        "    ERROR,\n"
+        "    OK;\n"
+        "    fun error() {}\n"
+        "    fun ok() {}\n"
+        "}\n"
+    )
+    r = extract_kotlin(p)
+    labels = _labels(r)
+    assert "ERROR" in labels, "enum entry ERROR must exist as a node"
+    assert "OK" in labels, "enum entry OK must exist as a node"
+    assert ".error()" in labels, "method .error() must exist as a node"
+    assert ".ok()" in labels, "method .ok() must exist as a node"
+
+    error_entry = next(n for n in r["nodes"] if n["label"] == "ERROR")
+    error_method = next(n for n in r["nodes"] if n["label"] == ".error()")
+    ok_entry = next(n for n in r["nodes"] if n["label"] == "OK")
+    ok_method = next(n for n in r["nodes"] if n["label"] == ".ok()")
+    assert error_entry["id"] != error_method["id"]
+    assert ok_entry["id"] != ok_method["id"]
+
+    assert ("State", "ERROR") in _edge_labels(r, "case_of")
+    assert ("State", "OK") in _edge_labels(r, "case_of")
+    assert ("State", "error") in _edge_labels(r, "method")
+    assert ("State", "ok") in _edge_labels(r, "method")
+    method_edges = {(e["source"], e["target"]) for e in r["edges"] if e["relation"] == "method"}
+    state_nid = next(n["id"] for n in r["nodes"] if n["label"] == "State")
+    assert (state_nid, error_method["id"]) in method_edges
+    assert (state_nid, ok_method["id"]) in method_edges
+
 def test_kotlin_emits_in_file_calls():
     """Regression test for the call-walker `simple_identifier` /
     `identifier` rename — see graphify-kmp's PythonParityTest."""
@@ -623,12 +666,43 @@ def test_kotlin_splits_inherits_and_implements():
     assert ("DataProcessor", "Loggable") in _edge_labels(r, "implements")
 
 
+def test_kotlin_interface_delegation_emits_implements():
+    """`class Foo : Bar by baz` wraps the delegated interface in an
+    `explicit_delegation` node — it must still emit an implements edge."""
+    r = extract_kotlin(FIXTURES / "sample.kt")
+    assert ("LoggingList", "MutableList") in _edge_labels(r, "implements")
+
+
 def test_kotlin_parameter_return_generic_and_field_contexts():
     r = extract_kotlin(FIXTURES / "sample.kt")
     assert ("run", "DataProcessor") in _edge_labels(r, "references", "parameter_type")
     assert ("run", "Result") in _edge_labels(r, "references", "return_type")
     assert ("run", "DataProcessor") in _edge_labels(r, "references", "generic_arg")
     assert ("DataProcessor", "Result") in _edge_labels(r, "references", "field")
+
+def test_kotlin_builtin_types_not_emitted_as_references():
+    # kotlin.* scalar/collection/core types used as parameter, return, or field
+    # types carry no useful graph meaning: they never resolve to a project node,
+    # so emitting `references` edges to them is pure noise (mirrors the Python
+    # _PYTHON_ANNOTATION_NOISE / Go _GO_PREDECLARED_TYPES handling).
+    r = extract_kotlin(FIXTURES / "sample.kt")
+    ref_targets = {target for (_, target) in _edge_labels(r, "references")}
+    for builtin in ("String", "Int"):
+        assert builtin not in ref_targets, (
+            f"builtin type {builtin!r} should not be a references target"
+        )
+
+def test_kotlin_user_types_still_emit_references():
+    # Guard against over-filtering: user-defined classes sharing names with common
+    # Java/JDK types (Clock, Duration) or domain identifiers (Result) must still
+    # resolve to real edges. The Kotlin builtin filter only drops kotlin.* stdlib
+    # scalars/collections, preserving references to corpus-defined types.
+    r = extract_kotlin(FIXTURES / "sample.kt")
+    assert ("DataProcessor", "Result") in _edge_labels(r, "references", "field")
+    assert ("run", "DataProcessor") in _edge_labels(r, "references", "parameter_type")
+    assert ("Scheduler", "Clock") in _edge_labels(r, "references", "field")
+    assert ("schedule", "Duration") in _edge_labels(r, "references", "parameter_type")
+    assert ("schedule", "Duration") in _edge_labels(r, "references", "return_type")
 
 
 # ── Scala ─────────────────────────────────────────────────────────────────────

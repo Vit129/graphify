@@ -899,6 +899,9 @@ def _java_type_parameters_in_scope(node, source: bytes) -> frozenset[str]:
     return frozenset(names)
 
 
+
+
+
 def _java_collect_type_refs(
     node,
     source: bytes,
@@ -1117,6 +1120,34 @@ def _php_method_return_type_node(method_node):
     return None
 
 
+# Kotlin stdlib scalar/collection/core types that appear constantly as type
+# annotations but carry no useful semantic meaning as graph nodes (mirrors
+# _PYTHON_ANNOTATION_NOISE / _GO_PREDECLARED_TYPES).
+_KOTLIN_BUILTIN_TYPES = frozenset({
+    # kotlin — scalars & core
+    "Any", "Unit", "Nothing", "Boolean", "Byte", "Short", "Int", "Long",
+    "Float", "Double", "Char", "String", "CharSequence", "Number",
+    "Comparable", "Enum", "Annotation", "Pair", "Triple", "Lazy",
+    "Function",
+    # kotlin — throwables
+    "Throwable", "Exception", "RuntimeException", "Error",
+    "IllegalArgumentException", "IllegalStateException", "NullPointerException",
+    "IndexOutOfBoundsException", "ClassCastException", "NumberFormatException",
+    "ArithmeticException", "UnsupportedOperationException",
+    "NoSuchElementException", "ConcurrentModificationException",
+    "StackOverflowError", "OutOfMemoryError", "AssertionError",
+    "InterruptedException",
+    # kotlin.collections
+    "Array", "List", "MutableList", "ArrayList", "Set", "MutableSet",
+    "HashSet", "LinkedHashSet", "Map", "MutableMap", "HashMap",
+    "LinkedHashMap", "Collection", "MutableCollection", "Iterable",
+    "MutableIterable", "Iterator", "MutableIterator", "ListIterator",
+    "MutableListIterator", "Sequence", "Comparator",
+    # kotlin.text
+    "Regex", "MatchResult", "StringBuilder",
+})
+
+
 def _kotlin_user_type_name(user_type_node, source: bytes) -> str | None:
     """Return the head identifier text from a Kotlin user_type node (without generics)."""
     if user_type_node is None:
@@ -1147,14 +1178,14 @@ def _kotlin_collect_type_refs(node, source: bytes, generic: bool, out: list[tupl
         for c in node.children:
             if c.type in ("identifier", "type_identifier"):
                 text = _read_text(c, source)
-                if text:
+                if text and text not in _KOTLIN_BUILTIN_TYPES:
                     out.append((text, "generic_arg" if generic else "type"))
                 break
             if c.type == "simple_user_type":
                 for sub in c.children:
                     if sub.type in ("identifier", "type_identifier"):
                         text = _read_text(sub, source)
-                        if text:
+                        if text and text not in _KOTLIN_BUILTIN_TYPES:
                             out.append((text, "generic_arg" if generic else "type"))
                         break
                 break
@@ -1170,7 +1201,7 @@ def _kotlin_collect_type_refs(node, source: bytes, generic: bool, out: list[tupl
         return
     if t in ("identifier", "type_identifier"):
         text = _read_text(node, source)
-        if text:
+        if text and text not in _KOTLIN_BUILTIN_TYPES:
             out.append((text, "generic_arg" if generic else "type"))
         return
     if t in ("nullable_type", "parenthesized_type", "type_reference"):
@@ -3277,6 +3308,116 @@ def _swift_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: s
     return False
 
 
+# ── Kotlin extra walk for enum entries ────────────────────────────────────────
+
+def _kotlin_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
+                       nodes: list, edges: list, seen_ids: set, function_bodies: list,
+                       parent_class_nid: str | None, add_node_fn, add_edge_fn,
+                       walk_fn) -> bool:
+    """Handle enum_entry for Kotlin. Returns True if handled (#1700 Kotlin half)."""
+    if node.type == "enum_entry" and parent_class_nid:
+        name_node = None
+        for child in node.children:
+            if child.type in ("simple_identifier", "identifier"):
+                name_node = child
+                break
+        if name_node is None:
+            return True
+        const_name = _read_text(name_node, source)
+        line = node.start_point[0] + 1
+        const_nid = _make_id(parent_class_nid, f"{const_name}_entry")
+        add_node_fn(const_nid, const_name, line)
+        add_edge_fn(parent_class_nid, const_nid, "case_of", line)
+        for child in node.children:
+            if child.type == "class_body":
+                for member in child.children:
+                    walk_fn(member, parent_class_nid=const_nid)
+        return True
+    return False
+
+
+def _kotlin_extract_object_literals(
+    scope_node,
+    source: bytes,
+    owner_nid: str,
+    add_node_fn,
+    add_edge_fn,
+    ensure_named_node_fn,
+    callable_def_nids: set,
+    walk_fn,
+) -> None:
+    """Scan scope_node for object_literal descendants and emit owner nodes/edges/members."""
+    _kt_literals = []
+    _kt_stack = list(scope_node.children)
+    while _kt_stack:
+        _kt_node = _kt_stack.pop()
+        if _kt_node.type == "function_declaration":
+            continue
+        if _kt_node.type == "object_literal":
+            _kt_literals.append(_kt_node)
+            continue
+        _kt_stack.extend(_kt_node.children)
+    _kt_literals.sort(key=lambda n: n.start_byte)
+    for lit in _kt_literals:
+        lit_line = lit.start_point[0] + 1
+        # Supertypes from the literal's delegation_specifiers,
+        # shaped like the Kotlin class-branch handling:
+        # constructor_invocation -> inherits, bare user_type
+        # (or explicit_delegation) -> implements.
+        lit_bases: list[tuple[str, str]] = []
+        for dchild in lit.children:
+            if dchild.type != "delegation_specifiers":
+                continue
+            for spec in dchild.children:
+                if spec.type != "delegation_specifier":
+                    continue
+                relation = "implements"
+                user_type_node = None
+                for sub in spec.children:
+                    if sub.type == "constructor_invocation":
+                        relation = "inherits"
+                        for inner in sub.children:
+                            if inner.type == "user_type":
+                                user_type_node = inner
+                                break
+                        break
+                    if sub.type == "user_type":
+                        user_type_node = sub
+                        break
+                    if sub.type == "explicit_delegation":
+                        for inner in sub.children:
+                            if inner.type == "user_type":
+                                user_type_node = inner
+                                break
+                        break
+                base = _kotlin_user_type_name(
+                    user_type_node, source
+                )
+                if base:
+                    lit_bases.append((base, relation))
+        obj_label = (
+            f"object:{lit_bases[0][0]}@L{lit_line}" if lit_bases
+            else f"object@L{lit_line}"
+        )
+        obj_nid = _make_id(
+            owner_nid, f"object:{obj_label}", f"L{lit_line}"
+        )
+        add_node_fn(obj_nid, obj_label, lit_line)
+        add_edge_fn(owner_nid, obj_nid, "contains", lit_line)
+        callable_def_nids.add(obj_nid)
+        for base, relation in lit_bases:
+            base_nid = ensure_named_node_fn(base, lit_line)
+            if base_nid != obj_nid:
+                add_edge_fn(obj_nid, base_nid, relation, lit_line)
+        lit_body = next(
+            (c for c in lit.children if c.type == "class_body"),
+            None,
+        )
+        if lit_body is not None:
+            for child in lit_body.children:
+                walk_fn(child, parent_class_nid=obj_nid)
+
+
 # ── Language configs ──────────────────────────────────────────────────────────
 
 _PYTHON_CONFIG = LanguageConfig(
@@ -3454,7 +3595,7 @@ _KOTLIN_CONFIG = LanguageConfig(
     # older forks use `simple_identifier`. Accept both so the extractor
     # works across grammar generations.
     name_fallback_child_types=("simple_identifier", "identifier"),
-    body_fallback_child_types=("function_body", "class_body"),
+    body_fallback_child_types=("function_body", "class_body", "enum_class_body"),
     function_boundary_types=frozenset({"function_declaration"}),
     import_handler=_import_kotlin,
 )
@@ -4293,6 +4434,17 @@ def _extract_generic(
                             if sub.type == "user_type":
                                 user_type_node = sub
                                 break
+                            # `class Foo : Bar by baz` wraps the delegated
+                            # interface `Bar` in an `explicit_delegation`
+                            # node; grab its first `user_type` descendant so
+                            # the implements edge (and generic-arg recovery)
+                            # still fire.
+                            if sub.type == "explicit_delegation":
+                                for inner in sub.children:
+                                    if inner.type == "user_type":
+                                        user_type_node = inner
+                                        break
+                                break
                         if user_type_node is None:
                             continue
                         base = _kotlin_user_type_name(user_type_node, source)
@@ -4849,19 +5001,23 @@ def _extract_generic(
                 break
             return
 
-        if (config.ts_module == "tree_sitter_kotlin"
-                and t == "property_declaration"
-                and parent_class_nid):
-            type_node = _kotlin_property_type_node(node)
-            if type_node is not None:
-                line = node.start_point[0] + 1
-                refs: list[tuple[str, str]] = []
-                _kotlin_collect_type_refs(type_node, source, False, refs)
-                for ref_name, role in refs:
-                    ctx = "generic_arg" if role == "generic_arg" else "field"
-                    target_nid = ensure_named_node(ref_name, line)
-                    if target_nid != parent_class_nid:
-                        add_edge(parent_class_nid, target_nid, "references", line, context=ctx)
+        if config.ts_module == "tree_sitter_kotlin" and t == "property_declaration":
+            if parent_class_nid:
+                type_node = _kotlin_property_type_node(node)
+                if type_node is not None:
+                    line = node.start_point[0] + 1
+                    refs: list[tuple[str, str]] = []
+                    _kotlin_collect_type_refs(type_node, source, False, refs)
+                    for ref_name, role in refs:
+                        ctx = "generic_arg" if role == "generic_arg" else "field"
+                        target_nid = ensure_named_node(ref_name, line)
+                        if target_nid != parent_class_nid:
+                            add_edge(parent_class_nid, target_nid, "references", line, context=ctx)
+            owner_nid = parent_class_nid or file_nid
+            _kotlin_extract_object_literals(
+                node, source, owner_nid, add_node, add_edge,
+                ensure_named_node, callable_def_nids, walk
+            )
             return
 
         if (config.ts_module == "tree_sitter_swift"
@@ -5395,6 +5551,13 @@ def _extract_generic(
                 if config.ts_module == "tree_sitter_c_sharp" and parent_class_nid:
                     csharp_method_scopes[id(body)] = (node, parent_class_nid)
                 function_bodies.append((func_nid, body))
+                if config.ts_module == "tree_sitter_kotlin":
+                    # #2347: Kotlin anonymous objects (`object : Foo { … }`,
+                    # node type `object_literal`).
+                    _kotlin_extract_object_literals(
+                        body, source, func_nid, add_node, add_edge,
+                        ensure_named_node, callable_def_nids, walk
+                    )
             return
 
         # JS/TS arrow functions and C# namespaces — language-specific extra handling
@@ -5418,6 +5581,12 @@ def _extract_generic(
                                   nodes, edges, seen_ids, function_bodies,
                                   parent_class_nid, add_node, add_edge,
                                   ensure_named_node):
+                return
+
+        if config.ts_module == "tree_sitter_kotlin":
+            if _kotlin_extra_walk(node, source, file_nid, stem, str_path,
+                                  nodes, edges, seen_ids, function_bodies,
+                                  parent_class_nid, add_node, add_edge, walk):
                 return
 
         # Python's `@property` / `@staticmethod` / `@classmethod` wrap the

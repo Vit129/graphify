@@ -35,7 +35,27 @@ class DataProcessor : BaseProcessor(), Loggable {
     override fun log() {}
 }
 
+class LoggingList<T>(inner: MutableList<T>) : MutableList<T> by inner
+
 fun createClient(baseUrl: String): HttpClient {
     val config = Config(baseUrl, 30)
     return HttpClient(config)
 }
+
+enum class ChatType {
+    NORMAL,
+    GROUP,
+    SYSTEM
+}
+
+class Clock
+class Duration
+
+class Scheduler {
+    var clock: Clock = Clock()
+
+    fun schedule(duration: Duration): Duration {
+        return duration
+    }
+}
+
