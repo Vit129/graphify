@@ -50,21 +50,21 @@ def test_forward_arrow(monkeypatch, tmp_path, capsys):
 
 def test_reverse_arrow(monkeypatch, tmp_path, capsys):
     p = _write_graph(tmp_path)
-    # #2487: path is directed by default, so walking the stored edge backwards
-    # needs the --undirected opt-out to exercise the reverse-arrow rendering.
-    out = _run(monkeypatch, p, "validateSanitySession", "createPatchHandler", capsys, ["--undirected"])
+    # Undirected by default: walking the stored edge backwards works without flags
+    # and renders the reverse arrow.
+    out = _run(monkeypatch, p, "validateSanitySession", "createPatchHandler", capsys)
     assert "Shortest path (1 hops):" in out
     assert "validateSanitySession() <--calls [EXTRACTED]-- createPatchHandler()" in out
     assert "validateSanitySession() --calls [EXTRACTED]--> createPatchHandler()" not in out
 
 
 def test_path_directed_backwards_reports_no_directed_path(monkeypatch, tmp_path, capsys):
-    # Directed is the default (#2487): walking the chain backwards without
-    # --undirected must report no directed path.
+    # Directed mode is opt-in via --directed: walking the chain backwards
+    # must report no directed path.
     p = _write_graph(tmp_path)
-    out = _run(monkeypatch, p, "validateSanitySession", "createPatchHandler", capsys)
+    out = _run(monkeypatch, p, "validateSanitySession", "createPatchHandler", capsys, ["--directed"])
     assert "No directed path found" in out
-    assert "--undirected" in out
+    assert "--directed" in out
 
 
 def _write_duplicate_name_graph(tmp_path):
@@ -359,9 +359,7 @@ def test_path_direction_recovered_from_src_tgt_markers(monkeypatch, tmp_path, ca
     """#2309: a hop over a link stored in flipped order must render the TRUE
     direction from its _src/_tgt markers, not the persisted arc order."""
     p = _flipped_marker_graph(tmp_path)
-    # #2487: the two hops point in opposite TRUE directions (ingest->logger,
-    # draft->logger), so this mixed-direction route only exists undirected.
-    out = _run(monkeypatch, p, "ingest", "draft-generator", capsys, ["--undirected"])
+    out = _run(monkeypatch, p, "ingest", "draft-generator", capsys)
     assert "Shortest path (2 hops):" in out
     assert "ingest.ts --calls [EXTRACTED]--> logger.ts" in out
     # True direction is draft -> logger, so the logger->draft hop is reversed.
@@ -387,9 +385,8 @@ def test_path_canonical_marker_graph_still_forward(monkeypatch, tmp_path, capsys
     gp.write_text(json.dumps(data))
     out = _run(monkeypatch, gp, "Alpha", "Beta", capsys)
     assert "Alpha --calls [EXTRACTED]--> Beta" in out
-    # And walking the same edge backwards still reverses the arrow (#2487:
-    # backwards traversal now requires the --undirected opt-out).
-    out = _run(monkeypatch, gp, "Beta", "Alpha", capsys, ["--undirected"])
+    # And walking the same edge backwards still reverses the arrow (undirected by default).
+    out = _run(monkeypatch, gp, "Beta", "Alpha", capsys)
     assert "Beta <--calls [EXTRACTED]-- Alpha" in out
 
 

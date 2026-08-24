@@ -1602,15 +1602,16 @@ def find_path_with_disambiguation(
     target_label: str,
     source_path: str | None = None,
     target_path: str | None = None,
-    undirected: bool = False,
+    undirected: bool = True,
 ) -> dict:
     """Resolve `source_label`/`target_label` to nodes and find a
     degree-weighted, hub-avoiding shortest path, retrying every near-tied
     candidate pair (not just the top-scored node on each side) before
     giving up.
 
-    Directed by default (#2487): the returned path must follow stored
-    caller→callee direction; pass ``undirected=True`` to ignore it.
+    Undirected by default: paths are found ignoring edge direction (the
+    common use case). Pass ``undirected=False`` to require a caller→callee
+    directed path.
 
     `source_path`/`target_path` (P16): optional source_file-prefix filters
     that narrow each endpoint's candidates before the tie-retry loop, so a

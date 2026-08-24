@@ -184,13 +184,17 @@ def _shortest_path_text(G: nx.Graph, arguments: dict) -> str:
     """Body of the `shortest_path` MCP tool (module-level so tests can call it
     without an mcp install).
 
-    Directed by default (#2487): the returned path must follow stored
-    caller→callee direction; pass ``undirected=True`` to ignore it.
+    Undirected by default: paths are found ignoring edge direction (the
+    common use case). Pass ``undirected=False`` (or ``directed=True``) to
+    require a caller→callee directed path.
     """
     from graphify.query import find_path_with_disambiguation
     from graphify.build import edge_datas
 
-    undirected = bool(arguments.get("undirected", False))
+    if "directed" in arguments:
+        undirected = not bool(arguments["directed"])
+    else:
+        undirected = bool(arguments.get("undirected", True))
     result = find_path_with_disambiguation(
         G, arguments["source"], arguments["target"], undirected=undirected
     )
@@ -461,6 +465,11 @@ def _build_server(graph_path: str):
                         "source": {"type": "string", "description": "Source concept label or keyword"},
                         "target": {"type": "string", "description": "Target concept label or keyword"},
                         "max_hops": {"type": "integer", "default": 8, "description": "Maximum hops to consider"},
+                        "undirected": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Whether to ignore edge direction (default: true). Set to false to require caller→callee directed path.",
+                        },
                     },
                     "required": ["source", "target"],
                 },

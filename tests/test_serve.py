@@ -1768,26 +1768,29 @@ def _directed_chain() -> nx.DiGraph:
 
 
 def test_shortest_path_tool_directed_respects_direction():
-    out = _shortest_path_text(_directed_chain(), {"source": "alpha", "target": "gamma"})
+    out = _shortest_path_text(
+        _directed_chain(), {"source": "alpha", "target": "gamma", "undirected": False}
+    )
     assert "Shortest path (2 hops)" in out
     assert out.count("-->") == 2
     assert "<--" not in out
 
 
 def test_shortest_path_tool_directed_backwards_is_no_path():
-    # Directed is the default (#2487): walking the chain backwards must report
-    # no directed path, with the undirected opt-out hint, not a reversed path.
-    out = _shortest_path_text(_directed_chain(), {"source": "gamma", "target": "alpha"})
+    # Opting into directed mode: walking the chain backwards must report
+    # no directed path, with the undirected opt-out hint.
+    out = _shortest_path_text(
+        _directed_chain(), {"source": "gamma", "target": "alpha", "undirected": False}
+    )
     assert "No directed path found" in out
     assert "undirected=true" in out
     assert "-->" not in out
     assert "<--" not in out
 
 
-def test_shortest_path_tool_undirected_opt_in():
-    out = _shortest_path_text(
-        _directed_chain(), {"source": "gamma", "target": "alpha", "undirected": True}
-    )
+def test_shortest_path_tool_undirected_by_default():
+    # Undirected by default: walking the chain backwards works out-of-the-box.
+    out = _shortest_path_text(_directed_chain(), {"source": "gamma", "target": "alpha"})
     assert "Shortest path (2 hops)" in out
     assert out.count("<--calls--") == 2
     assert "-->" not in out

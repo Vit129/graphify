@@ -3343,7 +3343,7 @@ def main() -> None:
         if len(sys.argv) < 4:
             print(
                 'Usage: graphify path "<source>" "<target>" [--path P] '
-                "[--source-path P] [--target-path P] [--undirected] [--graph path]",
+                "[--source-path P] [--target-path P] [--directed] [--graph path]",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -3357,7 +3357,7 @@ def main() -> None:
         # --target-path narrow each independently (needed when both labels are
         # duplicated in different dirs). Per-endpoint value wins over --path.
         shared_path = source_path = target_path = None
-        undirected = False
+        undirected = True
         args = sys.argv[4:]
         i = 0
         while i < len(args):
@@ -3373,6 +3373,9 @@ def main() -> None:
             elif args[i] == "--target-path" and i + 1 < len(args):
                 target_path = args[i + 1]
                 i += 2
+            elif args[i] == "--directed":
+                undirected = False
+                i += 1
             elif args[i] == "--undirected":
                 undirected = True
                 i += 1
@@ -3435,7 +3438,7 @@ def main() -> None:
             else:
                 print(
                     f"No directed path found between '{source_label}' and '{target_label}'.{suffix}\n"
-                    "  Pass --undirected to search ignoring edge direction."
+                    "  Omit --directed to search ignoring edge direction."
                 )
             sys.exit(0)
         if result["used_hub_fallback"]:
