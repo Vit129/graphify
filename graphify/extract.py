@@ -3133,7 +3133,7 @@ def _js_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: str,
                                     body = closure.child_by_field_name("body")
                                     if body:
                                         if closure_locals_by_body is not None:
-                                            closure_locals_by_body[id(body)] = (
+                                            closure_locals_by_body[(body.start_byte, body.end_byte)] = (
                                                 _js_local_bound_names(closure, source))
                                         function_bodies.append((const_nid, body))
         if arrow_found:
@@ -3807,7 +3807,7 @@ def _extract_generic(
     # guard skips any call-argument identifier in the enclosing function's set,
     # so a param/local that shadows a module function name yields no edge.
     local_bound_names: dict[str, set[str]] = {}
-    closure_locals_by_body: dict[int, set[str]] = {}
+    closure_locals_by_body: dict[tuple[int, int], set[str]] = {}
     pending_listen_edges: list[tuple[str, str, int]] = []
     # tree-sitter-swift parses both `class Foo` and `extension Foo` as
     # `class_declaration`. Same-file pairs collapse via seen_ids, but cross-file
@@ -5401,7 +5401,7 @@ def _extract_generic(
             return None
         return _read_text(scope, source)
 
-    _tracked_body_ids: set[int] = set()
+    _tracked_body_spans: set[tuple[int, int]] = set()
     _JS_CLOSURE_TYPES = (
         "arrow_function", "function_expression", "generator_function",
         "function_declaration", "generator_function_declaration",
@@ -5422,7 +5422,7 @@ def _extract_generic(
             if (config.ts_module in ("tree_sitter_javascript", "tree_sitter_typescript")
                     and node.type in _JS_CLOSURE_TYPES):
                 body = node.child_by_field_name("body")
-                if body is not None and id(body) not in _tracked_body_ids:
+                if body is not None and (body.start_byte, body.end_byte) not in _tracked_body_spans:
                     # This closure's own params/locals (`(r) => c.get(r)`) are
                     # scoped to it, not to the enclosing caller_nid — but its
                     # calls ARE attributed to caller_nid right here, so a bare
@@ -5963,13 +5963,13 @@ def _extract_generic(
 
     # Track bodies already walked with their own caller_nid so untracked closures
     # can be descended into without double-walking tracked ones (#2241).
-    _tracked_body_ids.update(id(b) for _, b in function_bodies)
+    _tracked_body_spans.update((b.start_byte, b.end_byte) for _, b in function_bodies)
 
     for caller_nid, body_node in function_bodies:
         walk_calls(
             body_node,
             caller_nid,
-            extra_locals=frozenset(closure_locals_by_body.get(id(body_node), ())),
+            extra_locals=frozenset(closure_locals_by_body.get((body_node.start_byte, body_node.end_byte), ())),
         )
 
     # #1356: walk property/field initializers (collected above). walk_calls
