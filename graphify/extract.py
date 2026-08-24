@@ -878,6 +878,61 @@ def _java_type_parameters_in_scope(node, source: bytes) -> frozenset[str]:
     return frozenset(names)
 
 
+_JAVA_BUILTIN_TYPES = frozenset({
+    # java.lang — core
+    "Object", "String", "CharSequence", "StringBuilder", "StringBuffer",
+    "Number", "Byte", "Short", "Integer", "Long", "Float", "Double",
+    "Boolean", "Character", "Void", "Class", "Enum", "Record", "Math",
+    "System", "Thread", "Runnable", "Comparable", "Iterable", "Cloneable",
+    "AutoCloseable", "Appendable", "Readable", "Process", "ProcessBuilder",
+    "Runtime", "Package", "ThreadLocal", "InheritableThreadLocal",
+    # java.lang — throwables
+    "Throwable", "Exception", "RuntimeException", "Error",
+    "IllegalArgumentException", "IllegalStateException", "NullPointerException",
+    "IndexOutOfBoundsException", "ArrayIndexOutOfBoundsException",
+    "ClassCastException", "NumberFormatException", "ArithmeticException",
+    "UnsupportedOperationException", "InterruptedException",
+    "CloneNotSupportedException", "SecurityException", "StackOverflowError",
+    "OutOfMemoryError", "AssertionError",
+    # java.util — collections & core
+    "Collection", "List", "ArrayList", "LinkedList", "Vector", "Stack",
+    "Set", "HashSet", "LinkedHashSet", "TreeSet", "SortedSet", "NavigableSet",
+    "EnumSet", "Map", "HashMap", "LinkedHashMap", "TreeMap", "SortedMap",
+    "NavigableMap", "Hashtable", "EnumMap", "Properties", "Queue", "Deque",
+    "ArrayDeque", "PriorityQueue", "Iterator", "ListIterator", "Comparator",
+    "Optional", "OptionalInt", "OptionalLong", "OptionalDouble", "Collections",
+    "Arrays", "Objects", "Date", "Calendar", "Random", "UUID", "Scanner",
+    "StringJoiner", "StringTokenizer", "BitSet", "Spliterator", "Locale",
+    "NoSuchElementException", "ConcurrentModificationException",
+    # java.util.stream
+    "Stream", "IntStream", "LongStream", "DoubleStream", "Collector",
+    "Collectors",
+    # java.util.function
+    "Function", "BiFunction", "Consumer", "BiConsumer", "Supplier",
+    "Predicate", "BiPredicate", "UnaryOperator", "BinaryOperator",
+    "IntFunction", "ToIntFunction", "ToLongFunction", "ToDoubleFunction",
+    # java.util.concurrent
+    "Callable", "Future", "CompletableFuture", "CompletionStage", "Executor",
+    "ExecutorService", "Executors", "ScheduledExecutorService", "TimeUnit",
+    "ConcurrentHashMap", "ConcurrentMap", "CopyOnWriteArrayList",
+    "BlockingQueue", "CountDownLatch", "Semaphore", "CyclicBarrier",
+    "AtomicInteger", "AtomicLong", "AtomicBoolean", "AtomicReference",
+    # java.time
+    "Instant", "Duration", "Period", "LocalDate", "LocalTime", "LocalDateTime",
+    "ZonedDateTime", "OffsetDateTime", "ZoneId", "ZoneOffset", "DayOfWeek",
+    "Month", "Year", "Clock", "DateTimeFormatter",
+    # java.io / java.nio.file
+    "IOException", "UncheckedIOException", "FileNotFoundException", "File",
+    "InputStream", "OutputStream", "Reader", "Writer", "BufferedReader",
+    "BufferedWriter", "InputStreamReader", "OutputStreamWriter", "FileReader",
+    "FileWriter", "PrintStream", "PrintWriter", "ByteArrayInputStream",
+    "ByteArrayOutputStream", "Serializable", "Closeable", "Path", "Paths",
+    "Files",
+    # java.math
+    "BigDecimal", "BigInteger",
+})
+
+
 def _java_collect_type_refs(
     node,
     source: bytes,
@@ -1096,6 +1151,36 @@ def _php_method_return_type_node(method_node):
     return None
 
 
+# Kotlin stdlib scalar/collection/core types that appear constantly as type
+# annotations but carry no useful semantic meaning as graph nodes (mirrors
+# _JAVA_BUILTIN_TYPES / _PYTHON_ANNOTATION_NOISE / _GO_PREDECLARED_TYPES).
+# Kotlin compiles to the JVM and freely references java.* types too, so this
+# is combined with _JAVA_BUILTIN_TYPES at the call site rather than duplicated.
+_KOTLIN_BUILTIN_TYPES = frozenset({
+    # kotlin — scalars & core
+    "Any", "Unit", "Nothing", "Boolean", "Byte", "Short", "Int", "Long",
+    "Float", "Double", "Char", "String", "CharSequence", "Number",
+    "Comparable", "Enum", "Annotation", "Pair", "Triple", "Lazy",
+    "Function",
+    # kotlin — throwables
+    "Throwable", "Exception", "RuntimeException", "Error",
+    "IllegalArgumentException", "IllegalStateException", "NullPointerException",
+    "IndexOutOfBoundsException", "ClassCastException", "NumberFormatException",
+    "ArithmeticException", "UnsupportedOperationException",
+    "NoSuchElementException", "ConcurrentModificationException",
+    "StackOverflowError", "OutOfMemoryError", "AssertionError",
+    "InterruptedException",
+    # kotlin.collections
+    "Array", "List", "MutableList", "ArrayList", "Set", "MutableSet",
+    "HashSet", "LinkedHashSet", "Map", "MutableMap", "HashMap",
+    "LinkedHashMap", "Collection", "MutableCollection", "Iterable",
+    "MutableIterable", "Iterator", "MutableIterator", "ListIterator",
+    "MutableListIterator", "Sequence", "Comparator",
+    # kotlin.text
+    "Regex", "MatchResult", "StringBuilder",
+})
+
+
 def _kotlin_user_type_name(user_type_node, source: bytes) -> str | None:
     """Return the head identifier text from a Kotlin user_type node (without generics)."""
     if user_type_node is None:
@@ -1126,14 +1211,14 @@ def _kotlin_collect_type_refs(node, source: bytes, generic: bool, out: list[tupl
         for c in node.children:
             if c.type in ("identifier", "type_identifier"):
                 text = _read_text(c, source)
-                if text:
+                if text and text not in _KOTLIN_BUILTIN_TYPES and text not in _JAVA_BUILTIN_TYPES:
                     out.append((text, "generic_arg" if generic else "type"))
                 break
             if c.type == "simple_user_type":
                 for sub in c.children:
                     if sub.type in ("identifier", "type_identifier"):
                         text = _read_text(sub, source)
-                        if text:
+                        if text and text not in _KOTLIN_BUILTIN_TYPES and text not in _JAVA_BUILTIN_TYPES:
                             out.append((text, "generic_arg" if generic else "type"))
                         break
                 break
@@ -1149,7 +1234,7 @@ def _kotlin_collect_type_refs(node, source: bytes, generic: bool, out: list[tupl
         return
     if t in ("identifier", "type_identifier"):
         text = _read_text(node, source)
-        if text:
+        if text and text not in _KOTLIN_BUILTIN_TYPES and text not in _JAVA_BUILTIN_TYPES:
             out.append((text, "generic_arg" if generic else "type"))
         return
     if t in ("nullable_type", "parenthesized_type", "type_reference"):
