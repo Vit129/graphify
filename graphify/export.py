@@ -1013,6 +1013,51 @@ def _git_head(cwd: str | Path | None = None) -> str | None:
         return None
 
 
+MALFORMED_GRAPH = object()
+
+
+def existing_graph_node_count(path: "str | Path"):
+    """Node count of an existing graph.json.
+
+    Returns:
+      - an ``int`` node count when the file parses;
+      - ``None`` when there is verifiably nothing to protect — absent, empty, or
+        over the size cap (matching how :func:`to_json` lets the new graph
+        replace an empty/oversized file);
+      - :data:`MALFORMED_GRAPH` when the file is present and non-empty but
+        unparseable — the caller must treat this as fail-closed (refuse to
+        overwrite), mirroring to_json's #479 handling of a corrupt/mid-write file.
+
+    The raw ``--no-cluster`` write path uses this to apply the same #479 shrink
+    guard that :func:`to_json` applies inline for the clustered path.
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
+    from graphify.security import check_graph_file_size_cap
+    try:
+        check_graph_file_size_cap(p)
+    except Exception:
+        # Oversized: reading it to compare would be the DoS the cap guards against.
+        return None
+    try:
+        raw = p.read_text(encoding="utf-8")
+    except Exception:
+        # Present but unreadable: fail closed if it has bytes, else nothing to lose.
+        try:
+            return MALFORMED_GRAPH if p.stat().st_size > 0 else None
+        except Exception:
+            return None
+    if not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return MALFORMED_GRAPH
+    nodes = data.get("nodes") if isinstance(data, dict) else None
+    return len(nodes) if isinstance(nodes, list) else MALFORMED_GRAPH
+
+
 def to_json(G: nx.Graph, communities: dict[int, list[str]], output_path: str, *, force: bool = False, built_at_commit: str | None = None, community_labels: dict[int, str] | None = None, pagerank_scores: dict[str, float] | None = None) -> bool:
     # Safety check: refuse to silently shrink an existing graph (#479)
     existing_path = Path(output_path)
@@ -1070,8 +1115,9 @@ def to_json(G: nx.Graph, communities: dict[int, list[str]], output_path: str, *,
     commit = built_at_commit if built_at_commit is not None else _git_head()
     if commit:
         data["built_at_commit"] = commit
-    with open(output_path, "w", encoding="utf-8") as f:  # nosec
-        json.dump(data, f, indent=2)
+    from graphify.paths import write_json_atomic
+    # Atomic write: a crash/ENOSPC mid-write must not truncate a good graph.json.
+    write_json_atomic(output_path, data, indent=2)
     return True
 
 

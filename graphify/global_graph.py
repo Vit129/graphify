@@ -41,8 +41,8 @@ def _load_manifest() -> dict:
 
 
 def _save_manifest(manifest: dict) -> None:
-    _GLOBAL_DIR.mkdir(parents=True, exist_ok=True)
-    _GLOBAL_MANIFEST.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    from graphify.paths import write_json_atomic
+    write_json_atomic(_GLOBAL_MANIFEST, manifest, indent=2)
 
 
 def _load_global_graph() -> nx.Graph:
@@ -60,12 +60,12 @@ def _load_global_graph() -> nx.Graph:
 
 
 def _save_global_graph(G: nx.Graph) -> None:
-    _GLOBAL_DIR.mkdir(parents=True, exist_ok=True)
     try:
         data = _jg.node_link_data(G, edges="links")
     except TypeError:
         data = _jg.node_link_data(G)
-    _GLOBAL_GRAPH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    from graphify.paths import write_json_atomic
+    write_json_atomic(_GLOBAL_GRAPH, data, indent=2)
 
 
 def _file_hash(path: Path) -> str:

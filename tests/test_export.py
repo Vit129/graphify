@@ -471,3 +471,20 @@ def test_backup_if_protected_prunes_stale_dirs(tmp_path):
     backup_if_protected(tmp_path)
 
     assert not stale.exists()
+
+
+def test_existing_graph_node_count(tmp_path):
+    from graphify.export import existing_graph_node_count, MALFORMED_GRAPH
+    p = tmp_path / "graph.json"
+    assert existing_graph_node_count(p) is None            # absent -> nothing to protect
+    p.write_text("", encoding="utf-8")
+    assert existing_graph_node_count(p) is None            # empty -> nothing to protect
+    # Non-empty but unparseable must fail CLOSED (sentinel), matching to_json's
+    # #479 guard — a corrupt/mid-write file could be hiding a complete graph.
+    p.write_text("{not json", encoding="utf-8")
+    assert existing_graph_node_count(p) is MALFORMED_GRAPH  # malformed -> fail closed
+    p.write_text('{"nodes": "notalist"}', encoding="utf-8")
+    assert existing_graph_node_count(p) is MALFORMED_GRAPH  # structurally wrong -> fail closed
+    p.write_text('{"nodes": [{"id": "a"}, {"id": "b"}], "links": []}', encoding="utf-8")
+    assert existing_graph_node_count(p) == 2               # valid
+

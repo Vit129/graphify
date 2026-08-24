@@ -16901,6 +16901,8 @@ def extract(
     # even when its source file still exists (#1116).
     for n in all_nodes:
         n["_origin"] = "ast"
+    for e in all_edges:
+        e["_origin"] = "ast"
 
     return {
         "nodes": all_nodes,

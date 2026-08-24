@@ -1578,3 +1578,230 @@ def test_convert_office_file_does_not_rewrite_existing_sidecar(tmp_path, monkeyp
     second = detect_mod.convert_office_file(src, out_dir)
     assert second == first
     assert second.stat().st_mtime_ns == mtime_before
+
+
+# ---------------------------------------------------------------------------
+# #1908: manifest must not retain scan-excluded files as permanent
+# "deleted" entries. Full-scan saves prune excluded-but-alive rows; subset
+# saves keep preserving untouched rows (#917); out-of-root rows never prune.
+# ---------------------------------------------------------------------------
+
+def test_save_manifest_full_scan_prunes_excluded_but_alive_row(tmp_path):
+    """A row for a file that still exists on disk but left the scan corpus
+    (newly excluded) is dropped when the caller passes the full corpus."""
+    import json
+    a = tmp_path / "a.py"
+    b = tmp_path / "b.py"
+    a.write_text("x = 1\n")
+    b.write_text("y = 2\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+
+    save_manifest({"code": [str(a), str(b)]}, manifest_path, root=tmp_path)
+    raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert set(raw) == {"a.py", "b.py"}
+
+    # Second full scan no longer covers b.py (excluded), yet b.py is alive.
+    save_manifest(
+        {"code": [str(a)]}, manifest_path, root=tmp_path,
+        scan_corpus={str(a)},
+    )
+    raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert set(raw) == {"a.py"}, (
+        f"excluded-but-alive row must be pruned on a full-scan save, got {set(raw)}"
+    )
+
+
+def test_save_manifest_full_scan_still_prunes_missing_file(tmp_path):
+    """Genuine deletions keep being pruned when scan_corpus is passed."""
+    import json
+    a = tmp_path / "a.py"
+    gone = tmp_path / "gone.py"
+    a.write_text("x = 1\n")
+    gone.write_text("y = 2\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    save_manifest({"code": [str(a), str(gone)]}, manifest_path, root=tmp_path)
+
+    gone.unlink()
+    save_manifest(
+        {"code": [str(a)]}, manifest_path, root=tmp_path,
+        scan_corpus={str(a)},
+    )
+    raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert set(raw) == {"a.py"}
+
+
+def test_save_manifest_subset_save_preserves_untouched_rows(tmp_path):
+    """Without scan_corpus (changed_paths hooks, skill runbooks, #917) a
+    subset save must keep seeding rows for files it wasn't given."""
+    import json
+    a = tmp_path / "a.py"
+    b = tmp_path / "b.py"
+    a.write_text("x = 1\n")
+    b.write_text("y = 2\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    save_manifest({"code": [str(a), str(b)]}, manifest_path, root=tmp_path)
+
+    # Incremental hook re-stamps only a.py; b.py's row must survive.
+    save_manifest({"code": [str(a)]}, manifest_path, root=tmp_path)
+    raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert set(raw) == {"a.py", "b.py"}, (
+        f"subset saves must preserve untouched rows (#917), got {set(raw)}"
+    )
+
+
+def test_save_manifest_full_scan_keeps_out_of_root_rows(tmp_path):
+    """Out-of-root entries (--include sources, symlinked corpora) are never
+    walked by detect, so their absence from the corpus is not exclusion
+    evidence — a full-scan save must keep them."""
+    import json
+    a = tmp_path / "a.py"
+    a.write_text("x = 1\n")
+    outside = tmp_path.parent / f"{tmp_path.name}-extern.py"
+    outside.write_text("z = 3\n")
+    try:
+        manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+        save_manifest(
+            {"code": [str(a), str(outside)]}, manifest_path, root=tmp_path
+        )
+        save_manifest(
+            {"code": [str(a)]}, manifest_path, root=tmp_path,
+            scan_corpus={str(a)},
+        )
+        raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        assert "a.py" in raw
+        assert str(outside.resolve()) in raw, (
+            f"out-of-root rows must never be pruned to the scan, got {set(raw)}"
+        )
+    finally:
+        outside.unlink(missing_ok=True)
+
+
+def test_detect_incremental_reports_excluded_not_deleted(tmp_path):
+    """A previously-indexed file that becomes excluded (still on disk) must
+    land in excluded_files, not deleted_files (#1908)."""
+    a = tmp_path / "a.py"
+    b = tmp_path / "b.py"
+    a.write_text("x = 1\n")
+    b.write_text("y = 2\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    full = detect(tmp_path)
+    save_manifest(full["files"], manifest_path, root=tmp_path)
+
+    inc = detect_incremental(
+        tmp_path, manifest_path, extra_excludes=["b.py"]
+    )
+    assert inc["deleted_files"] == [], (
+        f"excluded-but-alive file misreported as deleted: {inc['deleted_files']}"
+    )
+    assert [Path(f).name for f in inc["excluded_files"]] == ["b.py"]
+
+
+def test_detect_incremental_still_reports_real_deletions(tmp_path):
+    """Counterpart: a manifest row whose file is gone from disk stays in
+    deleted_files."""
+    a = tmp_path / "a.py"
+    b = tmp_path / "b.py"
+    a.write_text("x = 1\n")
+    b.write_text("y = 2\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    full = detect(tmp_path)
+    save_manifest(full["files"], manifest_path, root=tmp_path)
+
+    b.unlink()
+    inc = detect_incremental(tmp_path, manifest_path)
+    assert [Path(f).name for f in inc["deleted_files"]] == ["b.py"]
+    assert inc["excluded_files"] == []
+
+
+def test_detect_incremental_exclusion_stable_across_runs(tmp_path):
+    """After a full-scan save prunes the excluded row, later incremental runs
+    report the file neither as deleted nor as excluded — the exclusion has
+    fully settled instead of resurfacing forever."""
+    a = tmp_path / "a.py"
+    b = tmp_path / "b.py"
+    a.write_text("x = 1\n")
+    b.write_text("y = 2\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    full = detect(tmp_path)
+    save_manifest(full["files"], manifest_path, root=tmp_path)
+
+    # Run 1: b.py newly excluded — reported as excluded, then the full-scan
+    # save (what extract does at the end of the run) prunes its row.
+    inc1 = detect_incremental(tmp_path, manifest_path, extra_excludes=["b.py"])
+    assert [Path(f).name for f in inc1["excluded_files"]] == ["b.py"]
+    assert inc1["deleted_files"] == []
+    corpus = {f for flist in inc1["files"].values() for f in flist}
+    save_manifest(inc1["files"], manifest_path, root=tmp_path, scan_corpus=corpus)
+
+    # Run 2 (and beyond): steady state — nothing deleted, nothing excluded.
+    inc2 = detect_incremental(tmp_path, manifest_path, extra_excludes=["b.py"])
+    assert inc2["deleted_files"] == []
+    assert inc2["excluded_files"] == []
+
+
+def test_save_manifest_migrates_legacy_hash_to_ast_hash(tmp_path):
+    """A legacy manifest entry {mtime, hash} must migrate to {mtime, ast_hash, semantic_hash}."""
+    import json
+    a = tmp_path / "a.py"
+    a.write_text("x = 1\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(manifest_path).write_text(
+        json.dumps({"a.py": {"mtime": 100, "hash": "abc123hash"}}),
+        encoding="utf-8",
+    )
+
+    # Save manifest with an incremental subset that does not touch a.py
+    save_manifest({}, manifest_path, root=tmp_path)
+    loaded = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert "a.py" in loaded
+    assert loaded["a.py"]["ast_hash"] == "abc123hash"
+    assert loaded["a.py"]["mtime"] == 100
+    assert loaded["a.py"]["semantic_hash"] == ""
+
+
+def test_save_manifest_preserves_entries_without_mtime(tmp_path):
+    """Manifest entries without an explicit mtime key must be preserved as-is."""
+    import json
+    a = tmp_path / "a.py"
+    a.write_text("x = 1\n")
+    manifest_path = str(tmp_path / "graphify-out" / "manifest.json")
+    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(manifest_path).write_text(
+        json.dumps({"a.py": {"ast_hash": "zz", "semantic_hash": "yy"}}),
+        encoding="utf-8",
+    )
+
+    save_manifest({}, manifest_path, root=tmp_path)
+    loaded = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    assert "a.py" in loaded
+    assert loaded["a.py"]["ast_hash"] == "zz"
+    assert loaded["a.py"]["semantic_hash"] == "yy"
+
+
+def test_detect_returns_unclassified_files_and_walk_errors(tmp_path, monkeypatch):
+    """detect() must track walked-and-unclassified files and walk errors."""
+    (tmp_path / "main.py").write_text("print('hello')\n")
+    (tmp_path / "binary.dat").write_text("bin\n")
+    (tmp_path / "data.xyz").write_text("unknown format\n")
+
+    res = detect(tmp_path)
+    assert "unclassified" in res
+    unclass_names = [Path(p).name for p in res["unclassified"]]
+    assert "binary.dat" in unclass_names
+    assert "data.xyz" in unclass_names
+    assert res["walk_errors"] == []
+
+    # Test walk error capture
+    def mock_walk(top, followlinks=False, onerror=None):
+        if onerror:
+            onerror(OSError("Simulated permission denied on directory"))
+        return iter([])
+
+    monkeypatch.setattr("os.walk", mock_walk)
+    err_res = detect(tmp_path)
+    assert len(err_res["walk_errors"]) == 1
+    assert "Simulated permission denied" in err_res["walk_errors"][0]
+
+
+
