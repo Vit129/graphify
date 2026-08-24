@@ -3078,6 +3078,13 @@ def _csharp_extra_walk(node, source: bytes, file_nid: str, stem: str, str_path: 
             add_node_fn(ns_nid, ns_label, line, node_type="namespace", metadata={"kind": "csharp_namespace"})
             add_edge_fn(file_nid, ns_nid, "contains", line)
         return True
+    if parent_class_nid and node.type.startswith("preproc_"):
+        # tree-sitter wraps members in #if/#else/#elif directives in preproc_*
+        # nodes. They are conditional containers, not ownership scopes: dropping
+        # parent_class_nid here makes guarded methods look file-level (#2631).
+        for child in node.children:
+            walk_fn(child, parent_class_nid)
+        return True
     return False
 
 
