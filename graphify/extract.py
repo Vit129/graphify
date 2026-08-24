@@ -13013,6 +13013,7 @@ def _extract_pascal_regex(path: Path) -> dict:
     edges: list[dict] = []
     seen_ids: set[str] = set()
     seen_call_pairs: set[tuple[str, str]] = set()
+    seen_edges: set[tuple[str, str, str]] = set()
 
     def _add_node(nid: str, label: str, line: int) -> None:
         if nid not in seen_ids:
@@ -13026,6 +13027,14 @@ def _extract_pascal_regex(path: Path) -> dict:
             })
 
     def _add_edge(src: str, tgt: str, relation: str, line: int, context: str | None = None) -> None:
+        # A class method declared in the interface section and defined in the
+        # implementation section both emit a `method` edge to the same node, so
+        # dedup on (src, tgt, relation) to keep the graph from carrying doubled
+        # method/contains/inherits edges (mirrors _add_node's seen_ids guard).
+        key = (src, tgt, relation)
+        if key in seen_edges:
+            return
+        seen_edges.add(key)
         edge: dict = {
             "source": src,
             "target": tgt,
@@ -13190,6 +13199,7 @@ def extract_pascal(path: Path) -> dict:
     nodes: list[dict] = []
     edges: list[dict] = []
     seen_ids: set[str] = set()
+    seen_edges: set[tuple[str, str, str]] = set()
     proc_bodies: list[tuple[str, Any]] = []
 
     def _read(node) -> str:  # type: ignore[no-untyped-def]
@@ -13208,6 +13218,14 @@ def extract_pascal(path: Path) -> dict:
         confidence: str = "EXTRACTED", weight: float = 1.0,
         context: str | None = None,
     ) -> None:
+        # A class method declared in the interface section and defined in the
+        # implementation section both emit a `method` edge to the same node, so
+        # dedup on (src, tgt, relation) to keep the graph from carrying doubled
+        # method/contains/inherits edges (mirrors add_node's seen_ids guard).
+        key = (src, tgt, relation)
+        if key in seen_edges:
+            return
+        seen_edges.add(key)
         edge: dict[str, Any] = {
             "source": src, "target": tgt, "relation": relation,
             "confidence": confidence, "source_file": str_path,
