@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from graphify.extract import extract
+from graphify.extract import extract, _resolve_python_module_path
 
 
 def _write(path: Path, text: str) -> Path:
@@ -120,3 +120,32 @@ def test_relative_subpackage_import_from_targets_package_init(tmp_path: Path):
         if e["source"] == health_file and e["relation"] == "imports_from"
     ]
     assert all(t.endswith("graphs_init") for t in health_targets), health_targets
+
+
+def test_overdeep_relative_import_is_unresolved_not_fatal(tmp_path: Path):
+    source = _write(
+        tmp_path / "pkg" / "mod.py",
+        "from ........................... import missing\n\n"
+        "def ok():\n"
+        "    return 1\n",
+    )
+
+    assert _resolve_python_module_path("", source, tmp_path, level=27) is None
+
+    result = extract([source], cache_root=tmp_path)
+
+    assert _node_id(result, "mod.py", "pkg/mod.py")
+    assert _node_id(result, "ok()", "pkg/mod.py")
+
+
+def test_ordinary_relative_import_still_resolves(tmp_path: Path):
+    target = _write(tmp_path / "pkg" / "sibling.py", "def helper():\n    return 1\n")
+    source = _write(tmp_path / "pkg" / "mod.py", "from .sibling import helper\n")
+
+    assert _resolve_python_module_path("sibling", source, tmp_path, level=1) == target
+
+    result = extract([source, target], cache_root=tmp_path)
+    source_file = _node_id(result, "mod.py", "pkg/mod.py")
+    target_symbol = _node_id(result, "helper()", "pkg/sibling.py")
+
+    assert _has_edge(result, source_file, target_symbol, "imports")
