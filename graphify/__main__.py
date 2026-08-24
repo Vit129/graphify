@@ -5852,6 +5852,7 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
+        stages.mark("export")
         if merged.get("output_tokens", 0) > 0:
             (graphify_out / ".graphify_semantic_marker").write_text(
                 json.dumps({"output_tokens": merged["output_tokens"]}), encoding="utf-8"
