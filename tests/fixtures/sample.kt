@@ -47,3 +47,15 @@ enum class ChatType {
     GROUP,
     SYSTEM
 }
+
+class Clock
+class Duration
+
+class Scheduler {
+    var clock: Clock = Clock()
+
+    fun schedule(duration: Duration): Duration {
+        return duration
+    }
+}
+
