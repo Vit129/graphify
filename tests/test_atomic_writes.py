@@ -127,3 +127,24 @@ def test_write_json_atomic_ensure_ascii_false_preserves_utf8(tmp_path):
     assert "Wörker 数据" in raw  # raw UTF-8, not \\uXXXX escapes
     assert "\\u" not in raw
     assert json.loads(raw) == {"label": "Wörker 数据"}
+
+
+def test_write_json_atomic_partial_write_failure_preserves_destination(tmp_path):
+    """A failure partway through serializing JSON (e.g. non-serializable object)
+    must abort before rename and leave the destination file completely unmodified."""
+    p = tmp_path / "graph.json"
+    p.write_text('{"original": "valid"}', encoding="utf-8")
+
+    payload = {
+        "nodes": [{"id": f"node_{i}", "label": f"label_{i}"} for i in range(100)],
+        "bad": object(),  # triggers TypeError inside json.dump after partial write
+    }
+
+    with pytest.raises(TypeError):
+        write_json_atomic(p, payload)
+
+    # Destination file still holds original prior content completely unmodified
+    assert p.read_text(encoding="utf-8") == '{"original": "valid"}'
+    # No temporary files left behind
+    assert [x.name for x in tmp_path.iterdir()] == ["graph.json"]
+
