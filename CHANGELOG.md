@@ -3,6 +3,55 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.24.2] - 2026-08-24
+
+### Added
+- Namespace-aware member-call resolution + shadow poisoning ([#1609](https://github.com/Vit129/graphify/pull/1609)) ([`a6292ae`](https://github.com/Vit129/graphify/commit/a6292aeebae92af1fbcdc776d74bb32e55ce2d79))
+- Expand Swift/Foundation/SwiftUI builtin lists with common types ([`db80405`](https://github.com/Vit129/graphify/commit/db804052f2737239f250257e05a138c97e0c980c))
+- Descend into JS/TS closure bodies with parameter shadow tracking ([#2241](https://github.com/Vit129/graphify/pull/2241)) ([`6065057`](https://github.com/Vit129/graphify/commit/606505700aa3a8218145d0d132f1759b31dddbc8))
+
+### Changed
+- Use byte span rather than id() for AST node dedup ([`1c84465`](https://github.com/Vit129/graphify/commit/1c84465dfd62b6d146c7c1486fa9dfa0eda9e007))
+
+### Documentation
+- Document partial-class cross-file field receiver limitation and fix receiver_types type hint ([`8a1b3c8`](https://github.com/Vit129/graphify/commit/8a1b3c8e147f7b499638188967692f16ad1185a9))
+
+### Fixed
+- Per-method receiver typing so cross-method name reuse stops dropping true calls edges ([#2299](https://github.com/Vit129/graphify/pull/2299)) ([`382f8b6`](https://github.com/Vit129/graphify/commit/382f8b690d239b73dcb4f56dbe4cdc38ad854fd8))
+- Inline-declared + partial-class receivers (#2346, #2332) ([`6d342e8`](https://github.com/Vit129/graphify/commit/6d342e83cf527e2ff07a3a58255411983d7e5938))
+- Scope receiver types per declaration so an untypeable rebind can't drop a true call ([#2472](https://github.com/Vit129/graphify/pull/2472)) ([`6fb3d5a`](https://github.com/Vit129/graphify/commit/6fb3d5aaaa470d8121c71b054387a8d9ee4b9757))
+- Extract members inside #if preprocessor blocks ([#2634](https://github.com/Vit129/graphify/pull/2634)) ([`2ce284c`](https://github.com/Vit129/graphify/commit/2ce284cd8b42df209e1eef9de2c4ed92a9509ca3))
+- Walk primary-constructor parameters for references and calls ([#2829](https://github.com/Vit129/graphify/pull/2829)) ([`25c9e96`](https://github.com/Vit129/graphify/commit/25c9e96d6e23d9b599b00ff996500e98ef3c169a))
+- Scope-filter using aliases in resolve_type_name to avoid file-wide bailout ([`2b60cbe`](https://github.com/Vit129/graphify/commit/2b60cbe9683f5de9e496956fe1bc2aa734be0b05))
+- Isolate field/local shadow conflict to local scope instead of method-wide poisoning ([`d8eee9c`](https://github.com/Vit129/graphify/commit/d8eee9c7af5729d8c558389f50d12ed4becb23e8))
+- Dedup Pascal method/contains/inherits edges to prevent doubled degree metrics ([`d801c8a`](https://github.com/Vit129/graphify/commit/d801c8a0f53a89efa96d9d8bb16e513ad7ab65f5))
+- Scope Pascal/Delphi call resolution + resolve inherited calls across files ([#1739](https://github.com/Vit129/graphify/pull/1739)) ([`760d864`](https://github.com/Vit129/graphify/commit/760d8647f13c1fca102b44883037eda626573f74))
+- Stamp raw_calls with lang=pascal to prevent generic cross-file leakage ([`064a15a`](https://github.com/Vit129/graphify/commit/064a15a52596e1a609921c7a99d1d04cf85713d9))
+- Resolve calls to declaration-only methods from class declarations ([`5ff4e83`](https://github.com/Vit129/graphify/commit/5ff4e83e3b08fa5e2b82953b685d7d148b1a2dac))
+- Synthesize stub for inherits targets excluded from extraction corpus ([`3e96640`](https://github.com/Vit129/graphify/commit/3e9664021941f7c3cb923b622f97effc041f8ede))
+- Extract computed & observed properties ([#2181](https://github.com/Vit129/graphify/pull/2181)) ([`cc5cdb0`](https://github.com/Vit129/graphify/commit/cc5cdb0a0cf04b9a388e87719c51ccbe80bd7b56))
+- Cross-file extension no longer drops static/singleton calls ([#2538](https://github.com/Vit129/graphify/pull/2538)) ([`e559d3c`](https://github.com/Vit129/graphify/commit/e559d3c2c96d49ced11a532d2b9e5983fe384a30))
+- Filter Swift/Foundation/SwiftUI builtins from resolution and god-node ranking ([#2147](https://github.com/Vit129/graphify/pull/2147)) ([`c1c3245`](https://github.com/Vit129/graphify/commit/c1c3245e819f103d0f6f7ce22b24ff7c833b629d))
+- Scope Swift builtins to Swift to prevent cross-language symbol loss ([`cc6f724`](https://github.com/Vit129/graphify/commit/cc6f72407782c083efb024ea9305d4d295bac05d))
+- Restrict extension merge to Swift and ObjC, preventing C++/Metal absorption ([`5733db9`](https://github.com/Vit129/graphify/commit/5733db99b3d005182a4c3415bc9db137c9c85d71))
+- Disambiguate computed property node id from same-named method ([`807a3a0`](https://github.com/Vit129/graphify/commit/807a3a081b691bffdfc0b6d94f19d9eace5b7c22))
+- Exclude class references from indirect_call edges ([#2137](https://github.com/Vit129/graphify/pull/2137)) ([`5ba8f1a`](https://github.com/Vit129/graphify/commit/5ba8f1aa50820c338acb3ff5fbee212b1dd6e5dc))
+- Shadow for...of / for...in loop bindings from indirect_call args ([#2568](https://github.com/Vit129/graphify/pull/2568)) ([`cfae644`](https://github.com/Vit129/graphify/commit/cfae644e4e342f7458de5340e60398c49bab410e))
+- Shadow JS/TS catch bindings from indirect_call args ([#2568](https://github.com/Vit129/graphify/pull/2568)) ([`50c1897`](https://github.com/Vit129/graphify/commit/50c18971f953e836f0240b1bb36cb1840748cce8))
+- Also shadow generator function-expression bindings; lock .tsx coupling ([#2752](https://github.com/Vit129/graphify/pull/2752)) ([`e948197`](https://github.com/Vit129/graphify/commit/e9481977e3cc5c631a0d604d44b680c5300d373f))
+- An import from outside the corpus shadows indirect_call resolution ([#2757](https://github.com/Vit129/graphify/pull/2757)) ([`dc51f4e`](https://github.com/Vit129/graphify/commit/dc51f4edcb4b1f7c4825f7738029d5cefa06bf79))
+- Normalize issue references to #2568 and revert stray indentation ([`7ee907d`](https://github.com/Vit129/graphify/commit/7ee907d5846f730f6fd6f2532725f75177378a6f))
+- Block-scope for...of / for...in loop bindings to prevent suppressing outer references ([#2568](https://github.com/Vit129/graphify/pull/2568)) ([`c6e0187`](https://github.com/Vit129/graphify/commit/c6e0187a1add6f08cf98ec873a40948a78e476cf))
+- Narrow external-import shadow to genuine external packages ([#2757](https://github.com/Vit129/graphify/pull/2757)) ([`c492ef6`](https://github.com/Vit129/graphify/commit/c492ef6fa80765d6d26c9563cacb99f052a76341))
+- Emit Kotlin enum entries as nodes with case_of edges ([#1700](https://github.com/Vit129/graphify/pull/1700)) ([`a8167c7`](https://github.com/Vit129/graphify/commit/a8167c7b88ad1a98ea7384224521ce04dc45e8b3))
+- Emit implements edge for Kotlin interface delegation by ([#1644](https://github.com/Vit129/graphify/pull/1644)) ([`2db363f`](https://github.com/Vit129/graphify/commit/2db363fd8884a14d5b6ffaf430c24c0e2e9f6651))
+- Filter Kotlin builtin/stdlib types from references graph ([#1876](https://github.com/Vit129/graphify/pull/1876)) ([`e5f1eaf`](https://github.com/Vit129/graphify/commit/e5f1eafeabde0e0c9f7e64765e1a1ca4dd3cd244))
+- Extract members of Kotlin anonymous objects ([#2347](https://github.com/Vit129/graphify/pull/2347)) ([`482dbee`](https://github.com/Vit129/graphify/commit/482dbee5684f59968cc481945137b69bbdad170a))
+- Prevent Kotlin anonymous object from stealing supertype label and breaking call resolution ([`d1d2201`](https://github.com/Vit129/graphify/commit/d1d22017f4acc9e726188508b0118d5b0a11eb2c))
+- Stop filtering Kotlin type references against Java stdlib type list ([`133f1b2`](https://github.com/Vit129/graphify/commit/133f1b2821e2e488204e93c08cc5b30eab1899bd))
+- Disambiguate Kotlin enum entry node IDs from same-named methods ([`f340b15`](https://github.com/Vit129/graphify/commit/f340b15828f8afa13e11117e0a8e55e1d5a440e9))
+- Extract Kotlin anonymous objects in property initializers ([`4fefb2d`](https://github.com/Vit129/graphify/commit/4fefb2d249c8ad21ffa1fc38548210f619253136))
+
 ## [0.24.0] - 2026-08-24
 
 ### Documentation
