@@ -3516,21 +3516,24 @@ def _csharp_method_receiver_types(
     deliberately conservative — a pattern binding (``is T x``, ``case T x:``)
     spans its whole enclosing block, which is over-wide, but over-wide only
     ever produces ties (drop), never a wrong bind. The class-field conflict
-    rule is unchanged: a local binding disagreeing with a same-named
-    field/property's type drops the name entirely. Residual limitation:
-    ``out var x`` itself stays untyped — resolving it from the callee's
-    ``out`` parameter signature is a separate, pre-existing gap.
+    rule is scope-isolated: a local binding disagreeing with a same-named
+    field/property's type poisons that local scope with None rather than
+    stripping the field method-wide (#2472-style scope isolation). Residual
+    limitation: ``out var x`` itself stays untyped — resolving it from the
+    callee's ``out`` parameter signature is a separate, pre-existing gap.
     """
     bindings: dict[str, list[tuple[int, int, str | None]]] = {}
-    field_poisoned: set[str] = set()
 
     def bind(name: str | None, type_name: str | None, scope_node) -> None:
         if not name or scope_node is None:
             return
-        if field_types.get(name) not in (None, type_name):
-            field_poisoned.add(name)
+        bound_type = (
+            None
+            if field_types.get(name) not in (None, type_name)
+            else type_name
+        )
         bindings.setdefault(name, []).append(
-            (scope_node.start_byte, scope_node.end_byte, type_name)
+            (scope_node.start_byte, scope_node.end_byte, bound_type)
         )
 
     def bind_parameter(param, scope_node) -> None:
@@ -3643,14 +3646,7 @@ def _csharp_method_receiver_types(
         )
         stack.extend((child, child_scope) for child in node.children)
 
-    base = {
-        name: type_name
-        for name, type_name in field_types.items()
-        if name not in field_poisoned
-    }
-    for name in field_poisoned:
-        bindings.pop(name, None)
-    return bindings, base
+    return bindings, dict(field_types)
 
 
 def _csharp_scoped_receiver_type(

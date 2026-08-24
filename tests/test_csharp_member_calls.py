@@ -778,3 +778,37 @@ def test_out_of_scope_alias_in_same_file_does_not_suppress_fallback_resolution(t
     svc_run = _find(r, ".Run()", "unrelated_svc")
     assert (in_b_m, svc_run) in calls, \
         "out-of-scope alias in namespace A must not suppress fallback resolution in namespace B"
+
+
+def test_field_receiver_resolves_when_untypable_shadow_in_nested_block(tmp_path):
+    """An untypable local shadow inside a nested block must poison only that nested
+    scope; calls in outer scopes (like the method body before the block) must still
+    resolve to the class field's type."""
+    calls, r = _calls(tmp_path, {
+        "S.cs": (
+            "public class Svc {\n"
+            "    public bool Do() => true;\n"
+            "    public bool Run() => false;\n"
+            "}\n"
+            "public class C {\n"
+            "    private Svc svc = new Svc();\n"
+            "    public object Mystery() => new object();\n"
+            "    public bool M(bool b) {\n"
+            "        svc.Do();\n"
+            "        if (b) {\n"
+            "            var svc = Mystery();\n"
+            "            svc.Run();\n"
+            "        }\n"
+            "        return true;\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    c_m = _find(r, ".M()", "_c_m")
+    svc_do = _find(r, ".Do()", "svc_do")
+    svc_run = _find(r, ".Run()", "svc_run")
+    assert (c_m, svc_do) in calls, \
+        "outer svc.Do() must resolve to the field type Svc despite nested shadow"
+    assert (c_m, svc_run) not in calls, \
+        "nested untypable shadow svc.Run() must not bind to field type Svc"
+
