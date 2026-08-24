@@ -1740,6 +1740,9 @@ def _js_local_bound_names(func_node, source: bytes) -> set[str]:
     params = func_node.child_by_field_name("parameters")
     if params is not None:
         _js_collect_pattern_idents(params, source, bound)
+    solo = func_node.child_by_field_name("parameter")
+    if solo is not None:
+        _js_collect_pattern_idents(solo, source, bound)
 
     def walk(n) -> None:
         for c in n.children:
@@ -5264,8 +5267,37 @@ def _extract_generic(
             return None
         return _read_text(scope, source)
 
-    def walk_calls(node, caller_nid: str) -> None:
+    _tracked_body_ids: set[int] = set()
+    _JS_CLOSURE_TYPES = ("arrow_function", "function_expression")
+
+    def walk_calls(
+        node,
+        caller_nid: str,
+        extra_locals: frozenset[str] = frozenset(),
+    ) -> None:
         if node.type in config.function_boundary_types:
+            # JS/TS: an inline/returned closure not separately tracked in
+            # function_bodies would otherwise drop its calls at this boundary.
+            # Descend into it with the enclosing caller so `return () =>
+            # svc.doThing()` links to the caller (#1630). Tracked closures
+            # (const-assigned arrows) are walked with their own nid — skip to
+            # avoid double-counting.
+            if (config.ts_module in ("tree_sitter_javascript", "tree_sitter_typescript")
+                    and node.type in _JS_CLOSURE_TYPES):
+                body = node.child_by_field_name("body")
+                if body is not None and id(body) not in _tracked_body_ids:
+                    # This closure's own params/locals (`(r) => c.get(r)`) are
+                    # scoped to it, not to the enclosing caller_nid — but its
+                    # calls ARE attributed to caller_nid right here, so a bare
+                    # reference to one of them (e.g. passed on as a call
+                    # argument) must still be recognized as local, not resolved
+                    # against an unrelated same-named definition elsewhere in
+                    # the corpus (#2241). Fold this closure's own bindings into
+                    # extra_locals for its subtree only; deeper untracked
+                    # closures compound the same way on their own recursion.
+                    closure_locals = extra_locals | _js_local_bound_names(node, source)
+                    for child in node.children:
+                        walk_calls(child, caller_nid, closure_locals)
             return
 
         if node.type in config.call_types:
@@ -5275,7 +5307,7 @@ def _extract_generic(
                                       edges, seen_dyn_import_pairs):
                     # Still recurse into children (import().then(...) may have calls)
                     for child in node.children:
-                        walk_calls(child, caller_nid)
+                        walk_calls(child, caller_nid, extra_locals)
                     return
 
             callee_name: str | None = None
@@ -5568,7 +5600,7 @@ def _extract_generic(
             if config.ts_module == "tree_sitter_python":
                 args_node = node.child_by_field_name("arguments")
                 if args_node is not None:
-                    enclosing_locals = local_bound_names.get(caller_nid, frozenset())
+                    enclosing_locals = local_bound_names.get(caller_nid, frozenset()) | extra_locals
                     for arg in args_node.children:
                         if arg.type == "identifier":
                             _emit_indirect_ref(arg, caller_nid, enclosing_locals, "argument")
@@ -5593,7 +5625,7 @@ def _extract_generic(
                 # handled by the collection pass).
                 args_node = node.child_by_field_name("arguments")
                 if args_node is not None:
-                    enclosing_locals = local_bound_names.get(caller_nid, frozenset())
+                    enclosing_locals = local_bound_names.get(caller_nid, frozenset()) | extra_locals
                     for arg in args_node.children:
                         if arg.type == "identifier":
                             _emit_indirect_ref(arg, caller_nid, enclosing_locals, "argument")
@@ -5618,7 +5650,7 @@ def _extract_generic(
                 if first_key:
                     segment = first_key.split(".")[0]
                     tgt_nid = (label_to_nid_ci.get(segment.lower())
-                               or label_to_nid_ci.get(f"{segment}.php".lower()))
+                                or label_to_nid_ci.get(f"{segment}.php".lower()))
                     if tgt_nid and tgt_nid != caller_nid:
                         relation = f"uses_{callee_name}"
                         pair3 = (caller_nid, tgt_nid, relation)
@@ -5729,12 +5761,12 @@ def _extract_generic(
         if config.ts_module == "tree_sitter_python" and node.type in (
             "dictionary", "list", "set", "tuple"
         ):
-            enclosing_locals = local_bound_names.get(caller_nid, frozenset())
+            enclosing_locals = local_bound_names.get(caller_nid, frozenset()) | extra_locals
             for ident in _python_dispatch_value_idents(node):
                 _emit_indirect_ref(ident, caller_nid, enclosing_locals, "collection")
         elif config.ts_module in ("tree_sitter_javascript", "tree_sitter_typescript") \
                 and node.type in ("object", "array"):
-            enclosing_locals = local_bound_names.get(caller_nid, frozenset())
+            enclosing_locals = local_bound_names.get(caller_nid, frozenset()) | extra_locals
             for ident in _js_dispatch_value_idents(node):
                 _emit_indirect_ref(ident, caller_nid, enclosing_locals, "collection")
 
@@ -5744,17 +5776,17 @@ def _extract_generic(
         # TARGET is a new local binding, not a reference -- so the shared shadow guard
         # still holds (a param/local named on the RHS is the local, not the module fn).
         if config.ts_module == "tree_sitter_python" and node.type == "assignment":
-            enclosing_locals = local_bound_names.get(caller_nid, frozenset())
+            enclosing_locals = local_bound_names.get(caller_nid, frozenset()) | extra_locals
             for ident in _python_ref_value_idents(node.child_by_field_name("right")):
                 _emit_indirect_ref(ident, caller_nid, enclosing_locals, "assignment")
         elif config.ts_module == "tree_sitter_python" and node.type == "return_statement":
-            enclosing_locals = local_bound_names.get(caller_nid, frozenset())
+            enclosing_locals = local_bound_names.get(caller_nid, frozenset()) | extra_locals
             value = next((c for c in node.children if c.is_named), None)
             for ident in _python_ref_value_idents(value):
                 _emit_indirect_ref(ident, caller_nid, enclosing_locals, "return")
 
         for child in node.children:
-            walk_calls(child, caller_nid)
+            walk_calls(child, caller_nid, extra_locals)
 
     if config.ts_module == "tree_sitter_ruby":
         for caller_nid, body_node in function_bodies:
@@ -5774,6 +5806,10 @@ def _extract_generic(
     if config.ts_module == "tree_sitter_swift":
         for _caller_nid, body_node in function_bodies:
             _swift_local_var_types(body_node, source, type_table)
+
+    # Track bodies already walked with their own caller_nid so untracked closures
+    # can be descended into without double-walking tracked ones (#2241).
+    _tracked_body_ids.update(id(b) for _, b in function_bodies)
 
     for caller_nid, body_node in function_bodies:
         walk_calls(body_node, caller_nid)
