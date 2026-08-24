@@ -95,6 +95,78 @@ def _file_node_id(rel_path: Path) -> str:
     return _make_id(_file_stem(rel_path))
 
 
+def _repoint_python_package_imports(paths, all_nodes, all_edges, root) -> None:
+    """Repoint Python absolute-import edges to the real file node under a nested
+    (e.g. ``src/``) package root (#2072).
+
+    Absolute imports target an id derived from the dotted module path
+    (``_make_id('pkg.mod')`` -> ``pkg_mod``), but file-node ids are
+    scan-root-relative (``src_pkg_mod`` when the code lives under ``src/``), so
+    the edge dangles and is silently dropped — the graph loses most ``imports``
+    edges purely because of where the scan started. Build an alias map from the
+    dotted-module id to the real file-node id by detecting each ``.py`` file's
+    package root (the contiguous run of ancestor dirs carrying ``__init__.py``)
+    and rewrite matching ``imports``/``imports_from`` edge targets. Guards: never
+    shadow an existing node id, and drop an alias claimed by more than one file
+    (ambiguous -> leave dangling, as before). Files whose package root IS the
+    scan root are skipped (ids already coincide)."""
+    try:
+        root = Path(root).resolve()
+    except OSError:
+        root = Path(root)
+    node_ids = {n.get("id") for n in all_nodes if isinstance(n, dict)}
+    alias_to_files: dict[str, set[str]] = {}
+    for p in paths:
+        if p.suffix.lower() not in (".py", ".pyi"):
+            continue
+        try:
+            rel = Path(p).resolve().relative_to(root)
+        except (ValueError, OSError):
+            continue
+        parts = rel.parts
+        if len(parts) < 2:
+            continue  # top-level file: scan-root-relative id already matches
+        d = Path(p).resolve().parent
+        levels = 0
+        # Bounded by the number of dirs between the file and the scan root, so a
+        # pathological `/__init__.py` chain can't loop forever.
+        while levels < len(parts) - 1 and (d / "__init__.py").is_file():
+            levels += 1
+            d = d.parent
+        if levels == 0:
+            continue  # not inside a package (namespace pkg / loose module)
+        mod_parts = parts[-(levels + 1):]  # package dirs + the file itself
+        if len(mod_parts) == len(parts):
+            continue  # package root == scan root: file-node id already coincides
+        file_node = _file_node_id(rel)
+        alias = _make_id(str(Path(*mod_parts).with_suffix("")))
+        alias_to_files.setdefault(alias, set()).add(file_node)
+        if p.name in ("__init__.py", "__init__.pyi") and len(mod_parts) > 1:
+            # `import pkg` / `from pkg import x` targets the package-dir id.
+            pkg_alias = _make_id(str(Path(*mod_parts[:-1])))
+            alias_to_files.setdefault(pkg_alias, set()).add(file_node)
+    alias_map = {
+        a: next(iter(fs))
+        for a, fs in alias_to_files.items()
+        if len(fs) == 1 and a not in node_ids
+    }
+    if not alias_map:
+        return
+    for e in all_edges:
+        # Only repoint edges emitted from a Python file: a non-Python import edge
+        # (e.g. C# `using Pkg.Mod;`, Java/Go dotted imports) can have a dangling
+        # target string that coincides with a Python alias, and repointing it
+        # would fabricate a cross-language import edge (#2072 review).
+        if (
+            isinstance(e, dict)
+            and e.get("relation") in ("imports", "imports_from")
+            and str(e.get("source_file", "")).lower().endswith((".py", ".pyi"))
+        ):
+            tgt = e.get("target")
+            if tgt in alias_map:
+                e["target"] = alias_map[tgt]
+
+
 def _csharp_namespace_id(dotted_name: str) -> str:
     digest = hashlib.sha1(dotted_name.encode("utf-8")).hexdigest()[:16]
     return f"csharp_namespace:{digest}"
@@ -11531,15 +11603,9 @@ def _python_imported_names(node, source: bytes) -> list[tuple[str, str]]:
     return names
 
 
-def _resolve_python_module_path(module_name: str, current_path: Path, root: Path, level: int) -> Path | None:
-    if level > 0:
-        base = current_path.parent
-        for _ in range(level - 1):
-            base = base.parent
-        candidate = base / module_name.replace(".", "/") if module_name else base
-    else:
-        candidate = root / module_name.replace(".", "/")
-
+def _probe_python_module_candidate(candidate: Path) -> Path | None:
+    """Resolve one module-path candidate to a .py file (dir+__init__, exact, or
+    with a .py suffix), or None."""
     if candidate.is_dir():
         init_path = candidate / "__init__.py"
         if init_path.is_file():
@@ -11549,6 +11615,45 @@ def _resolve_python_module_path(module_name: str, current_path: Path, root: Path
     py_candidate = candidate.with_suffix(".py")
     if py_candidate.is_file():
         return py_candidate
+    return None
+
+
+def _resolve_python_module_path(module_name: str, current_path: Path, root: Path, level: int) -> Path | None:
+    if level > 0:
+        base = current_path.parent
+        for _ in range(level - 1):
+            base = base.parent
+        candidate = base / module_name.replace(".", "/") if module_name else base
+        return _probe_python_module_candidate(candidate)
+
+    # Absolute import. Probe the scan root first (unchanged for the common
+    # root-is-package-root layout), then walk up from the importing file toward
+    # the root so a `src/` (or otherwise nested) package root resolves regardless
+    # of where the scan started — `import pkg.mod` from src/pkg/app.py must find
+    # src/pkg/mod.py whether the scan root is the repo or src/ (#2072). Mirrors
+    # the upward walk already used for Lua (_resolve_lua_import_target, #1075).
+    rel = module_name.replace(".", "/")
+    hit = _probe_python_module_candidate(root / rel)
+    if hit is not None:
+        return hit
+    for anc in current_path.parents:
+        try:
+            anc.relative_to(root)
+        except ValueError:
+            break  # left the scan root; stop walking up
+        if anc == root:
+            continue  # already probed root/rel above
+        # Only probe sys.path-root candidates — dirs that are NOT themselves part
+        # of a package. Probing a package dir would resolve an absolute
+        # `from helpers import x` to a sibling in the current package (Python-2
+        # implicit-relative semantics), fabricating edges to what may be an
+        # external dependency (#2072 review). A src-layout root (src/, no
+        # __init__.py) is still probed.
+        if (anc / "__init__.py").is_file():
+            continue
+        cand = _probe_python_module_candidate(anc / rel)
+        if cand is not None:
+            return cand
     return None
 
 
@@ -17711,6 +17816,10 @@ def extract(
                     if en in sym_remap:
                         ext["nid"] = sym_remap[en]
 
+    # Repoint Python absolute imports onto the real file nodes under a nested
+    # (src/) package root before the resolver/import-evidence passes run, so the
+    # graph is identical regardless of scan root (#2072).
+    _repoint_python_package_imports(paths, all_nodes, all_edges, root)
     _merge_swift_extensions(per_file, all_nodes, all_edges)
     _merge_csharp_partial_class_nodes(per_file, all_nodes, all_edges)
     _disambiguate_colliding_node_ids(all_nodes, all_edges, all_raw_calls, root)
