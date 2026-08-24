@@ -173,3 +173,36 @@ def test_external_import_shadow_does_not_bind_to_a_same_named_local_callable(tmp
     indirect = _rels(r, "indirect_call")
     assert (nid["build"], nid["Filter"]) not in indirect   # no cross-file phantom
     assert (nid["build"], nid["onClick"]) in indirect      # real local reference preserved
+
+
+def test_baseurl_import_still_resolves_indirect_call(tmp_path):
+    """A baseUrl-relative import ('utils/helper') must not be falsely classified
+    as an external package and dropped from indirect_call resolution when Widget
+    is a real callable in the corpus."""
+    (tmp_path / "tsconfig.json").write_text(
+        '{"compilerOptions": {"baseUrl": "./src"}}\n'
+    )
+    r, nid = _extract_js_dir(tmp_path, {
+        "utils/helper.ts": "export function Widget() { return 1; }\n",
+        "host.ts": (
+            "import { Widget } from 'utils/helper';\n"
+            "export function host(sink) { sink.push(Widget); }\n"
+        ),
+    })
+    indirect = _rels(r, "indirect_call")
+    assert (nid["host"], nid["Widget"]) in indirect
+
+
+def test_unresolved_nonrelative_local_import_without_tsconfig_still_resolves(tmp_path):
+    """An unresolved non-relative import whose path matches a local file in the
+    directory hierarchy must not be treated as external shadow."""
+    r, nid = _extract_js_dir(tmp_path, {
+        "utils/helper.ts": "export function Widget() { return 1; }\n",
+        "host.ts": (
+            "import { Widget } from 'utils/helper';\n"
+            "export function host(sink) { sink.push(Widget); }\n"
+        ),
+    })
+    indirect = _rels(r, "indirect_call")
+    assert (nid["host"], nid["Widget"]) in indirect
+

@@ -263,8 +263,8 @@ def _read_tsconfig_aliases(tsconfig: Path, base_dir: Path, seen: set) -> dict[st
     # than <dir>/services. Defaults to "." so configs without baseUrl (paths
     # relative to the tsconfig dir, the TS 4.1+ behavior) keep working.
     compiler_options = data.get("compilerOptions", {})
-    base_url = compiler_options.get("baseUrl") or "."
-    paths_base = base_dir / base_url
+    base_url = compiler_options.get("baseUrl")
+    paths_base = (base_dir / base_url) if base_url else (base_dir / ".")
     paths = compiler_options.get("paths", {})
     for alias, targets in paths.items():
         if not targets:
@@ -281,6 +281,11 @@ def _read_tsconfig_aliases(tsconfig: Path, base_dir: Path, seen: set) -> dict[st
         ]
         if target_patterns:
             aliases[alias] = target_patterns
+
+    # tsconfig `baseUrl` allows non-relative imports to resolve relative to baseUrl
+    # even without explicit `paths` entries.
+    if base_url is not None and "*" not in paths:
+        aliases.setdefault("*", []).append(str(paths_base / "*"))
 
     return aliases
 
@@ -344,6 +349,18 @@ def _resolve_tsconfig_alias(raw: str, aliases: dict[str, list[str]]) -> "Path | 
         if match is None:
             continue
         specificity, captured, is_wildcard = match
+        # For a "*" catch-all alias (e.g. from baseUrl), only match if at least one target resolves to an existing file
+        if pattern == "*":
+            found = False
+            for target in targets:
+                substituted = target.replace("*", captured, 1) if captured else target
+                cand = Path(os.path.normpath(substituted))
+                resolved = _resolve_js_import_path(cand)
+                if resolved.is_file():
+                    found = True
+                    break
+            if not found:
+                continue
         if best is None or specificity < best[0]:
             best = specificity, captured, is_wildcard, targets
 
@@ -1914,21 +1931,32 @@ def _resolve_js_import_target(raw: str, str_path: str) -> "tuple[str, Path | Non
 def _js_import_binds_external(raw: str, str_path: str) -> bool:
     """True when a JS/TS import specifier names a module outside the scanned corpus.
 
-    Reuses `_resolve_js_import_target`, so this is graphify's own verdict rather
-    than a second opinion: a specifier it cannot resolve is an external package
-    (the `ref`-namespaced branch). The extra `node_modules` test covers the case
-    where resolution *succeeds* but lands in a dependency tree — a `tsconfig`
-    `paths` entry mapping a package to its own installed copy
-    (`"lucide-react": ["./node_modules/lucide-react"]`) is common, and
-    `node_modules` is pruned from every scan, so the target is never a node.
+    A specifier is external if:
+    1. It resolves to a path inside `node_modules` (e.g. via tsconfig paths alias), OR
+    2. It is a bare package specifier (does not start with '.' or '/') and cannot be
+       resolved to any local file in the directory hierarchy or tsconfig/workspace.
+    Dangling relative/absolute paths and unhandled local imports are NOT treated
+    as external shadows.
     """
+    if not raw or raw.startswith(".") or raw.startswith("/"):
+        return False
     resolved = _resolve_js_import_target(raw, str_path)
     if resolved is None:
         return False  # empty specifier — binds nothing
     _target_nid, resolved_path = resolved
-    if resolved_path is None:
-        return True  # unresolved after relative / alias / workspace lookup
-    return "node_modules" in resolved_path.parts
+    if resolved_path is not None:
+        return "node_modules" in resolved_path.parts
+
+    # Unresolved non-relative import: check if any local file/directory in the
+    # ancestor tree matches this specifier (e.g. unhandled baseUrl or workspace layout).
+    parent = Path(str_path).parent.resolve()
+    for d in [parent, *parent.parents]:
+        cand = _resolve_js_import_path(d / raw)
+        if cand.is_file():
+            return False
+        if (d / ".git").exists():
+            break
+    return True
 
 
 def _js_external_import_names(root, source: bytes, str_path: str) -> set[str]:
