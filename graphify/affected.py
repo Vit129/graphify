@@ -366,6 +366,57 @@ def format_git_diff_affected(
     return "\n".join(lines)
 
 
+def ci_affected_tests(
+    graph: nx.Graph,
+    repo_root: Path,
+    *,
+    base: str | None = None,
+    relations: Iterable[str] = DEFAULT_AFFECTED_RELATIONS,
+    depth: int = 2,
+) -> list[str]:
+    """Sorted, deduplicated test-file paths whose coverage is touched by the
+    current git diff -- for a CI hook to select which tests to run, distinct
+    from format_git_diff_affected's full human-readable blast-radius report.
+
+    A changed test file is included directly; a changed non-test file is
+    included via any test file reachable in its dependent set (same traversal
+    as affected_nodes/format_git_diff_affected).
+    """
+    from graphify.paths import _is_test_path
+
+    seeds_by_file = changed_seeds(graph, repo_root, base)
+    relation_list = tuple(relations)
+    test_files: set[str] = set()
+    for file_path, seed_ids in seeds_by_file.items():
+        if _is_test_path(file_path):
+            test_files.add(file_path)
+        for seed_id in seed_ids:
+            for hit in affected_nodes(graph, seed_id, relations=relation_list, depth=depth):
+                hit_file = graph.nodes[hit.node_id].get("source_file")
+                if hit_file and _is_test_path(str(hit_file)):
+                    test_files.add(str(hit_file))
+    return sorted(test_files)
+
+
+def format_ci_affected_tests(
+    graph: nx.Graph,
+    repo_root: Path,
+    *,
+    base: str | None = None,
+    relations: Iterable[str] = DEFAULT_AFFECTED_RELATIONS,
+    depth: int = 2,
+    as_json: bool = False,
+) -> str:
+    """CI-consumable output: one test-file path per line (or a JSON array with
+    as_json=True), no diagnostic prose -- meant to be piped straight into a
+    test runner, e.g. `graphify affected --ci | xargs -r pytest`."""
+    tests = ci_affected_tests(graph, repo_root, base=base, relations=relations, depth=depth)
+    if as_json:
+        import json
+        return json.dumps(tests)
+    return "\n".join(tests)
+
+
 def format_affected(
     graph: nx.Graph,
     query: str,

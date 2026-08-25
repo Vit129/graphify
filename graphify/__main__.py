@@ -3256,16 +3256,21 @@ def main() -> None:
         )
         print(_result)
     elif cmd == "affected":
-        git_diff_mode = "--git-diff" in sys.argv[2:]
+        ci_mode = "--ci" in sys.argv[2:]
+        git_diff_mode = ci_mode or "--git-diff" in sys.argv[2:]
+        as_json = "--json" in sys.argv[2:]
         if len(sys.argv) < 3 or (not git_diff_mode and sys.argv[2].startswith("--")):
             print(
                 "Usage: graphify affected \"<node-or-label>\" [--relation R] [--depth N] [--graph path]\n"
-                "       graphify affected --git-diff [--base REF] [--relation R] [--depth N] [--graph path]",
+                "       graphify affected --git-diff [--base REF] [--relation R] [--depth N] [--graph path]\n"
+                "       graphify affected --ci [--base REF] [--depth N] [--json] [--graph path]  "
+                "(CI test-impact: list only affected test files)",
                 file=sys.stderr,
             )
             sys.exit(1)
         from graphify.affected import (
-            DEFAULT_AFFECTED_RELATIONS, format_affected, format_git_diff_affected, load_graph,
+            DEFAULT_AFFECTED_RELATIONS, format_affected, format_ci_affected_tests,
+            format_git_diff_affected, load_graph,
         )
         query = None if git_diff_mode else sys.argv[2]
         graph_path = _default_graph_path()
@@ -3325,15 +3330,27 @@ def main() -> None:
         if git_diff_mode:
             repo_root = gp.parent.parent
             try:
-                print(
-                    format_git_diff_affected(
-                        graph,
-                        repo_root,
-                        base=base_ref,
-                        relations=relations or DEFAULT_AFFECTED_RELATIONS,
-                        depth=depth,
+                if ci_mode:
+                    print(
+                        format_ci_affected_tests(
+                            graph,
+                            repo_root,
+                            base=base_ref,
+                            relations=relations or DEFAULT_AFFECTED_RELATIONS,
+                            depth=depth,
+                            as_json=as_json,
+                        )
                     )
-                )
+                else:
+                    print(
+                        format_git_diff_affected(
+                            graph,
+                            repo_root,
+                            base=base_ref,
+                            relations=relations or DEFAULT_AFFECTED_RELATIONS,
+                            depth=depth,
+                        )
+                    )
             except RuntimeError as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 sys.exit(1)

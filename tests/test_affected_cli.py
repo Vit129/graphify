@@ -476,3 +476,116 @@ def test_affected_cli_git_diff_flag_reports_impact(monkeypatch, tmp_path, capsys
     out = capsys.readouterr().out
     assert "Git-diff impact" in out
     assert "target()" in out
+
+
+def test_ci_affected_tests_includes_dependent_test_file(tmp_path):
+    from graphify.affected import ci_affected_tests
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text("def target():\n    return 1\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    src.write_text("def target():\n    return 999\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("target", label="target()", source_file="mod.py", source_location="L1")
+    graph.add_node("test_fn", label="test_target()", source_file="tests/test_mod.py", source_location="L1")
+    graph.add_node("other", label="other()", source_file="app.py", source_location="L1")
+    graph.add_edge("test_fn", "target", relation="calls", context="call", confidence="EXTRACTED")
+    graph.add_edge("other", "target", relation="calls", context="call", confidence="EXTRACTED")
+
+    result = ci_affected_tests(graph, tmp_path)
+    assert result == ["tests/test_mod.py"]
+
+
+def test_ci_affected_tests_includes_directly_changed_test_file(tmp_path):
+    from graphify.affected import ci_affected_tests
+
+    _init_git_repo(tmp_path)
+    test_src = tmp_path / "tests" / "test_mod.py"
+    test_src.parent.mkdir()
+    test_src.write_text("def test_target():\n    assert True\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    test_src.write_text("def test_target():\n    assert 1 == 1\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("test_fn", label="test_target()", source_file="tests/test_mod.py", source_location="L1")
+
+    result = ci_affected_tests(graph, tmp_path)
+    assert result == ["tests/test_mod.py"]
+
+
+def test_ci_affected_tests_no_dependent_tests_returns_empty(tmp_path):
+    from graphify.affected import ci_affected_tests
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text("def target():\n    return 1\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    src.write_text("def target():\n    return 999\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("target", label="target()", source_file="mod.py", source_location="L1")
+    graph.add_node("other", label="other()", source_file="app.py", source_location="L1")
+    graph.add_edge("other", "target", relation="calls", context="call", confidence="EXTRACTED")
+
+    assert ci_affected_tests(graph, tmp_path) == []
+
+
+def test_format_ci_affected_tests_json_output(tmp_path):
+    from graphify.affected import format_ci_affected_tests
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text("def target():\n    return 1\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    src.write_text("def target():\n    return 999\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("target", label="target()", source_file="mod.py", source_location="L1")
+    graph.add_node("test_fn", label="test_target()", source_file="tests/test_mod.py", source_location="L1")
+    graph.add_edge("test_fn", "target", relation="calls", context="call", confidence="EXTRACTED")
+
+    out = format_ci_affected_tests(graph, tmp_path, as_json=True)
+    assert json.loads(out) == ["tests/test_mod.py"]
+
+
+def test_affected_cli_ci_flag_lists_only_test_files(monkeypatch, tmp_path, capsys):
+    """CLI wiring: `graphify affected --ci` implies git-diff mode and prints a
+    lean test-file list, not the full blast-radius report."""
+    import subprocess
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text("def target():\n    return 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    src.write_text("def target():\n    return 999\n", encoding="utf-8")
+
+    graphify_out = tmp_path / "graphify-out"
+    graphify_out.mkdir()
+    graph = nx.DiGraph()
+    graph.add_node("target", label="target()", source_file="mod.py", source_location="L1")
+    graph.add_node("test_fn", label="test_target()", source_file="tests/test_mod.py", source_location="L1")
+    graph.add_edge("test_fn", "target", relation="calls", context="call", confidence="EXTRACTED")
+    graph_path = graphify_out / "graph.json"
+    graph_path.write_text(json.dumps(json_graph.node_link_data(graph, edges="links")), encoding="utf-8")
+
+    monkeypatch.setattr(mainmod, "_check_skill_version", lambda _: None)
+    monkeypatch.setattr(
+        mainmod.sys, "argv", ["graphify", "affected", "--ci", "--graph", str(graph_path)]
+    )
+
+    mainmod.main()
+
+    out = capsys.readouterr().out.strip()
+    assert out == "tests/test_mod.py"
+    assert "Git-diff impact" not in out
