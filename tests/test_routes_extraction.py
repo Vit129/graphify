@@ -261,3 +261,36 @@ app.get('/users', listUsers);
     edges = [(e["source"], e["target"], e["relation"]) for e in result.get("edges", [])]
     users_rid = node_labels["GET /users"]["id"]
     assert any(e[0] == users_rid and e[2] == "handles" for e in edges)
+
+
+def test_route_extraction_exception_logs_warning_to_stderr_without_aborting(tmp_path, monkeypatch, capsys):
+    py_file = tmp_path / "app.py"
+    py_file.write_text("def hello(): pass\n", encoding="utf-8")
+
+    def broken_python_routes(*args, **kwargs):
+        raise RuntimeError("simulated route extraction failure")
+
+    monkeypatch.setattr("graphify.routes.extract_python_routes", broken_python_routes)
+    res = extract_python(py_file)
+    assert "error" not in res
+    assert any(n["label"] == "hello()" for n in res["nodes"])
+
+    captured = capsys.readouterr()
+    assert "[graphify] Python route extraction failed" in captured.err
+    assert "simulated route extraction failure" in captured.err
+
+    js_file = tmp_path / "app.js"
+    js_file.write_text("function hello() {}\n", encoding="utf-8")
+
+    def broken_js_routes(*args, **kwargs):
+        raise RuntimeError("simulated js route failure")
+
+    monkeypatch.setattr("graphify.routes.extract_js_routes", broken_js_routes)
+    res_js = extract_js(js_file)
+    assert "error" not in res_js
+    assert any(n["label"] == "hello()" for n in res_js["nodes"])
+
+    captured_js = capsys.readouterr()
+    assert "[graphify] JS/TS route extraction failed" in captured_js.err
+    assert "simulated js route failure" in captured_js.err
+

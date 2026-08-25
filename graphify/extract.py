@@ -6834,8 +6834,8 @@ def extract_python(path: Path) -> dict:
             from graphify.routes import extract_python_routes
             src_text = path.read_text(encoding="utf-8", errors="replace")
             extract_python_routes(path, src_text, result)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[graphify] Python route extraction failed for {path}: {exc}", file=sys.stderr)
     return result
 
 
@@ -6853,8 +6853,8 @@ def extract_js(path: Path) -> dict:
             from graphify.routes import extract_js_routes
             src_text = path.read_text(encoding="utf-8", errors="replace")
             extract_js_routes(path, src_text, result)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[graphify] JS/TS route extraction failed for {path}: {exc}", file=sys.stderr)
     return result
 
 

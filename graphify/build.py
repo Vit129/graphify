@@ -625,13 +625,13 @@ def build_from_json(extraction: dict, *, directed: bool = False, root: str | Pat
     try:
         from graphify.bridges import resolve_cross_language_bridges
         resolve_cross_language_bridges(G, root=_root)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[graphify] Cross-language bridge resolution failed: {exc}", file=sys.stderr)
     try:
         from graphify.routes import resolve_django_route_handlers
         resolve_django_route_handlers(G)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[graphify] Django route handler resolution failed: {exc}", file=sys.stderr)
     return G
 
 

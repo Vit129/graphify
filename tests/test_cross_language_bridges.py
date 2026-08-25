@@ -121,3 +121,23 @@ def test_build_from_json_integrates_bridges_end_to_end(tmp_path: Path):
     G = build_from_json(extraction, directed=True, root=str(tmp_path))
 
     assert any(d.get("relation") == "bridges_to" for _, _, d in G.edges(data=True))
+
+
+def test_bridge_and_django_resolution_failure_logs_warning_without_aborting(tmp_path: Path, monkeypatch, capsys):
+    def broken_bridges(*args, **kwargs):
+        raise RuntimeError("simulated bridge resolution error")
+
+    def broken_django(*args, **kwargs):
+        raise RuntimeError("simulated django resolution error")
+
+    monkeypatch.setattr("graphify.bridges.resolve_cross_language_bridges", broken_bridges)
+    monkeypatch.setattr("graphify.routes.resolve_django_route_handlers", broken_django)
+
+    extraction = {"nodes": [{"id": "a", "label": "A"}], "edges": []}
+    G = build_from_json(extraction, directed=True, root=str(tmp_path))
+    assert G.has_node("a")
+
+    captured = capsys.readouterr()
+    assert "[graphify] Cross-language bridge resolution failed: simulated bridge resolution error" in captured.err
+    assert "[graphify] Django route handler resolution failed: simulated django resolution error" in captured.err
+
