@@ -624,7 +624,7 @@ def build_from_json(extraction: dict, *, directed: bool = False, root: str | Pat
         G.graph["hyperedges"] = hyperedges
     try:
         from graphify.bridges import resolve_cross_language_bridges
-        resolve_cross_language_bridges(G)
+        resolve_cross_language_bridges(G, root=_root)
     except Exception:
         pass
     return G
