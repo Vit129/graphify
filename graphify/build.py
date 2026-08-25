@@ -622,6 +622,11 @@ def build_from_json(extraction: dict, *, directed: bool = False, root: str | Pat
             if isinstance(he, dict) and he.get("source_file"):
                 he["source_file"] = _norm_source_file(he["source_file"], _root)
         G.graph["hyperedges"] = hyperedges
+    try:
+        from graphify.bridges import resolve_cross_language_bridges
+        resolve_cross_language_bridges(G)
+    except Exception:
+        pass
     return G
 
 
