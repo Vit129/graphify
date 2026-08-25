@@ -2735,7 +2735,7 @@ def main() -> None:
     # (e.g. "cursor install --help" was silently installing into Cursor, #821).
     # Exempt: free-text commands (user string may contain these tokens), and
     # "install"/"uninstall" which have their own per-subcommand help handlers.
-    _FREE_TEXT_CMDS = {"query", "explain", "path", "save-result", "install", "uninstall"}
+    _FREE_TEXT_CMDS = {"query", "explain", "path", "save-result", "install", "uninstall", "match", "pattern"}
     if cmd not in _FREE_TEXT_CMDS and any(a in {"-h", "--help", "-?"} for a in sys.argv[2:]):
         print(f"Run 'graphify --help' for full usage.")
         return
@@ -3367,6 +3367,44 @@ def main() -> None:
                     depth=depth,
                 )
             )
+    elif cmd in ("match", "pattern"):
+        if len(sys.argv) < 3:
+            print(
+                "Usage: graphify match \"MATCH <pattern> [WHERE ...] [RETURN ...] [LIMIT N]\" [--graph path] [--json]",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        from graphify.pattern_query import parse_and_execute_pattern, PatternQueryError
+        from graphify.affected import load_graph
+        query_pattern = sys.argv[2]
+        graph_path = _default_graph_path()
+        as_json = "--json" in sys.argv[3:]
+        args = sys.argv[3:]
+        i = 0
+        while i < len(args):
+            if args[i] == "--graph" and i + 1 < len(args):
+                graph_path = args[i + 1]
+                i += 2
+            elif args[i].startswith("--graph="):
+                graph_path = args[i].split("=", 1)[1]
+                i += 1
+            else:
+                i += 1
+        gp = Path(graph_path).resolve()
+        if not gp.exists():
+            print(f"error: graph file not found: {gp}", file=sys.stderr)
+            sys.exit(1)
+        graph = load_graph(gp)
+        try:
+            res = parse_and_execute_pattern(graph, query_pattern, as_dict=as_json)
+            if as_json:
+                import json
+                print(json.dumps(res, indent=2))
+            else:
+                print(res)
+        except PatternQueryError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
     elif cmd == "dead-code":
         from graphify.affected import load_graph
         from graphify.analyze import unreachable_functions

@@ -660,6 +660,23 @@ def _build_server(graph_path: str):
                 },
             ),
             types.Tool(
+                name="match_pattern",
+                description=(
+                    "Execute a Cypher-like graph pattern query over the codebase graph. "
+                    "Supports: MATCH (a:type)-[:relation]->(b:type) WHERE a.label CONTAINS 'foo' RETURN a.label, b.label LIMIT N"
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Pattern query string (e.g. MATCH (f:function)-[:calls]->(g) WHERE f.label CONTAINS 'main' RETURN f.label, g.label)",
+                        },
+                    },
+                    "required": ["pattern"],
+                },
+            ),
+            types.Tool(
                 name="triage_prs",
                 description=(
                     "Return all actionable open PRs (correct base, not stale) with full graph impact data "
@@ -894,7 +911,22 @@ def _build_server(graph_path: str):
                 f"PR #{p.number} [{p.status}] CI={p.ci_status} review={p.review_decision or 'none'} "
                 f"age={p.days_old}d author={p.author}{impact}{wt}\n  title: {p.title}"
             )
-        return "\n\n".join(lines)
+    def _tool_match_pattern(arguments: dict) -> str:
+        from graphify.pattern_query import parse_and_execute_pattern, PatternQueryError
+        pat = arguments["pattern"]
+        try:
+            res = parse_and_execute_pattern(G, pat, as_dict=False)
+            if active_graph_path:
+                from graphify.staleness import format_staleness_banner
+                stale_banner = format_staleness_banner(
+                    active_graph_path,
+                    [str(G.nodes[n].get("source_file", "")) for n in G.nodes() if G.nodes[n].get("source_file")][:10],
+                )
+                if stale_banner:
+                    res = stale_banner + str(res)
+            return str(res)
+        except PatternQueryError as exc:
+            return f"Error executing pattern: {exc}"
 
     _handlers = {
         "query_graph": _tool_query_graph,
@@ -907,6 +939,7 @@ def _build_server(graph_path: str):
         "graph_stats": _tool_graph_stats,
         "dead_code": _tool_dead_code,
         "shortest_path": _tool_shortest_path,
+        "match_pattern": _tool_match_pattern,
         "list_prs": _tool_list_prs,
         "get_pr_impact": _tool_get_pr_impact,
         "triage_prs": _tool_triage_prs,
