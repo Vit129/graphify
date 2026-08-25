@@ -11,6 +11,58 @@ class PatternQueryError(Exception):
     pass
 
 
+# Backstop against pathological patterns: recursion depth equals step count,
+# and an unpruned traversal's cost multiplies per hop (#p20-review findings
+# 4 & 5). Kept generous enough for any realistic query.
+MAX_PATTERN_STEPS = 20
+MAX_LIMIT = 1000
+
+_WHERE_COND_RE = re.compile(
+    r"""^([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*(=|!=|CONTAINS|STARTS\s+WITH)\s*['"]([^'"]+)['"]$""",
+    re.IGNORECASE,
+)
+
+
+def _parse_where_clauses(where_str: str, known_vars: set[str]) -> list[tuple[str, str, str, str]]:
+    """Parse `a AND b AND ...` into (var, field, OP, value) tuples, once,
+    up front -- a clause that doesn't parse, or references a variable not
+    bound anywhere in the MATCH pattern, is a query error, not something to
+    silently skip (a silently-ignored clause previously made the engine
+    return confidently wrong results, e.g. all nodes for an unquoted-value
+    typo instead of an error)."""
+    if not where_str:
+        return []
+    parsed: list[tuple[str, str, str, str]] = []
+    for clause in re.split(r"\s+AND\s+", where_str, flags=re.IGNORECASE):
+        clause = clause.strip()
+        m = _WHERE_COND_RE.match(clause)
+        if not m:
+            raise PatternQueryError(
+                f"Could not parse WHERE clause: {clause!r} "
+                "(expected \"var.field OP 'value'\", OP one of = != CONTAINS 'STARTS WITH')"
+            )
+        var_name, field, op, target_val = m.groups()
+        if var_name not in known_vars:
+            raise PatternQueryError(
+                f"WHERE clause references {var_name!r}, which is not bound in the MATCH pattern"
+            )
+        parsed.append((var_name, field, re.sub(r"\s+", " ", op.upper()), target_val))
+    return parsed
+
+
+def _apply_where_op(op: str, val: str, target_val: str) -> bool:
+    val, target_val = val.lower(), target_val.lower()
+    if op == "=":
+        return val == target_val
+    if op == "!=":
+        return val != target_val
+    if op == "CONTAINS":
+        return target_val in val
+    if op == "STARTS WITH":
+        return val.startswith(target_val)
+    raise PatternQueryError(f"Unsupported WHERE operator: {op!r}")
+
+
 def parse_and_execute_pattern(
     G: nx.Graph, query: str, *, as_dict: bool = False
 ) -> list[dict[str, Any]] | str:
@@ -34,7 +86,7 @@ def parse_and_execute_pattern(
     return_str = return_part.group(1).strip() if return_part else ""
 
     limit_part = re.search(r"LIMIT\s+(\d+)", query, re.IGNORECASE)
-    limit = int(limit_part.group(1)) if limit_part else 100
+    limit = min(int(limit_part.group(1)), MAX_LIMIT) if limit_part else 100
 
     # Parse node and edge sequence: (a:type)-[:rel]->(b:type)
     # Tokenize pattern:
@@ -46,7 +98,7 @@ def parse_and_execute_pattern(
     pos = 0
     while pos < len(match_str):
         m = step_pattern.match(match_str, pos)
-        if not m:
+        if not m or m.end() == pos:
             break
         nvar = m.group("nvar") or f"_n{len(steps)}"
         ntype = (m.group("ntype") or "").lower()
@@ -65,50 +117,44 @@ def parse_and_execute_pattern(
 
     if not steps:
         raise PatternQueryError(f"Could not parse MATCH pattern: {match_str}")
+    if pos < len(match_str.rstrip()):
+        raise PatternQueryError(
+            f"Could not parse MATCH pattern starting at {match_str[pos:]!r} "
+            f"(in: {match_str!r})"
+        )
+    if len(steps) > MAX_PATTERN_STEPS:
+        raise PatternQueryError(
+            f"MATCH pattern has {len(steps)} steps, exceeding the limit of {MAX_PATTERN_STEPS}"
+        )
 
-    # Helper to check node type
+    where_clauses = _parse_where_clauses(where_str, known_vars={s["var"] for s in steps})
+
+    # Helper to check node type -- file_type only, exact match. Substring
+    # matching against label (or against file_type) let a type filter like
+    # (a:route) match any node whose *name* happens to contain "route"
+    # (e.g. reroute()), which is a type filter matching on the wrong field.
     def _node_type_matches(nid: str, req_type: str) -> bool:
         if not req_type:
             return True
-        d = G.nodes[nid]
-        ft = str(d.get("file_type", "")).lower()
-        lbl = str(d.get("label", "")).lower()
-        return req_type == ft or req_type in ft or req_type in lbl
+        return str(G.nodes[nid].get("file_type", "")).lower() == req_type
 
-    # Helper to check where condition
     def _eval_where(env: dict[str, str]) -> bool:
-        if not where_str:
-            return True
-        # Simple evaluation of clauses split by AND
-        clauses = re.split(r"\s+AND\s+", where_str, flags=re.IGNORECASE)
-        for clause in clauses:
-            clause = clause.strip()
-            # var.field = 'val' or var.field CONTAINS 'val' or var.field != 'val'
-            m_cond = re.match(
-                r"""([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*(=|!=|CONTAINS|STARTS\s+WITH)\s*['"]([^'"]+)['"]""",
-                clause,
-                re.IGNORECASE,
-            )
-            if m_cond:
-                var_name, field, op, target_val = m_cond.groups()
-                nid = env.get(var_name)
-                if not nid or nid not in G.nodes:
-                    return False
-                d = G.nodes[nid]
-                val = str(d.get(field, nid if field in ("id", "name") else ""))
-                op = op.upper()
-                if op == "=":
-                    if val.lower() != target_val.lower():
-                        return False
-                elif op == "!=":
-                    if val.lower() == target_val.lower():
-                        return False
-                elif op == "CONTAINS":
-                    if target_val.lower() not in val.lower():
-                        return False
-                elif "STARTS" in op:
-                    if not val.lower().startswith(target_val.lower()):
-                        return False
+        """Only checks clauses whose variable is already bound in `env` --
+        clauses on a not-yet-bound variable are deferred (not skipped: this
+        is called again as later steps bind more variables, and always once
+        more with the complete env at the leaf, when every clause becomes
+        checkable). This lets a failing WHERE prune the search as soon as its
+        variable is bound, instead of only after a full path is assembled."""
+        for var_name, field, op, target_val in where_clauses:
+            nid = env.get(var_name)
+            if nid is None:
+                continue
+            if nid not in G.nodes:
+                return False
+            d = G.nodes[nid]
+            val = str(d.get(field, nid if field in ("id", "name") else ""))
+            if not _apply_where_op(op, val, target_val):
+                return False
         return True
 
     # Backtracking search over the path pattern
@@ -125,15 +171,26 @@ def parse_and_execute_pattern(
         step = steps[step_idx]
         var = step["var"]
         req_type = step["type"]
+        bound_nodes = set(current_env.values())
+
+        def _bind_and_recurse(candidate: str) -> None:
+            # Different pattern variables must bind to different nodes within
+            # one match (standard Cypher MATCH semantics) -- also the cycle
+            # guard: without it, a path could revisit a node it already
+            # bound to an earlier variable and recurse without ever
+            # terminating up to MAX_PATTERN_STEPS deep for every revisit.
+            if candidate in bound_nodes or not _node_type_matches(candidate, req_type):
+                return
+            current_env[var] = candidate
+            if _eval_where(current_env):
+                _search(step_idx + 1, current_env)
+            current_env.pop(var, None)
 
         if step_idx == 0:
             for nid in G.nodes():
-                if _node_type_matches(nid, req_type):
-                    current_env[var] = nid
-                    _search(step_idx + 1, current_env)
-                    current_env.pop(var, None)
-                    if len(results) >= limit:
-                        return
+                _bind_and_recurse(nid)
+                if len(results) >= limit:
+                    return
         else:
             prev_step = steps[step_idx - 1]
             prev_nid = current_env[prev_step["var"]]
@@ -159,14 +216,16 @@ def parse_and_execute_pattern(
                             candidates.add(pred)
 
             for cand in candidates:
-                if _node_type_matches(cand, req_type):
-                    current_env[var] = cand
-                    _search(step_idx + 1, current_env)
-                    current_env.pop(var, None)
-                    if len(results) >= limit:
-                        return
+                _bind_and_recurse(cand)
+                if len(results) >= limit:
+                    return
 
-    _search(0, {})
+    try:
+        _search(0, {})
+    except RecursionError as exc:
+        raise PatternQueryError(
+            "Pattern query recursed too deeply -- reduce the number of MATCH steps"
+        ) from exc
 
     # Project return fields
     return_fields: list[tuple[str, str]] = []
