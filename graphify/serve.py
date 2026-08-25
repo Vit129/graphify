@@ -182,7 +182,7 @@ def _community_header(cid: int, community_name) -> str:
     return base
 
 
-def _shortest_path_text(G: nx.Graph, arguments: dict) -> str:
+def _shortest_path_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
     """Body of the `shortest_path` MCP tool (module-level so tests can call it
     without an mcp install).
 
@@ -245,7 +245,209 @@ def _shortest_path_text(G: nx.Graph, arguments: dict) -> str:
         else:
             segments.append(f"<--{rel}{conf_str}-- {G.nodes[v].get('label', v)}")
     prefix = ("\n".join(warnings) + "\n") if warnings else ""
-    return prefix + f"Shortest path ({hops} hops):\n  " + " ".join(segments)
+    stale_banner = ""
+    if graph_path and path_nodes:
+        from graphify.staleness import format_staleness_banner
+        src_files = [G.nodes[n].get("source_file") for n in path_nodes if G.nodes[n].get("source_file")]
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + prefix + f"Shortest path ({hops} hops):\n  " + " ".join(segments)
+
+
+def _tool_get_node_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    label = arguments["label"]
+    matches = _find_node(G, label)
+    if not matches:
+        return f"No node matching '{label}' found."
+    nid = matches[0]
+    d = G.nodes[nid]
+    tied = _find_node_tied_group(G, label)
+    prefix = (
+        f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+        f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+        if len(tied) >= 2 else ""
+    )
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        src = d.get("source_file")
+        stale_banner = format_staleness_banner(graph_path, [str(src)] if src else [])
+    return stale_banner + prefix + "\n".join([
+        f"Node: {sanitize_label(d.get('label', nid))}",
+        f"  ID: {sanitize_label(nid)}",
+        f"  Source: {sanitize_label(str(d.get('source_file', '')))} {sanitize_label(str(d.get('source_location', '')))}",
+        f"  Type: {sanitize_label(str(d.get('file_type', '')))}",
+        f"  Community: {sanitize_label(str(d.get('community_name') or d.get('community', '')))}",
+        f"  Degree: {G.degree(nid)}",
+    ])
+
+
+def _tool_get_neighbors_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    label = arguments["label"].lower()
+    rel_filter = arguments.get("relation_filter", "").lower()
+    matches = _find_node(G, label)
+    if not matches:
+        return f"No node matching '{label}' found."
+    nid = matches[0]
+    tied = _find_node_tied_group(G, label)
+    prefix = (
+        f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+        f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+        if len(tied) >= 2 else ""
+    )
+    src_files = [G.nodes[nid].get("source_file")]
+    lines = [prefix + f"Neighbors of {sanitize_label(G.nodes[nid].get('label', nid))}:"]
+    for nb in G.successors(nid):
+        d = edge_data(G, nid, nb)
+        rel = d.get("relation", "")
+        if rel_filter and rel_filter not in rel.lower():
+            continue
+        arrow = "-->" if d.get("_src", nid) == nid else "<--"
+        lines.append(
+            f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
+            f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
+        )
+        src_files.append(G.nodes[nb].get("source_file"))
+    for nb in G.predecessors(nid):
+        d = edge_data(G, nb, nid)
+        rel = d.get("relation", "")
+        if rel_filter and rel_filter not in rel.lower():
+            continue
+        arrow = "<--" if d.get("_src", nb) == nb else "-->"
+        lines.append(
+            f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
+            f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
+        )
+        src_files.append(G.nodes[nb].get("source_file"))
+
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_blast_radius_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    label = arguments["node"]
+    max_hops = min(int(arguments.get("max_hops", 3)), 6)
+    direction = arguments.get("direction", "both")
+    if direction not in ("callers", "callees", "both"):
+        return f"Invalid direction '{direction}'. Use 'callers', 'callees', or 'both'."
+    matches = _find_node(G, label)
+    if not matches:
+        return f"No node matching '{label}' found."
+    nid = matches[0]
+    tied = _find_node_tied_group(G, label)
+    warn_prefix = (
+        f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+        f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+        if len(tied) >= 2 else ""
+    )
+
+    hops, truncated, node_cap, node_confidence = _blast_radius_hops(G, nid, max_hops, direction)
+    total = sum(len(h) for h in hops)
+    label_str = sanitize_label(G.nodes[nid].get("label", nid))
+    lines = [warn_prefix + f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
+    src_files = [G.nodes[nid].get("source_file")]
+    for i, hop_nodes in enumerate(hops, 1):
+        lines.append(f"\nHop {i} ({len(hop_nodes)} node(s)):")
+        for n in hop_nodes:
+            d = G.nodes[n]
+            conf = sanitize_label(node_confidence.get(n, ""))
+            lines.append(
+                f"  {sanitize_label(d.get('label', n))} [{sanitize_label(str(d.get('source_file', '')))}]"
+                f"{f' [{conf}]' if conf else ''}"
+            )
+            src_files.append(d.get("source_file"))
+    if truncated:
+        lines.append(f"\n... capped at {node_cap} nodes total, output may be incomplete. Narrow max_hops or direction for full coverage.")
+
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_get_community_text(
+    G: nx.Graph, communities: dict, arguments: dict, graph_path: Path | str | None = None
+) -> str:
+    cid = int(arguments["community_id"])
+    nodes = communities.get(cid, [])
+    if not nodes:
+        return f"Community {cid} not found."
+    header = _community_header(cid, G.nodes[nodes[0]].get("community_name"))
+    lines = [f"{header} ({len(nodes)} nodes):"]
+    src_files = []
+    for n in nodes:
+        d = G.nodes[n]
+        # Sanitise label and source_file (F-010).
+        lines.append(
+            f"  {sanitize_label(d.get('label', n))} "
+            f"[{sanitize_label(str(d.get('source_file', '')))}]"
+        )
+        src_files.append(d.get("source_file"))
+    stale_banner = ""
+    if graph_path and src_files:
+        from graphify.staleness import format_staleness_banner
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_god_nodes_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.analyze import god_nodes as _god_nodes
+    nodes = _god_nodes(G, top_n=int(arguments.get("top_n", 10)))
+    lines = ["God nodes (most connected):"]
+    lines += [f"  {i}. {n['label']} - {n['degree']} edges" for i, n in enumerate(nodes, 1)]
+    stale_banner = ""
+    if graph_path and nodes:
+        from graphify.staleness import format_staleness_banner
+        src_files = [
+            G.nodes[n["id"]].get("source_file")
+            for n in nodes
+            if n.get("id") and n["id"] in G.nodes and G.nodes[n["id"]].get("source_file")
+        ]
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_dead_code_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.analyze import unreachable_functions
+    dead = unreachable_functions(G, top_n=int(arguments.get("top_n", 15)))
+    if not dead:
+        return "No unreachable functions found."
+    lines = [f"Unreachable functions (heuristic, {len(dead)} shown):"]
+    lines += [f"  {d['label']} [{d['source_file']}]" for d in dead]
+    stale_banner = ""
+    if graph_path and dead:
+        from graphify.staleness import format_staleness_banner
+        src_files = [d.get("source_file") for d in dead if d.get("source_file")]
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_match_pattern_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.pattern_query import parse_and_execute_pattern, PatternQueryError
+    pat = arguments["pattern"]
+    try:
+        res, matched_nodes = parse_and_execute_pattern(
+            G, pat, as_dict=False, return_matched_nodes=True
+        )
+        if graph_path and matched_nodes:
+            from graphify.staleness import format_staleness_banner
+            src_files = [
+                str(G.nodes[n].get("source_file"))
+                for n in matched_nodes
+                if G.nodes[n].get("source_file")
+            ]
+            stale_banner = format_staleness_banner(
+                graph_path,
+                [f for f in sorted(set(src_files)) if f],
+            )
+            if stale_banner:
+                res = stale_banner + str(res)
+        return str(res)
+    except PatternQueryError as exc:
+        return f"Error executing pattern: {exc}"
 
 
 def _build_server(graph_path: str):
@@ -540,6 +742,23 @@ def _build_server(graph_path: str):
                 },
             ),
             types.Tool(
+                name="match_pattern",
+                description=(
+                    "Execute a Cypher-like graph pattern query over the codebase graph. "
+                    "Supports: MATCH (a:type)-[:relation]->(b:type) WHERE a.label CONTAINS 'foo' RETURN a.label, b.label LIMIT N"
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Pattern query string (e.g. MATCH (f:function)-[:calls]->(g) WHERE f.label CONTAINS 'main' RETURN f.label, g.label)",
+                        },
+                    },
+                    "required": ["pattern"],
+                },
+            ),
+            types.Tool(
                 name="triage_prs",
                 description=(
                     "Return all actionable open PRs (correct base, not stale) with full graph impact data "
@@ -605,7 +824,7 @@ def _build_server(graph_path: str):
         exclude_paths = arguments.get("exclude_paths")
         semantic_fusion = arguments.get("semantic_fusion", "boost")
         _t0 = _time.perf_counter()
-        result = _query_graph_text(
+        result, cited_files = _query_graph_text(
             G,
             question,
             mode=mode,
@@ -616,7 +835,13 @@ def _build_server(graph_path: str):
             exclude_paths=exclude_paths,
             semantic_fusion=semantic_fusion,
             embedding_cache_file=Path(active_graph_path).parent / "cache" / "embeddings" / "index.npz",
+            return_nodes=True,
         )
+        if active_graph_path and cited_files:
+            from graphify.staleness import format_staleness_banner
+            stale_banner = format_staleness_banner(active_graph_path, cited_files)
+            if stale_banner:
+                result = stale_banner + result
         querylog.log_query(
             kind="mcp_query",
             question=question,
@@ -630,134 +855,22 @@ def _build_server(graph_path: str):
         return result
 
     def _tool_get_node(arguments: dict) -> str:
-        label = arguments["label"]
-        # Was a standalone lowercase-substring-anywhere scan (label in every
-        # node's label, whole graph) - matched 16 nodes for a query like
-        # "context" (including unrelated ones, e.g. "ContextualLogger") with
-        # no ambiguity signal at all. Now shares the same tiered resolver and
-        # ambiguity check as `explain`/`get_neighbors`/`blast_radius`.
-        matches = _find_node(G, label)
-        if not matches:
-            return f"No node matching '{label}' found."
-        nid = matches[0]
-        d = G.nodes[nid]
-        tied = _find_node_tied_group(G, label)
-        prefix = (
-            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
-            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
-            if len(tied) >= 2 else ""
-        )
-        # Sanitise every LLM-derived field before concatenation (F-010).
-        return prefix + "\n".join([
-            f"Node: {sanitize_label(d.get('label', nid))}",
-            f"  ID: {sanitize_label(nid)}",
-            f"  Source: {sanitize_label(str(d.get('source_file', '')))} {sanitize_label(str(d.get('source_location', '')))}",
-            f"  Type: {sanitize_label(str(d.get('file_type', '')))}",
-            f"  Community: {sanitize_label(str(d.get('community_name') or d.get('community', '')))}",
-            f"  Degree: {G.degree(nid)}",
-        ])
+        return _tool_get_node_text(G, arguments, active_graph_path)
 
     def _tool_get_neighbors(arguments: dict) -> str:
-        label = arguments["label"].lower()
-        rel_filter = arguments.get("relation_filter", "").lower()
-        matches = _find_node(G, label)
-        if not matches:
-            return f"No node matching '{label}' found."
-        nid = matches[0]
-        tied = _find_node_tied_group(G, label)
-        prefix = (
-            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
-            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
-            if len(tied) >= 2 else ""
-        )
-        lines = [prefix + f"Neighbors of {sanitize_label(G.nodes[nid].get('label', nid))}:"]
-        for nb in G.successors(nid):
-            d = edge_data(G, nid, nb)
-            rel = d.get("relation", "")
-            if rel_filter and rel_filter not in rel.lower():
-                continue
-            arrow = "-->" if d.get("_src", nid) == nid else "<--"
-            lines.append(
-                f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
-                f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
-            )
-        for nb in G.predecessors(nid):
-            d = edge_data(G, nb, nid)
-            rel = d.get("relation", "")
-            if rel_filter and rel_filter not in rel.lower():
-                continue
-            arrow = "<--" if d.get("_src", nb) == nb else "-->"
-            lines.append(
-                f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
-                f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
-            )
-        return "\n".join(lines)
+        return _tool_get_neighbors_text(G, arguments, active_graph_path)
 
     def _tool_blast_radius(arguments: dict) -> str:
-        label = arguments["node"]
-        max_hops = min(int(arguments.get("max_hops", 3)), 6)
-        direction = arguments.get("direction", "both")
-        if direction not in ("callers", "callees", "both"):
-            return f"Invalid direction '{direction}'. Use 'callers', 'callees', or 'both'."
-        matches = _find_node(G, label)
-        if not matches:
-            return f"No node matching '{label}' found."
-        nid = matches[0]
-        tied = _find_node_tied_group(G, label)
-        warn_prefix = (
-            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
-            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
-            if len(tied) >= 2 else ""
-        )
-
-        hops, truncated, node_cap, node_confidence = _blast_radius_hops(G, nid, max_hops, direction)
-        total = sum(len(h) for h in hops)
-        label_str = sanitize_label(G.nodes[nid].get("label", nid))
-        lines = [warn_prefix + f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
-        for i, hop_nodes in enumerate(hops, 1):
-            lines.append(f"\nHop {i} ({len(hop_nodes)} node(s)):")
-            for n in hop_nodes:
-                d = G.nodes[n]
-                conf = sanitize_label(node_confidence.get(n, ""))
-                lines.append(
-                    f"  {sanitize_label(d.get('label', n))} [{sanitize_label(str(d.get('source_file', '')))}]"
-                    f"{f' [{conf}]' if conf else ''}"
-                )
-        if truncated:
-            lines.append(f"\n... capped at {node_cap} nodes total, output may be incomplete. Narrow max_hops or direction for full coverage.")
-        return "\n".join(lines)
+        return _tool_blast_radius_text(G, arguments, active_graph_path)
 
     def _tool_get_community(arguments: dict) -> str:
-        cid = int(arguments["community_id"])
-        nodes = communities.get(cid, [])
-        if not nodes:
-            return f"Community {cid} not found."
-        header = _community_header(cid, G.nodes[nodes[0]].get("community_name"))
-        lines = [f"{header} ({len(nodes)} nodes):"]
-        for n in nodes:
-            d = G.nodes[n]
-            # Sanitise label and source_file (F-010).
-            lines.append(
-                f"  {sanitize_label(d.get('label', n))} "
-                f"[{sanitize_label(str(d.get('source_file', '')))}]"
-            )
-        return "\n".join(lines)
+        return _tool_get_community_text(G, communities, arguments, active_graph_path)
 
     def _tool_god_nodes(arguments: dict) -> str:
-        from graphify.analyze import god_nodes as _god_nodes
-        nodes = _god_nodes(G, top_n=int(arguments.get("top_n", 10)))
-        lines = ["God nodes (most connected):"]
-        lines += [f"  {i}. {n['label']} - {n['degree']} edges" for i, n in enumerate(nodes, 1)]
-        return "\n".join(lines)
+        return _tool_god_nodes_text(G, arguments, active_graph_path)
 
     def _tool_dead_code(arguments: dict) -> str:
-        from graphify.analyze import unreachable_functions
-        dead = unreachable_functions(G, top_n=int(arguments.get("top_n", 15)))
-        if not dead:
-            return "No unreachable functions found."
-        lines = [f"Unreachable functions (heuristic, {len(dead)} shown):"]
-        lines += [f"  {d['label']} [{d['source_file']}]" for d in dead]
-        return "\n".join(lines)
+        return _tool_dead_code_text(G, arguments, active_graph_path)
 
     def _tool_graph_stats(_: dict) -> str:
         confs = [d.get("confidence", "EXTRACTED") for _, _, d in G.edges(data=True)]
@@ -772,7 +885,7 @@ def _build_server(graph_path: str):
         )
 
     def _tool_shortest_path(arguments: dict) -> str:
-        return _shortest_path_text(G, arguments)
+        return _shortest_path_text(G, arguments, active_graph_path)
 
     def _tool_list_prs(arguments: dict) -> str:
         from graphify.prs import fetch_prs, fetch_worktrees, format_prs_text, _detect_default_branch
@@ -859,6 +972,9 @@ def _build_server(graph_path: str):
             )
         return "\n\n".join(lines)
 
+    def _tool_match_pattern(arguments: dict) -> str:
+        return _tool_match_pattern_text(G, arguments, active_graph_path)
+
     _handlers = {
         "query_graph": _tool_query_graph,
         "save_result": _tool_save_result,
@@ -870,6 +986,7 @@ def _build_server(graph_path: str):
         "graph_stats": _tool_graph_stats,
         "dead_code": _tool_dead_code,
         "shortest_path": _tool_shortest_path,
+        "match_pattern": _tool_match_pattern,
         "list_prs": _tool_list_prs,
         "get_pr_impact": _tool_get_pr_impact,
         "triage_prs": _tool_triage_prs,

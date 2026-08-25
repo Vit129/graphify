@@ -6830,6 +6830,12 @@ def extract_python(path: Path) -> dict:
     result = _extract_generic(path, _PYTHON_CONFIG)
     if "error" not in result:
         _extract_python_rationale(path, result)
+        try:
+            from graphify.routes import extract_python_routes
+            src_text = path.read_text(encoding="utf-8", errors="replace")
+            extract_python_routes(path, src_text, result)
+        except Exception as exc:
+            print(f"[graphify] Python route extraction failed for {path}: {exc}", file=sys.stderr)
     return result
 
 
@@ -6841,7 +6847,15 @@ def extract_js(path: Path) -> dict:
         config = _TS_CONFIG
     else:
         config = _JS_CONFIG
-    return _extract_generic(path, config)
+    result = _extract_generic(path, config)
+    if "error" not in result:
+        try:
+            from graphify.routes import extract_js_routes
+            src_text = path.read_text(encoding="utf-8", errors="replace")
+            extract_js_routes(path, src_text, result)
+        except Exception as exc:
+            print(f"[graphify] JS/TS route extraction failed for {path}: {exc}", file=sys.stderr)
+    return result
 
 
 def extract_svelte(path: Path) -> dict:

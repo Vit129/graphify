@@ -17,6 +17,7 @@ import math
 import re
 from array import array
 from pathlib import Path
+from typing import Literal, overload
 import networkx as nx
 from graphify.security import sanitize_label
 from graphify.detect import DOC_EXTENSIONS
@@ -1292,12 +1293,29 @@ def _best_anchor_neighbor(G: nx.Graph, nid: str) -> str:
     return best_file
 
 
+@overload
 def _subgraph_to_text(
     G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *,
     seeds: list[str] | None = None,
     hop_distances: dict[str, int] | None = None,
     relevance_scores: dict[str, float] | None = None,
-) -> str:
+    return_nodes: Literal[False] = False,
+) -> str: ...
+@overload
+def _subgraph_to_text(
+    G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *,
+    seeds: list[str] | None = None,
+    hop_distances: dict[str, int] | None = None,
+    relevance_scores: dict[str, float] | None = None,
+    return_nodes: Literal[True],
+) -> tuple[str, list[str]]: ...
+def _subgraph_to_text(
+    G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *,
+    seeds: list[str] | None = None,
+    hop_distances: dict[str, int] | None = None,
+    relevance_scores: dict[str, float] | None = None,
+    return_nodes: bool = False,
+) -> str | tuple[str, list[str]]:
     """Render subgraph as text, cutting at token_budget (~4 chars/token, matching
     llm.py's extraction-side estimate).
 
@@ -1367,6 +1385,7 @@ def _subgraph_to_text(
             )
             lines.append(line)
     output = "\n".join(lines)
+    shown_nids = ordered
     if len(output) > char_budget:
         cut_at = output[:char_budget].rfind("\n")
         cut_at = cut_at if cut_at > 0 else char_budget
@@ -1378,6 +1397,14 @@ def _subgraph_to_text(
             + f"\n... (truncated — {cut_count} more nodes cut by ~{token_budget}-token budget."
             f" Narrow with context_filter=['call'] or use get_node for a specific symbol)"
         )
+        shown_nids = ordered[:shown_nodes]
+    if return_nodes:
+        shown_files = [
+            str(G.nodes[n].get("source_file"))
+            for n in shown_nids
+            if G.nodes[n].get("source_file")
+        ]
+        return output, [f for f in shown_files if f]
     return output
 
 
@@ -1393,7 +1420,8 @@ def _query_graph_text(
     exclude_paths: list[str] | None = None,
     semantic_fusion: str = "boost",
     embedding_cache_file: "Path | None" = None,
-) -> str:
+    return_nodes: bool = False,
+) -> str | tuple[str, list[str]]:
     def _in_path_scope(nid: str) -> bool:
         if not include_paths and not exclude_paths:
             return True
@@ -1463,6 +1491,8 @@ def _query_graph_text(
                 "fallback (graphifyy[embeddings]) - low confidence, verify before relying on this"
             )
     if not start_nodes:
+        if return_nodes:
+            return "No matching nodes found.", []
         return "No matching nodes found."
     resolved_filters, filter_source = _resolve_context_filters(question, context_filters)
     traversal_graph = _filter_graph_by_context(G, resolved_filters)
@@ -1479,6 +1509,13 @@ def _query_graph_text(
     header = " | ".join(header_parts) + "\n\n"
     hop_distances = _hop_distances(nodes, edges, start_nodes)
     relevance_scores = {nid: score for score, nid in scored}
+    if return_nodes:
+        text, cited_files = _subgraph_to_text(
+            traversal_graph, nodes, edges, token_budget,
+            seeds=start_nodes, hop_distances=hop_distances, relevance_scores=relevance_scores,
+            return_nodes=True,
+        )
+        return header + text, cited_files
     return header + _subgraph_to_text(
         traversal_graph, nodes, edges, token_budget,
         seeds=start_nodes, hop_distances=hop_distances, relevance_scores=relevance_scores,
