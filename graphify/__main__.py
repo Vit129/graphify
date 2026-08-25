@@ -3398,7 +3398,6 @@ def main() -> None:
         try:
             res = parse_and_execute_pattern(graph, query_pattern, as_dict=as_json)
             if as_json:
-                import json
                 print(json.dumps(res, indent=2))
             else:
                 print(res)
