@@ -127,3 +127,30 @@ export async function POST(request: Request) {
 
     assert "GET /api/auth" in node_labels
     assert "POST /api/auth" in node_labels
+
+
+def test_route_ids_do_not_collide_across_same_named_files(tmp_path):
+    """Regression: _make_route_id used to key on path.stem, so two same-
+    filename route files in different directories (a routine monorepo shape)
+    collided into one route node, silently merging both services' `handles`
+    edges onto it (#p20-review finding 3)."""
+    svc_a = tmp_path / "svcA"
+    svc_a.mkdir()
+    svc_b = tmp_path / "svcB"
+    svc_b.mkdir()
+    source = (
+        "const express = require('express');\n"
+        "const app = express();\n"
+        "app.get('/users', handler);\n"
+    )
+    file_a = svc_a / "routes.js"
+    file_a.write_text(source, encoding="utf-8")
+    file_b = svc_b / "routes.js"
+    file_b.write_text(source, encoding="utf-8")
+
+    result_a = extract_js(file_a)
+    result_b = extract_js(file_b)
+
+    route_id_a = next(n["id"] for n in result_a["nodes"] if n["label"] == "GET /users")
+    route_id_b = next(n["id"] for n in result_b["nodes"] if n["label"] == "GET /users")
+    assert route_id_a != route_id_b

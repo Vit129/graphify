@@ -7,10 +7,16 @@ from pathlib import Path
 from typing import Any
 
 
-def _make_route_id(stem: str, method: str, path_str: str, line: int) -> str:
+def _make_route_id(path: Path, method: str, path_str: str, line: int) -> str:
+    """path is the source file's own path (see _file_stem's docstring for why
+    this must be the full relative path, not path.stem -- two files with the
+    same filename in different directories, a routine monorepo shape (e.g.
+    svcA/routes.js and svcB/routes.js), would otherwise collide into one
+    route node and merge their `handles` edges (#p20-review finding 3)."""
     from graphify.extract import _make_id
+    from graphify.extractors.base import _file_stem
     clean_path = path_str.strip().replace(" ", "_")
-    return _make_id(stem, "route", f"{method.upper()}_{clean_path}_{line}")
+    return _make_id(_file_stem(path), "route", f"{method.upper()}_{clean_path}_{line}")
 
 
 def extract_python_routes(path: Path, source_text: str, result: dict[str, Any]) -> None:
@@ -20,7 +26,6 @@ def extract_python_routes(path: Path, source_text: str, result: dict[str, Any]) 
     except Exception:
         return
 
-    stem = path.stem
     nodes = result.setdefault("nodes", [])
     edges = result.setdefault("edges", [])
     seen_ids = {n["id"] for n in nodes}
@@ -74,7 +79,7 @@ def extract_python_routes(path: Path, source_text: str, result: dict[str, Any]) 
                 if route_path and http_methods:
                     for method in http_methods:
                         route_label = f"{method} {route_path}"
-                        rid = _make_route_id(stem, method, route_path, item.lineno)
+                        rid = _make_route_id(path, method, route_path, item.lineno)
                         if rid not in seen_ids:
                             seen_ids.add(rid)
                             nodes.append({
@@ -97,7 +102,7 @@ def extract_python_routes(path: Path, source_text: str, result: dict[str, Any]) 
             if len(item.args) >= 2 and isinstance(item.args[0], ast.Constant) and isinstance(item.args[0].value, str):
                 route_path = item.args[0].value
                 route_label = f"ROUTE /{route_path.lstrip('/')}"
-                rid = _make_route_id(stem, "ROUTE", route_path, item.lineno)
+                rid = _make_route_id(path, "ROUTE", route_path, item.lineno)
                 if rid not in seen_ids:
                     seen_ids.add(rid)
                     nodes.append({
@@ -130,7 +135,6 @@ def extract_python_routes(path: Path, source_text: str, result: dict[str, Any]) 
 
 def extract_js_routes(path: Path, source_text: str, result: dict[str, Any]) -> None:
     """Extract API routes (Express, NestJS, Next.js App Router) from JS/TS source."""
-    stem = path.stem
     nodes = result.setdefault("nodes", [])
     edges = result.setdefault("edges", [])
     seen_ids = {n["id"] for n in nodes}
@@ -154,7 +158,7 @@ def extract_js_routes(path: Path, source_text: str, result: dict[str, Any]) -> N
         handler_ref = match.group(3).split(".")[-1]
         line_num = source_text[:match.start()].count("\n") + 1
         route_label = f"{method} {route_path}"
-        rid = _make_route_id(stem, method, route_path, line_num)
+        rid = _make_route_id(path, method, route_path, line_num)
         if rid not in seen_ids:
             seen_ids.add(rid)
             nodes.append({
@@ -191,7 +195,7 @@ def extract_js_routes(path: Path, source_text: str, result: dict[str, Any]) -> N
             full_path = f"/{full_path}"
         line_num = source_text[:match.start()].count("\n") + 1
         route_label = f"{method} {full_path}"
-        rid = _make_route_id(stem, method, full_path, line_num)
+        rid = _make_route_id(path, method, full_path, line_num)
         if rid not in seen_ids:
             seen_ids.add(rid)
             nodes.append({
@@ -221,7 +225,7 @@ def extract_js_routes(path: Path, source_text: str, result: dict[str, Any]) -> N
             for m in m_pattern.finditer(source_text):
                 line_num = source_text[:m.start()].count("\n") + 1
                 route_label = f"{method} {api_route_path}"
-                rid = _make_route_id(stem, method, api_route_path, line_num)
+                rid = _make_route_id(path, method, api_route_path, line_num)
                 if rid not in seen_ids:
                     seen_ids.add(rid)
                     nodes.append({
