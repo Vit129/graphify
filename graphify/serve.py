@@ -182,7 +182,7 @@ def _community_header(cid: int, community_name) -> str:
     return base
 
 
-def _shortest_path_text(G: nx.Graph, arguments: dict) -> str:
+def _shortest_path_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
     """Body of the `shortest_path` MCP tool (module-level so tests can call it
     without an mcp install).
 
@@ -245,7 +245,127 @@ def _shortest_path_text(G: nx.Graph, arguments: dict) -> str:
         else:
             segments.append(f"<--{rel}{conf_str}-- {G.nodes[v].get('label', v)}")
     prefix = ("\n".join(warnings) + "\n") if warnings else ""
-    return prefix + f"Shortest path ({hops} hops):\n  " + " ".join(segments)
+    stale_banner = ""
+    if graph_path and path_nodes:
+        from graphify.staleness import format_staleness_banner
+        src_files = [G.nodes[n].get("source_file") for n in path_nodes if G.nodes[n].get("source_file")]
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + prefix + f"Shortest path ({hops} hops):\n  " + " ".join(segments)
+
+
+def _tool_get_node_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    label = arguments["label"]
+    matches = _find_node(G, label)
+    if not matches:
+        return f"No node matching '{label}' found."
+    nid = matches[0]
+    d = G.nodes[nid]
+    tied = _find_node_tied_group(G, label)
+    prefix = (
+        f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+        f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+        if len(tied) >= 2 else ""
+    )
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        src = d.get("source_file")
+        stale_banner = format_staleness_banner(graph_path, [str(src)] if src else [])
+    return stale_banner + prefix + "\n".join([
+        f"Node: {sanitize_label(d.get('label', nid))}",
+        f"  ID: {sanitize_label(nid)}",
+        f"  Source: {sanitize_label(str(d.get('source_file', '')))} {sanitize_label(str(d.get('source_location', '')))}",
+        f"  Type: {sanitize_label(str(d.get('file_type', '')))}",
+        f"  Community: {sanitize_label(str(d.get('community_name') or d.get('community', '')))}",
+        f"  Degree: {G.degree(nid)}",
+    ])
+
+
+def _tool_get_neighbors_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    label = arguments["label"].lower()
+    rel_filter = arguments.get("relation_filter", "").lower()
+    matches = _find_node(G, label)
+    if not matches:
+        return f"No node matching '{label}' found."
+    nid = matches[0]
+    tied = _find_node_tied_group(G, label)
+    prefix = (
+        f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+        f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+        if len(tied) >= 2 else ""
+    )
+    src_files = [G.nodes[nid].get("source_file")]
+    lines = [prefix + f"Neighbors of {sanitize_label(G.nodes[nid].get('label', nid))}:"]
+    for nb in G.successors(nid):
+        d = edge_data(G, nid, nb)
+        rel = d.get("relation", "")
+        if rel_filter and rel_filter not in rel.lower():
+            continue
+        arrow = "-->" if d.get("_src", nid) == nid else "<--"
+        lines.append(
+            f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
+            f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
+        )
+        src_files.append(G.nodes[nb].get("source_file"))
+    for nb in G.predecessors(nid):
+        d = edge_data(G, nb, nid)
+        rel = d.get("relation", "")
+        if rel_filter and rel_filter not in rel.lower():
+            continue
+        arrow = "<--" if d.get("_src", nb) == nb else "-->"
+        lines.append(
+            f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
+            f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
+        )
+        src_files.append(G.nodes[nb].get("source_file"))
+
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_blast_radius_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    label = arguments["node"]
+    max_hops = min(int(arguments.get("max_hops", 3)), 6)
+    direction = arguments.get("direction", "both")
+    if direction not in ("callers", "callees", "both"):
+        return f"Invalid direction '{direction}'. Use 'callers', 'callees', or 'both'."
+    matches = _find_node(G, label)
+    if not matches:
+        return f"No node matching '{label}' found."
+    nid = matches[0]
+    tied = _find_node_tied_group(G, label)
+    warn_prefix = (
+        f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
+        f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
+        if len(tied) >= 2 else ""
+    )
+
+    hops, truncated, node_cap, node_confidence = _blast_radius_hops(G, nid, max_hops, direction)
+    total = sum(len(h) for h in hops)
+    label_str = sanitize_label(G.nodes[nid].get("label", nid))
+    lines = [warn_prefix + f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
+    src_files = [G.nodes[nid].get("source_file")]
+    for i, hop_nodes in enumerate(hops, 1):
+        lines.append(f"\nHop {i} ({len(hop_nodes)} node(s)):")
+        for n in hop_nodes:
+            d = G.nodes[n]
+            conf = sanitize_label(node_confidence.get(n, ""))
+            lines.append(
+                f"  {sanitize_label(d.get('label', n))} [{sanitize_label(str(d.get('source_file', '')))}]"
+                f"{f' [{conf}]' if conf else ''}"
+            )
+            src_files.append(d.get("source_file"))
+    if truncated:
+        lines.append(f"\n... capped at {node_cap} nodes total, output may be incomplete. Narrow max_hops or direction for full coverage.")
+
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
 
 
 def _build_server(graph_path: str):
@@ -617,6 +737,12 @@ def _build_server(graph_path: str):
             semantic_fusion=semantic_fusion,
             embedding_cache_file=Path(active_graph_path).parent / "cache" / "embeddings" / "index.npz",
         )
+        if active_graph_path:
+            from graphify.staleness import format_staleness_banner
+            cited_files = re.findall(r'\[([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9_]+)(?::[0-9\-]+)?\]', result)
+            stale_banner = format_staleness_banner(active_graph_path, cited_files)
+            if stale_banner:
+                result = stale_banner + result
         querylog.log_query(
             kind="mcp_query",
             question=question,
@@ -630,102 +756,13 @@ def _build_server(graph_path: str):
         return result
 
     def _tool_get_node(arguments: dict) -> str:
-        label = arguments["label"]
-        # Was a standalone lowercase-substring-anywhere scan (label in every
-        # node's label, whole graph) - matched 16 nodes for a query like
-        # "context" (including unrelated ones, e.g. "ContextualLogger") with
-        # no ambiguity signal at all. Now shares the same tiered resolver and
-        # ambiguity check as `explain`/`get_neighbors`/`blast_radius`.
-        matches = _find_node(G, label)
-        if not matches:
-            return f"No node matching '{label}' found."
-        nid = matches[0]
-        d = G.nodes[nid]
-        tied = _find_node_tied_group(G, label)
-        prefix = (
-            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
-            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
-            if len(tied) >= 2 else ""
-        )
-        # Sanitise every LLM-derived field before concatenation (F-010).
-        return prefix + "\n".join([
-            f"Node: {sanitize_label(d.get('label', nid))}",
-            f"  ID: {sanitize_label(nid)}",
-            f"  Source: {sanitize_label(str(d.get('source_file', '')))} {sanitize_label(str(d.get('source_location', '')))}",
-            f"  Type: {sanitize_label(str(d.get('file_type', '')))}",
-            f"  Community: {sanitize_label(str(d.get('community_name') or d.get('community', '')))}",
-            f"  Degree: {G.degree(nid)}",
-        ])
+        return _tool_get_node_text(G, arguments, active_graph_path)
 
     def _tool_get_neighbors(arguments: dict) -> str:
-        label = arguments["label"].lower()
-        rel_filter = arguments.get("relation_filter", "").lower()
-        matches = _find_node(G, label)
-        if not matches:
-            return f"No node matching '{label}' found."
-        nid = matches[0]
-        tied = _find_node_tied_group(G, label)
-        prefix = (
-            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
-            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
-            if len(tied) >= 2 else ""
-        )
-        lines = [prefix + f"Neighbors of {sanitize_label(G.nodes[nid].get('label', nid))}:"]
-        for nb in G.successors(nid):
-            d = edge_data(G, nid, nb)
-            rel = d.get("relation", "")
-            if rel_filter and rel_filter not in rel.lower():
-                continue
-            arrow = "-->" if d.get("_src", nid) == nid else "<--"
-            lines.append(
-                f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
-                f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
-            )
-        for nb in G.predecessors(nid):
-            d = edge_data(G, nb, nid)
-            rel = d.get("relation", "")
-            if rel_filter and rel_filter not in rel.lower():
-                continue
-            arrow = "<--" if d.get("_src", nb) == nb else "-->"
-            lines.append(
-                f"  {arrow} {sanitize_label(G.nodes[nb].get('label', nb))} "
-                f"[{sanitize_label(str(rel))}] [{sanitize_label(str(d.get('confidence', '')))}]"
-            )
-        return "\n".join(lines)
+        return _tool_get_neighbors_text(G, arguments, active_graph_path)
 
     def _tool_blast_radius(arguments: dict) -> str:
-        label = arguments["node"]
-        max_hops = min(int(arguments.get("max_hops", 3)), 6)
-        direction = arguments.get("direction", "both")
-        if direction not in ("callers", "callees", "both"):
-            return f"Invalid direction '{direction}'. Use 'callers', 'callees', or 'both'."
-        matches = _find_node(G, label)
-        if not matches:
-            return f"No node matching '{label}' found."
-        nid = matches[0]
-        tied = _find_node_tied_group(G, label)
-        warn_prefix = (
-            f"warning: '{label}' matched {len(tied)} equally-plausible nodes "
-            f"({', '.join(tied[:5])}{', ...' if len(tied) > 5 else ''}) - showing '{nid}'.\n"
-            if len(tied) >= 2 else ""
-        )
-
-        hops, truncated, node_cap, node_confidence = _blast_radius_hops(G, nid, max_hops, direction)
-        total = sum(len(h) for h in hops)
-        label_str = sanitize_label(G.nodes[nid].get("label", nid))
-        lines = [warn_prefix + f"Blast radius of {label_str} (direction={direction}, max_hops={max_hops}): {total} node(s) within range"]
-        for i, hop_nodes in enumerate(hops, 1):
-            lines.append(f"\nHop {i} ({len(hop_nodes)} node(s)):")
-            for n in hop_nodes:
-                d = G.nodes[n]
-                conf = sanitize_label(node_confidence.get(n, ""))
-                lines.append(
-                    f"  {sanitize_label(d.get('label', n))} [{sanitize_label(str(d.get('source_file', '')))}]"
-                    f"{f' [{conf}]' if conf else ''}"
-                )
-        if truncated:
-            lines.append(f"\n... capped at {node_cap} nodes total, output may be incomplete. Narrow max_hops or direction for full coverage.")
-        return "\n".join(lines)
+        return _tool_blast_radius_text(G, arguments, active_graph_path)
 
     def _tool_get_community(arguments: dict) -> str:
         cid = int(arguments["community_id"])
