@@ -368,6 +368,88 @@ def _tool_blast_radius_text(G: nx.Graph, arguments: dict, graph_path: Path | str
     return stale_banner + "\n".join(lines)
 
 
+def _tool_get_community_text(
+    G: nx.Graph, communities: dict, arguments: dict, graph_path: Path | str | None = None
+) -> str:
+    cid = int(arguments["community_id"])
+    nodes = communities.get(cid, [])
+    if not nodes:
+        return f"Community {cid} not found."
+    header = _community_header(cid, G.nodes[nodes[0]].get("community_name"))
+    lines = [f"{header} ({len(nodes)} nodes):"]
+    src_files = []
+    for n in nodes:
+        d = G.nodes[n]
+        # Sanitise label and source_file (F-010).
+        lines.append(
+            f"  {sanitize_label(d.get('label', n))} "
+            f"[{sanitize_label(str(d.get('source_file', '')))}]"
+        )
+        src_files.append(d.get("source_file"))
+    stale_banner = ""
+    if graph_path and src_files:
+        from graphify.staleness import format_staleness_banner
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_god_nodes_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.analyze import god_nodes as _god_nodes
+    nodes = _god_nodes(G, top_n=int(arguments.get("top_n", 10)))
+    lines = ["God nodes (most connected):"]
+    lines += [f"  {i}. {n['label']} - {n['degree']} edges" for i, n in enumerate(nodes, 1)]
+    stale_banner = ""
+    if graph_path and nodes:
+        from graphify.staleness import format_staleness_banner
+        src_files = [
+            G.nodes[n["id"]].get("source_file")
+            for n in nodes
+            if n.get("id") and n["id"] in G.nodes and G.nodes[n["id"]].get("source_file")
+        ]
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_dead_code_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.analyze import unreachable_functions
+    dead = unreachable_functions(G, top_n=int(arguments.get("top_n", 15)))
+    if not dead:
+        return "No unreachable functions found."
+    lines = [f"Unreachable functions (heuristic, {len(dead)} shown):"]
+    lines += [f"  {d['label']} [{d['source_file']}]" for d in dead]
+    stale_banner = ""
+    if graph_path and dead:
+        from graphify.staleness import format_staleness_banner
+        src_files = [d.get("source_file") for d in dead if d.get("source_file")]
+        stale_banner = format_staleness_banner(graph_path, [str(f) for f in src_files if f])
+    return stale_banner + "\n".join(lines)
+
+
+def _tool_match_pattern_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.pattern_query import parse_and_execute_pattern, PatternQueryError
+    pat = arguments["pattern"]
+    try:
+        res, matched_nodes = parse_and_execute_pattern(
+            G, pat, as_dict=False, return_matched_nodes=True
+        )
+        if graph_path and matched_nodes:
+            from graphify.staleness import format_staleness_banner
+            src_files = [
+                str(G.nodes[n].get("source_file"))
+                for n in matched_nodes
+                if G.nodes[n].get("source_file")
+            ]
+            stale_banner = format_staleness_banner(
+                graph_path,
+                [f for f in sorted(set(src_files)) if f],
+            )
+            if stale_banner:
+                res = stale_banner + str(res)
+        return str(res)
+    except PatternQueryError as exc:
+        return f"Error executing pattern: {exc}"
+
+
 def _build_server(graph_path: str):
     """Build the configured low-level MCP Server (shared by every transport).
 
@@ -782,62 +864,13 @@ def _build_server(graph_path: str):
         return _tool_blast_radius_text(G, arguments, active_graph_path)
 
     def _tool_get_community(arguments: dict) -> str:
-        cid = int(arguments["community_id"])
-        nodes = communities.get(cid, [])
-        if not nodes:
-            return f"Community {cid} not found."
-        header = _community_header(cid, G.nodes[nodes[0]].get("community_name"))
-        lines = [f"{header} ({len(nodes)} nodes):"]
-        src_files = []
-        for n in nodes:
-            d = G.nodes[n]
-            # Sanitise label and source_file (F-010).
-            lines.append(
-                f"  {sanitize_label(d.get('label', n))} "
-                f"[{sanitize_label(str(d.get('source_file', '')))}]"
-            )
-            src_files.append(d.get("source_file"))
-        stale_banner = ""
-        if active_graph_path and src_files:
-            from graphify.staleness import format_staleness_banner
-            stale_banner = format_staleness_banner(
-                active_graph_path, [str(f) for f in src_files if f]
-            )
-        return stale_banner + "\n".join(lines)
+        return _tool_get_community_text(G, communities, arguments, active_graph_path)
 
     def _tool_god_nodes(arguments: dict) -> str:
-        from graphify.analyze import god_nodes as _god_nodes
-        nodes = _god_nodes(G, top_n=int(arguments.get("top_n", 10)))
-        lines = ["God nodes (most connected):"]
-        lines += [f"  {i}. {n['label']} - {n['degree']} edges" for i, n in enumerate(nodes, 1)]
-        stale_banner = ""
-        if active_graph_path and nodes:
-            from graphify.staleness import format_staleness_banner
-            src_files = [
-                G.nodes[n["id"]].get("source_file")
-                for n in nodes
-                if n.get("id") and n["id"] in G.nodes and G.nodes[n["id"]].get("source_file")
-            ]
-            stale_banner = format_staleness_banner(
-                active_graph_path, [str(f) for f in src_files if f]
-            )
-        return stale_banner + "\n".join(lines)
+        return _tool_god_nodes_text(G, arguments, active_graph_path)
 
     def _tool_dead_code(arguments: dict) -> str:
-        from graphify.analyze import unreachable_functions
-        dead = unreachable_functions(G, top_n=int(arguments.get("top_n", 15)))
-        if not dead:
-            return "No unreachable functions found."
-        lines = [f"Unreachable functions (heuristic, {len(dead)} shown):"]
-        lines += [f"  {d['label']} [{d['source_file']}]" for d in dead]
-        stale_banner = ""
-        if active_graph_path and dead:
-            from graphify.staleness import format_staleness_banner
-            src_files = [d.get("source_file") for d in dead if d.get("source_file")]
-            stale_banner = format_staleness_banner(
-                active_graph_path, [str(f) for f in src_files if f]
-            )
-        return stale_banner + "\n".join(lines)
+        return _tool_dead_code_text(G, arguments, active_graph_path)
 
     def _tool_graph_stats(_: dict) -> str:
         confs = [d.get("confidence", "EXTRACTED") for _, _, d in G.edges(data=True)]
@@ -940,28 +973,7 @@ def _build_server(graph_path: str):
         return "\n\n".join(lines)
 
     def _tool_match_pattern(arguments: dict) -> str:
-        from graphify.pattern_query import parse_and_execute_pattern, PatternQueryError
-        pat = arguments["pattern"]
-        try:
-            res, matched_nodes = parse_and_execute_pattern(
-                G, pat, as_dict=False, return_matched_nodes=True
-            )
-            if active_graph_path and matched_nodes:
-                from graphify.staleness import format_staleness_banner
-                src_files = [
-                    str(G.nodes[n].get("source_file"))
-                    for n in matched_nodes
-                    if G.nodes[n].get("source_file")
-                ]
-                stale_banner = format_staleness_banner(
-                    active_graph_path,
-                    [f for f in sorted(set(src_files)) if f],
-                )
-                if stale_banner:
-                    res = stale_banner + str(res)
-            return str(res)
-        except PatternQueryError as exc:
-            return f"Error executing pattern: {exc}"
+        return _tool_match_pattern_text(G, arguments, active_graph_path)
 
     _handlers = {
         "query_graph": _tool_query_graph,

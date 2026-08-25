@@ -122,12 +122,15 @@ def test_parse_and_execute_pattern_return_matched_nodes():
     assert "No matching patterns" in empty_res
 
 
-def test_staleness_banner_in_mcp_match_pattern(tmp_path):
+def test_staleness_banner_in_match_pattern(tmp_path):
+    """Drives _tool_match_pattern_text directly -- a plain module-level
+    function over G/arguments/graph_path, same as _shortest_path_text and
+    _tool_get_node_text -- rather than through the mcp/starlette HTTP
+    transport, so this test actually runs under the documented
+    `uv run pytest tests/ -q` (neither mcp nor starlette is a dev dependency;
+    a version of this test gated behind pytest.importorskip("mcp") silently
+    skips under that command and never actually verifies the fix)."""
     import json
-    import pytest
-    pytest.importorskip("mcp")
-    pytest.importorskip("starlette")
-    from starlette.testclient import TestClient
 
     project_root = tmp_path / "repo"
     project_root.mkdir()
@@ -157,42 +160,30 @@ def test_staleness_banner_in_mcp_match_pattern(tmp_path):
     graph_time = time.time() - 50
     os.utime(graph_path, (graph_time, graph_time))
 
-    app = servemod._build_http_app(str(graph_path), json_response=True)
-    with TestClient(app, base_url="http://127.0.0.1") as client:
-        init = client.post("/mcp", headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}, json={
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "test", "version": "0"}},
-        })
-        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "mcp-session-id": init.headers.get("mcp-session-id")}
-        client.post("/mcp", headers=headers, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+    G = servemod._load_graph(str(graph_path))
 
-        # 1. Query for matched_func -> unrelated.py is stale, but matched_func.py is NOT. No banner should appear.
-        resp = client.post("/mcp", headers=headers, json={
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": "match_pattern", "arguments": {"pattern": "MATCH (a) WHERE a.label CONTAINS 'matched' RETURN a.label"}},
-        })
-        out = resp.json()["result"]["content"][0]["text"]
-        assert "matched_func" in out
-        assert "staleness notice" not in out
-        assert "unrelated.py" not in out
+    # 1. Query for matched_func -> unrelated.py is stale, but matched.py is NOT. No banner should appear.
+    out = servemod._tool_match_pattern_text(
+        G, {"pattern": "MATCH (a) WHERE a.label CONTAINS 'matched' RETURN a.label"}, str(graph_path)
+    )
+    assert "matched_func" in out
+    assert "staleness notice" not in out
+    assert "unrelated.py" not in out
 
-        # 2. Now touch matched.py -> query should now include staleness banner for matched.py
-        os.utime(f_matched, (time.time() + 20, time.time() + 20))
-        resp2 = client.post("/mcp", headers=headers, json={
-            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": {"name": "match_pattern", "arguments": {"pattern": "MATCH (a) WHERE a.label CONTAINS 'matched' RETURN a.label"}},
-        })
-        out2 = resp2.json()["result"]["content"][0]["text"]
-        assert "staleness notice" in out2
-        assert "matched.py" in out2
+    # 2. Now touch matched.py -> query should now include a staleness banner for matched.py
+    os.utime(f_matched, (time.time() + 20, time.time() + 20))
+    out2 = servemod._tool_match_pattern_text(
+        G, {"pattern": "MATCH (a) WHERE a.label CONTAINS 'matched' RETURN a.label"}, str(graph_path)
+    )
+    assert "staleness notice" in out2
+    assert "matched.py" in out2
 
 
 def test_staleness_banner_coverage_for_other_tools(tmp_path):
+    """Same rationale as test_staleness_banner_in_match_pattern -- drives
+    _tool_get_community_text/_tool_god_nodes_text/_tool_dead_code_text
+    directly rather than through the mcp/starlette HTTP transport."""
     import json
-    import pytest
-    pytest.importorskip("mcp")
-    pytest.importorskip("starlette")
-    from starlette.testclient import TestClient
 
     project_root = tmp_path / "repo"
     project_root.mkdir()
@@ -224,57 +215,40 @@ def test_staleness_banner_coverage_for_other_tools(tmp_path):
     graph_time = time.time() - 50
     os.utime(graph_path, (graph_time, graph_time))
 
-    app = servemod._build_http_app(str(graph_path), json_response=True)
-    with TestClient(app, base_url="http://127.0.0.1") as client:
-        init = client.post("/mcp", headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}, json={
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "test", "version": "0"}},
-        })
-        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "mcp-session-id": init.headers.get("mcp-session-id")}
-        client.post("/mcp", headers=headers, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+    G = servemod._load_graph(str(graph_path))
+    communities = servemod._communities_from_graph(G)
 
-        # get_community
-        resp = client.post("/mcp", headers=headers, json={
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": "get_community", "arguments": {"community_id": 0}},
-        })
-        out = resp.json()["result"]["content"][0]["text"]
-        assert "staleness notice" in out
-        assert "app.py" in out
+    out = servemod._tool_get_community_text(G, communities, {"community_id": 0}, str(graph_path))
+    assert "staleness notice" in out
+    assert "app.py" in out
 
-        # god_nodes
-        resp = client.post("/mcp", headers=headers, json={
-            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": {"name": "god_nodes", "arguments": {}},
-        })
-        out = resp.json()["result"]["content"][0]["text"]
-        assert "staleness notice" in out
-        assert "app.py" in out
+    out = servemod._tool_god_nodes_text(G, {}, str(graph_path))
+    assert "staleness notice" in out
+    assert "app.py" in out
 
-        # dead_code
-        resp = client.post("/mcp", headers=headers, json={
-            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
-            "params": {"name": "dead_code", "arguments": {}},
-        })
-        out = resp.json()["result"]["content"][0]["text"]
-        assert "staleness notice" in out
-        assert "app.py" in out
+    out = servemod._tool_dead_code_text(G, {}, str(graph_path))
+    assert "staleness notice" in out
+    assert "app.py" in out
 
-        # shortest_path
-        resp = client.post("/mcp", headers=headers, json={
-            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
-            "params": {"name": "shortest_path", "arguments": {"source": "app()", "target": "_internal()"}},
-        })
-        out = resp.json()["result"]["content"][0]["text"]
-        assert "staleness notice" in out
-        assert "app.py" in out
+    # shortest_path: already a module-level _shortest_path_text, unchanged
+    # by this branch -- confirms it still gets a banner alongside the tools
+    # actually touched here.
+    out = servemod._shortest_path_text(
+        G, {"source": "app()", "target": "_internal()"}, str(graph_path)
+    )
+    assert "staleness notice" in out
+    assert "app.py" in out
 
-        # query_graph
-        resp = client.post("/mcp", headers=headers, json={
-            "jsonrpc": "2.0", "id": 6, "method": "tools/call",
-            "params": {"name": "query_graph", "arguments": {"question": "app"}},
-        })
-        out = resp.json()["result"]["content"][0]["text"]
-        assert "staleness notice" in out
-        assert "app.py" in out
+    # query_graph: exercises the _query_graph_text(..., return_nodes=True) +
+    # format_staleness_banner wiring _tool_query_graph's closure uses --
+    # replicated directly here rather than via the closure itself, since the
+    # closure only exists inside _build_server (which imports mcp at the top
+    # regardless of which tool is actually being tested).
+    from graphify.query import _query_graph_text
+    from graphify.staleness import format_staleness_banner
+    result, cited_files = _query_graph_text(G, "app", return_nodes=True)
+    banner = format_staleness_banner(str(graph_path), cited_files)
+    out = banner + result
+    assert "staleness notice" in out
+    assert "app.py" in out
 

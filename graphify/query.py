@@ -17,6 +17,7 @@ import math
 import re
 from array import array
 from pathlib import Path
+from typing import Literal, overload
 import networkx as nx
 from graphify.security import sanitize_label
 from graphify.detect import DOC_EXTENSIONS
@@ -1292,6 +1293,22 @@ def _best_anchor_neighbor(G: nx.Graph, nid: str) -> str:
     return best_file
 
 
+@overload
+def _subgraph_to_text(
+    G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *,
+    seeds: list[str] | None = None,
+    hop_distances: dict[str, int] | None = None,
+    relevance_scores: dict[str, float] | None = None,
+    return_nodes: Literal[False] = False,
+) -> str: ...
+@overload
+def _subgraph_to_text(
+    G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *,
+    seeds: list[str] | None = None,
+    hop_distances: dict[str, int] | None = None,
+    relevance_scores: dict[str, float] | None = None,
+    return_nodes: Literal[True],
+) -> tuple[str, list[str]]: ...
 def _subgraph_to_text(
     G: nx.Graph, nodes: set[str], edges: list[tuple], token_budget: int = 2000, *,
     seeds: list[str] | None = None,
