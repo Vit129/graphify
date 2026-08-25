@@ -64,8 +64,12 @@ def _apply_where_op(op: str, val: str, target_val: str) -> bool:
 
 
 def parse_and_execute_pattern(
-    G: nx.Graph, query: str, *, as_dict: bool = False
-) -> list[dict[str, Any]] | str:
+    G: nx.Graph,
+    query: str,
+    *,
+    as_dict: bool = False,
+    return_matched_nodes: bool = False,
+) -> list[dict[str, Any]] | str | tuple[list[dict[str, Any]] | str, set[str]]:
     """Execute a Cypher-like pattern query against G.
 
     Examples:
@@ -253,11 +257,14 @@ def parse_and_execute_pattern(
                 row[col_name] = val
         rows.append(row)
 
+    matched_nodes = {nid for r in results for nid in r.values() if nid in G.nodes}
+
     if as_dict:
-        return rows
+        return (rows, matched_nodes) if return_matched_nodes else rows
 
     if not rows:
-        return "No matching patterns found in graph."
+        ret_text = "No matching patterns found in graph."
+        return (ret_text, matched_nodes) if return_matched_nodes else ret_text
 
     # Format tabular text
     headers = list(rows[0].keys())
@@ -265,4 +272,5 @@ def parse_and_execute_pattern(
     for row in rows:
         lines.append(" | ".join(str(row.get(h, "")) for h in headers))
     lines.append(f"\n({len(rows)} result(s) returned, limit={limit})")
-    return "\n".join(lines)
+    ret_text = "\n".join(lines)
+    return (ret_text, matched_nodes) if return_matched_nodes else ret_text

@@ -742,7 +742,7 @@ def _build_server(graph_path: str):
         exclude_paths = arguments.get("exclude_paths")
         semantic_fusion = arguments.get("semantic_fusion", "boost")
         _t0 = _time.perf_counter()
-        result = _query_graph_text(
+        result, cited_files = _query_graph_text(
             G,
             question,
             mode=mode,
@@ -753,10 +753,10 @@ def _build_server(graph_path: str):
             exclude_paths=exclude_paths,
             semantic_fusion=semantic_fusion,
             embedding_cache_file=Path(active_graph_path).parent / "cache" / "embeddings" / "index.npz",
+            return_nodes=True,
         )
-        if active_graph_path:
+        if active_graph_path and cited_files:
             from graphify.staleness import format_staleness_banner
-            cited_files = re.findall(r'\[([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9_]+)(?::[0-9\-]+)?\]', result)
             stale_banner = format_staleness_banner(active_graph_path, cited_files)
             if stale_banner:
                 result = stale_banner + result
@@ -788,6 +788,7 @@ def _build_server(graph_path: str):
             return f"Community {cid} not found."
         header = _community_header(cid, G.nodes[nodes[0]].get("community_name"))
         lines = [f"{header} ({len(nodes)} nodes):"]
+        src_files = []
         for n in nodes:
             d = G.nodes[n]
             # Sanitise label and source_file (F-010).
@@ -795,14 +796,32 @@ def _build_server(graph_path: str):
                 f"  {sanitize_label(d.get('label', n))} "
                 f"[{sanitize_label(str(d.get('source_file', '')))}]"
             )
-        return "\n".join(lines)
+            src_files.append(d.get("source_file"))
+        stale_banner = ""
+        if active_graph_path and src_files:
+            from graphify.staleness import format_staleness_banner
+            stale_banner = format_staleness_banner(
+                active_graph_path, [str(f) for f in src_files if f]
+            )
+        return stale_banner + "\n".join(lines)
 
     def _tool_god_nodes(arguments: dict) -> str:
         from graphify.analyze import god_nodes as _god_nodes
         nodes = _god_nodes(G, top_n=int(arguments.get("top_n", 10)))
         lines = ["God nodes (most connected):"]
         lines += [f"  {i}. {n['label']} - {n['degree']} edges" for i, n in enumerate(nodes, 1)]
-        return "\n".join(lines)
+        stale_banner = ""
+        if active_graph_path and nodes:
+            from graphify.staleness import format_staleness_banner
+            src_files = [
+                G.nodes[n["id"]].get("source_file")
+                for n in nodes
+                if n.get("id") and n["id"] in G.nodes and G.nodes[n["id"]].get("source_file")
+            ]
+            stale_banner = format_staleness_banner(
+                active_graph_path, [str(f) for f in src_files if f]
+            )
+        return stale_banner + "\n".join(lines)
 
     def _tool_dead_code(arguments: dict) -> str:
         from graphify.analyze import unreachable_functions
@@ -811,7 +830,14 @@ def _build_server(graph_path: str):
             return "No unreachable functions found."
         lines = [f"Unreachable functions (heuristic, {len(dead)} shown):"]
         lines += [f"  {d['label']} [{d['source_file']}]" for d in dead]
-        return "\n".join(lines)
+        stale_banner = ""
+        if active_graph_path and dead:
+            from graphify.staleness import format_staleness_banner
+            src_files = [d.get("source_file") for d in dead if d.get("source_file")]
+            stale_banner = format_staleness_banner(
+                active_graph_path, [str(f) for f in src_files if f]
+            )
+        return stale_banner + "\n".join(lines)
 
     def _tool_graph_stats(_: dict) -> str:
         confs = [d.get("confidence", "EXTRACTED") for _, _, d in G.edges(data=True)]
@@ -826,7 +852,7 @@ def _build_server(graph_path: str):
         )
 
     def _tool_shortest_path(arguments: dict) -> str:
-        return _shortest_path_text(G, arguments)
+        return _shortest_path_text(G, arguments, active_graph_path)
 
     def _tool_list_prs(arguments: dict) -> str:
         from graphify.prs import fetch_prs, fetch_worktrees, format_prs_text, _detect_default_branch
@@ -917,12 +943,19 @@ def _build_server(graph_path: str):
         from graphify.pattern_query import parse_and_execute_pattern, PatternQueryError
         pat = arguments["pattern"]
         try:
-            res = parse_and_execute_pattern(G, pat, as_dict=False)
-            if active_graph_path:
+            res, matched_nodes = parse_and_execute_pattern(
+                G, pat, as_dict=False, return_matched_nodes=True
+            )
+            if active_graph_path and matched_nodes:
                 from graphify.staleness import format_staleness_banner
+                src_files = [
+                    str(G.nodes[n].get("source_file"))
+                    for n in matched_nodes
+                    if G.nodes[n].get("source_file")
+                ]
                 stale_banner = format_staleness_banner(
                     active_graph_path,
-                    [str(G.nodes[n].get("source_file", "")) for n in G.nodes() if G.nodes[n].get("source_file")][:10],
+                    [f for f in sorted(set(src_files)) if f],
                 )
                 if stale_banner:
                     res = stale_banner + str(res)
