@@ -589,3 +589,99 @@ def test_affected_cli_ci_flag_lists_only_test_files(monkeypatch, tmp_path, capsy
     out = capsys.readouterr().out.strip()
     assert out == "tests/test_mod.py"
     assert "Git-diff impact" not in out
+
+
+def test_ci_affected_tests_excludes_non_runnable_test_dir_files(tmp_path):
+    """Regression: a fixture (or other non-code asset) living under a test
+    directory must not be selected -- it has no filename convention a test
+    runner recognizes, so `pytest <that path>` would just error out (found in
+    review: _is_test_path is directory-segment-aware and matched it)."""
+    from graphify.affected import ci_affected_tests
+
+    _init_git_repo(tmp_path)
+    fixture = tmp_path / "tests" / "fixtures" / "sample.xaml"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text("<A/>\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    fixture.write_text("<A x='1'/>\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("fixture", label="sample.xaml", source_file="tests/fixtures/sample.xaml", source_location="L1")
+
+    assert ci_affected_tests(graph, tmp_path) == []
+
+
+def test_ci_affected_tests_excludes_conftest_and_init(tmp_path):
+    """Regression: conftest.py/__init__.py are test-dir infra, not runnable
+    test targets on their own."""
+    from graphify.affected import ci_affected_tests
+
+    _init_git_repo(tmp_path)
+    conftest = tmp_path / "tests" / "conftest.py"
+    conftest.parent.mkdir(parents=True)
+    conftest.write_text("import pytest\n", encoding="utf-8")
+    init_file = tmp_path / "tests" / "__init__.py"
+    init_file.write_text("", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    conftest.write_text("import pytest\n\n@pytest.fixture\ndef x():\n    return 1\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("conftest", label="conftest.py", source_file="tests/conftest.py", source_location="L1")
+
+    assert ci_affected_tests(graph, tmp_path) == []
+
+
+def test_ci_affected_tests_finds_test_via_same_line_rationale_collision(tmp_path):
+    """Regression: when a rationale/document node shares a line with the real
+    file node (a module docstring at L1 alongside the file node also at L1),
+    changed_seeds' nearest-preceding-line bisect must not arbitrarily pick the
+    rationale leaf (in_degree 0) over the real node -- found in review by
+    replicating this repo's own graph, where 174 files hit exactly this."""
+    from graphify.affected import ci_affected_tests
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text('"""Module docstring."""\ndef target():\n    return 1\n', encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    src.write_text('"""Module docstring."""\ndef target():\n    return 999\n', encoding="utf-8")
+
+    graph = nx.DiGraph()
+    # Rationale node and the real file node both anchored at L1 -- same
+    # collision shape as a docstring-derived node sharing a line with its file.
+    graph.add_node("rationale", label="Module docstring.", source_file="mod.py", source_location="L1", file_type="rationale")
+    graph.add_node("target", label="target()", source_file="mod.py", source_location="L1")
+    graph.add_node("test_fn", label="test_target()", source_file="tests/test_mod.py", source_location="L1")
+    graph.add_edge("test_fn", "target", relation="calls", context="call", confidence="EXTRACTED")
+
+    assert ci_affected_tests(graph, tmp_path) == ["tests/test_mod.py"]
+
+
+def test_ci_affected_tests_warns_on_unindexed_changed_file(tmp_path, capsys):
+    """A changed file with no matching graph node (stale graph, unindexed
+    language) means impact is undeterminable, not genuinely zero -- must warn
+    on stderr without touching stdout/exit code (review finding: previously
+    silently indistinguishable from a clean tree)."""
+    from graphify.affected import ci_affected_tests
+
+    _init_git_repo(tmp_path)
+    unindexed = tmp_path / "unindexed.zig"
+    unindexed.write_text("const x = 1;\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    unindexed.write_text("const x = 2;\n", encoding="utf-8")
+
+    graph = nx.DiGraph()
+    graph.add_node("unrelated", label="unrelated()", source_file="other.py", source_location="L1")
+
+    result = ci_affected_tests(graph, tmp_path)
+    err = capsys.readouterr().err
+    assert result == []
+    assert "unindexed.zig" in err
+    assert "not found in the graph" in err

@@ -263,14 +263,29 @@ def git_diff_changed_ranges(
     return _parse_git_diff_hunks(result.stdout)
 
 
+_RATIONALE_LIKE_FILE_TYPES = frozenset({"rationale", "document"})
+
+
 def _nodes_by_file(graph: nx.Graph) -> dict[str, list[tuple[int, str]]]:
     """{source_file: [(line, node_id), ...]} sorted ascending, for nodes with a
-    parseable single-line source_location (the "Lnn" format every extractor emits)."""
+    parseable single-line source_location (the "Lnn" format every extractor emits).
+
+    Excludes rationale/document nodes (docstrings, headings — same file_type
+    set dedup.py's _FILE_ANCHORED_NONCODE treats as identity-anchored, not the
+    call-graph). These are frequently co-located on the same line as the real
+    code/file node they describe (e.g. a module docstring and the file node
+    both at L1); left in, the nearest-preceding-line bisect in changed_seeds
+    can arbitrarily pick the leaf rationale node (in_degree 0, no dependents)
+    over the real node with real dependents, silently losing the whole
+    downstream traversal for that changed range.
+    """
     by_file: dict[str, list[tuple[int, str]]] = {}
     for node_id, data in graph.nodes(data=True):
         source_file = data.get("source_file")
         loc = data.get("source_location")
         if not source_file or not loc:
+            continue
+        if data.get("file_type") in _RATIONALE_LIKE_FILE_TYPES:
             continue
         m = re.match(r"^L(\d+)", str(loc))
         if not m:
@@ -380,20 +395,39 @@ def ci_affected_tests(
 
     A changed test file is included directly; a changed non-test file is
     included via any test file reachable in its dependent set (same traversal
-    as affected_nodes/format_git_diff_affected).
-    """
-    from graphify.paths import _is_test_path
+    as affected_nodes/format_git_diff_affected). Uses paths.is_ci_runnable_test_file
+    rather than the directory-segment-aware _is_test_path, since a fixture or
+    conftest.py living under tests/ is not something a test runner can be
+    pointed at directly.
 
+    A changed file with no matching graph node (stale graph, unindexed
+    language) is silently dropped by changed_seeds -- since that makes CI
+    impact for that file undeterminable rather than genuinely zero, this
+    warns on stderr (stdout/exit code are untouched, so piping is unaffected).
+    """
+    import sys
+    from graphify.paths import is_ci_runnable_test_file
+
+    all_changed = git_diff_changed_ranges(repo_root, base)
     seeds_by_file = changed_seeds(graph, repo_root, base)
+    unindexed = sorted(set(all_changed) - set(seeds_by_file))
+    if unindexed:
+        print(
+            f"warning: {len(unindexed)} changed file(s) not found in the graph "
+            "(stale graph or unindexed language) -- CI impact may be incomplete: "
+            + ", ".join(unindexed),
+            file=sys.stderr,
+        )
+
     relation_list = tuple(relations)
     test_files: set[str] = set()
     for file_path, seed_ids in seeds_by_file.items():
-        if _is_test_path(file_path):
+        if is_ci_runnable_test_file(file_path):
             test_files.add(file_path)
         for seed_id in seed_ids:
             for hit in affected_nodes(graph, seed_id, relations=relation_list, depth=depth):
                 hit_file = graph.nodes[hit.node_id].get("source_file")
-                if hit_file and _is_test_path(str(hit_file)):
+                if hit_file and is_ci_runnable_test_file(str(hit_file)):
                     test_files.add(str(hit_file))
     return sorted(test_files)
 
@@ -408,8 +442,13 @@ def format_ci_affected_tests(
     as_json: bool = False,
 ) -> str:
     """CI-consumable output: one test-file path per line (or a JSON array with
-    as_json=True), no diagnostic prose -- meant to be piped straight into a
-    test runner, e.g. `graphify affected --ci | xargs -r pytest`."""
+    as_json=True), no diagnostic prose -- meant to be piped into a test
+    runner. `xargs -r` (skip on empty input) is GNU-only; on BSD/macOS xargs
+    (no -r) an empty result still invokes the command with zero arguments,
+    which for most test runners means "run everything". Prefer --json and
+    checking for an empty list in the CI script, or guard with
+    `[ -n "$(graphify affected --ci)" ] && graphify affected --ci | xargs pytest`
+    for a portable shell one-liner."""
     tests = ci_affected_tests(graph, repo_root, base=base, relations=relations, depth=depth)
     if as_json:
         import json

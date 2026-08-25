@@ -168,6 +168,30 @@ def _is_test_path(path: str) -> bool:
     return False
 
 
+# Non-test infra files that live inside a test directory but never carry
+# assertions of their own — must not be selected as a "run this" target.
+_TEST_INFRA_FILENAMES = frozenset({"conftest.py", "__init__.py"})
+
+
+def is_ci_runnable_test_file(path: str) -> bool:
+    """Filename-convention-only test check for CI test-impact selection.
+
+    Unlike _is_test_path (directory-segment-aware, used for cross-file call
+    resolution so mocks/stubs anywhere under tests/ are treated uniformly),
+    this must not select a file that merely *lives* in a test directory but
+    isn't itself a runnable test target: fixtures (tests/fixtures/x.xaml,
+    sample.cs), non-code assets, or infra files like conftest.py/__init__.py
+    that a test runner invoked directly on them would error out on or
+    silently collect zero tests from.
+    """
+    if not path:
+        return False
+    filename = PurePosixPath(str(path).replace("\\", "/")).name
+    if not filename or filename in _TEST_INFRA_FILENAMES:
+        return False
+    return any(pattern.match(filename) for pattern in _TEST_FILENAME_PATTERNS)
+
+
 def _path_proximity_winner(call_site_file: str, candidate_files: dict[str, str]) -> str | None:
     """Pick the candidate whose source file is closest to the call site.
 
