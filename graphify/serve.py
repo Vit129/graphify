@@ -911,6 +911,8 @@ def _build_server(graph_path: str):
                 f"PR #{p.number} [{p.status}] CI={p.ci_status} review={p.review_decision or 'none'} "
                 f"age={p.days_old}d author={p.author}{impact}{wt}\n  title: {p.title}"
             )
+        return "\n\n".join(lines)
+
     def _tool_match_pattern(arguments: dict) -> str:
         from graphify.pattern_query import parse_and_execute_pattern, PatternQueryError
         pat = arguments["pattern"]

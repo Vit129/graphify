@@ -321,3 +321,38 @@ def test_shortest_path_tool_declares_undirected_parameter(tmp_path):
         assert props["undirected"]["default"] is True
         assert "undirected" not in schema.get("required", [])
 
+
+def test_triage_prs_tool_returns_text_when_prs_are_actionable(tmp_path, monkeypatch):
+    """Regression: _tool_triage_prs's final `return` was accidentally deleted
+    when match_pattern was inserted directly above it, so the success path
+    (actionable PRs found) fell off the end of the function returning None,
+    which failed MCP's TextContent validation and surfaced as a generic
+    'Error executing triage_prs' to the caller."""
+    from datetime import datetime, timezone
+    from graphify.prs import PRInfo
+
+    pr = PRInfo(
+        number=42,
+        title="Add feature",
+        branch="feat/x",
+        base_branch="main",
+        author="someone",
+        is_draft=False,
+        review_decision="",
+        ci_status="SUCCESS",
+        updated_at=datetime.now(timezone.utc),
+        expected_base="main",
+    )
+    monkeypatch.setattr("graphify.prs.fetch_prs", lambda repo=None, base=None: [pr])
+    monkeypatch.setattr("graphify.prs.fetch_worktrees", lambda: {})
+    monkeypatch.setattr("graphify.prs.fetch_pr_files", lambda number, repo=None: [])
+    monkeypatch.setattr("graphify.prs._detect_default_branch", lambda repo=None: "main")
+
+    app = serve_mod._build_http_app(_graph_file(tmp_path), json_response=True)
+    with _client(app) as client:
+        headers = _init_session(client)
+        out = _call_tool(client, headers, "triage_prs", {}, rid=2)
+        assert "PR #42" in out
+        assert "Add feature" in out
+        assert "Error executing triage_prs" not in out
+
