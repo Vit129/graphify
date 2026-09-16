@@ -3,6 +3,34 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.25.0] - 2026-09-16
+
+### Added
+- Add --ci mode for CI test-impact selection ([`7913d4d`](https://github.com/Vit129/graphify/commit/7913d4d41a194c15f3df3ab8e8552e870e2491ed))
+- Add per-file staleness warning banner to MCP tool responses ([`a2338a8`](https://github.com/Vit129/graphify/commit/a2338a8a51e7d9fb5111cfea6881a12839233aa7))
+- Add framework-aware HTTP route extraction for Python, JS, and TS ([`b2044de`](https://github.com/Vit129/graphify/commit/b2044deeaefa9a96c1590fe145483ec39fae1c6c))
+- Add cross-language bridge resolution for React Native, Expo, and Swift-ObjC ([`9207728`](https://github.com/Vit129/graphify/commit/9207728f1ee956ead7dcc009f7a39135b7d405b0))
+- Add Cypher-like graph pattern query engine (graphify match & match_pattern MCP tool) ([`c323120`](https://github.com/Vit129/graphify/commit/c323120d8f708ab59c5ef5baafdd67fca31bb72c))
+- Support variable-length relationships [:rel*N..M] ([`3494fe2`](https://github.com/Vit129/graphify/commit/3494fe2750b513289c0bcd78a33355de1e837b61))
+- Wire scip_ingest.ingest_scip_json into `graphify ingest-scip` ([`4252220`](https://github.com/Vit129/graphify/commit/4252220e690feeec897619c6eae32f2231af2a95))
+- Add optional end_line to definition nodes; use it in affected.py ([`9a2464e`](https://github.com/Vit129/graphify/commit/9a2464e43cf9c9ef326bc67d351004c9f0810fa7))
+
+### Documentation
+- Clarify this fork stays MIT despite upstream's later Apache-2.0 relicense ([`20ee5d2`](https://github.com/Vit129/graphify/commit/20ee5d2a1bd88911e4772ed921ab90a2733a02f3))
+- List affected --git-diff/--ci in top-level help text ([`7a574ca`](https://github.com/Vit129/graphify/commit/7a574ca4d232ffc5cbbb76e480b27e54c2de43a5))
+
+### Fixed
+- Stop --ci from selecting non-runnable files and silent false negatives ([`a071342`](https://github.com/Vit129/graphify/commit/a071342d01aec5779f317647b9065f8a97ce17ae))
+- Prevent local json import shadowing in match subcommand ([`fea2da3`](https://github.com/Vit129/graphify/commit/fea2da308550957f0ba1043ec38f7ec8a06badca))
+- Restore triage_prs' final return, deleted by match_pattern insertion ([`fbde6cc`](https://github.com/Vit129/graphify/commit/fbde6cc301372dfdb019f60317d61caa93227134))
+- Match real source text, not node labels (0 edges on real extractors) ([`abc84d6`](https://github.com/Vit129/graphify/commit/abc84d64c5d4d8339976489f55dba72fb0bd249f))
+- Use full relative path for route node ids, not path.stem ([`a84b79d`](https://github.com/Vit129/graphify/commit/a84b79de4a757b64edfe161184dd3b4be56b2e2e))
+- Stop silent WHERE failures and unbounded traversal ([`5501431`](https://github.com/Vit129/graphify/commit/5501431043be2fc533f0d7036b528242cd7da296))
+- Inline Express handlers and Django cross-file handles edges ([`df06831`](https://github.com/Vit129/graphify/commit/df06831186824f56fca655573b14dce87bf4136d))
+- Scope staleness banner to matched files and add missing tool coverage ([`17fc9ee`](https://github.com/Vit129/graphify/commit/17fc9eec596d0cd5da71ca3537ed94766d17a158))
+- Log warnings on post-pass failures instead of silently swallowing exceptions ([`ee29f6c`](https://github.com/Vit129/graphify/commit/ee29f6cfc2eb266fa401c770887f51ae745cbdeb))
+- Make staleness-banner coverage tests run without mcp/starlette installed ([`076ee92`](https://github.com/Vit129/graphify/commit/076ee925a5c815ee81db55839b19573c7217f151))
+
 ## [0.24.3] - 2026-08-24
 
 ### Fixed
