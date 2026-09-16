@@ -175,3 +175,64 @@ def test_where_prunes_search_instead_of_exhaustive_traversal():
     elapsed = time.perf_counter() - start
     assert result == "No matching patterns found in graph."
     assert elapsed < 2.0, f"WHERE should prune at step 0, took {elapsed:.2f}s"
+
+
+# --- Variable-length relationships: [:rel*N..M] ---
+
+def _chain_graph():
+    """n1 -calls-> n2 -calls-> n3 -calls-> n4 -calls-> n5, plus an unrelated
+    n1 -imports-> nX edge so relation-type filtering has something to reject."""
+    G = nx.DiGraph()
+    for i in range(1, 6):
+        G.add_node(f"n{i}", label=f"fn{i}", file_type="function")
+    for i in range(1, 5):
+        G.add_edge(f"n{i}", f"n{i+1}", relation="calls", confidence="EXTRACTED", _src=f"n{i}", _tgt=f"n{i+1}")
+    G.add_node("x", label="Unrelated", file_type="class")
+    G.add_edge("n1", "x", relation="imports", confidence="EXTRACTED", _src="n1", _tgt="x")
+    return G
+
+
+def test_varlen_bounded_range_finds_end_node_within_hops():
+    G = _chain_graph()
+    q = "MATCH (a)-[:calls*1..2]->(b) WHERE a.label = 'fn1' RETURN b.label"
+    results = parse_and_execute_pattern(G, q, as_dict=True)
+    labels = {r["b"] for r in results}
+    assert labels == {"fn2", "fn3"}
+
+
+def test_varlen_exact_hop_count():
+    G = _chain_graph()
+    q = "MATCH (a)-[:calls*3]->(b) WHERE a.label = 'fn1' RETURN b.label"
+    results = parse_and_execute_pattern(G, q, as_dict=True)
+    labels = {r["b"] for r in results}
+    assert labels == {"fn4"}
+
+
+def test_varlen_bare_star_defaults_to_one_to_max_hops():
+    G = _chain_graph()
+    q = "MATCH (a)-[:calls*]->(b) WHERE a.label = 'fn1' RETURN b.label"
+    results = parse_and_execute_pattern(G, q, as_dict=True)
+    labels = {r["b"] for r in results}
+    assert labels == {"fn2", "fn3", "fn4", "fn5"}
+
+
+def test_varlen_respects_relation_type_filter():
+    """A *-quantified step still only follows edges matching its relation --
+    the unrelated `imports` edge out of n1 must never appear as a `calls*` hit."""
+    G = _chain_graph()
+    q = "MATCH (a)-[:calls*1..4]->(b) WHERE a.label = 'fn1' RETURN b.label"
+    results = parse_and_execute_pattern(G, q, as_dict=True)
+    labels = {r["b"] for r in results}
+    assert "Unrelated" not in labels
+
+
+def test_varlen_exceeding_max_hops_raises():
+    G = _chain_graph()
+    with pytest.raises(PatternQueryError):
+        parse_and_execute_pattern(G, "MATCH (a)-[:calls*1..99]->(b) RETURN b.label")
+
+
+def test_varlen_invalid_range_raises():
+    G = _chain_graph()
+    with pytest.raises(PatternQueryError):
+        parse_and_execute_pattern(G, "MATCH (a)-[:calls*4..1]->(b) RETURN b.label")

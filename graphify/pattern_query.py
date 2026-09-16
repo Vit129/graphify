@@ -16,6 +16,40 @@ class PatternQueryError(Exception):
 # 4 & 5). Kept generous enough for any realistic query.
 MAX_PATTERN_STEPS = 20
 MAX_LIMIT = 1000
+# Cap for a variable-length relationship (`[:rel*1..N]`) — same order of
+# magnitude as blast_radius's own hop cap (serve.py), so a query can't force
+# an unbounded BFS over the whole graph via `[:rel*]`.
+MAX_VAR_HOPS = 6
+
+_VARLEN_RE = re.compile(r"^\*(\d+)?(\.\.)?(\d+)?$")
+
+
+def _parse_varlen(spec: str | None) -> tuple[int, int] | None:
+    """Parse a `*`, `*N`, `*N..M`, `*..M`, or `*N..` quantifier into (min, max) hops.
+
+    Returns None for a plain (non-variable-length) relationship. `*` alone
+    means 1..MAX_VAR_HOPS, matching Cypher's `*` = one-or-more default.
+    """
+    if not spec:
+        return None
+    m = _VARLEN_RE.match(spec)
+    if not m:
+        raise PatternQueryError(f"Invalid variable-length relationship spec: {spec!r}")
+    n1, dotdot, n2 = m.groups()
+    if dotdot:
+        lo = int(n1) if n1 else 1
+        hi = int(n2) if n2 else MAX_VAR_HOPS
+    elif n1:
+        lo = hi = int(n1)
+    else:
+        lo, hi = 1, MAX_VAR_HOPS
+    if hi > MAX_VAR_HOPS:
+        raise PatternQueryError(
+            f"Variable-length relationship requests {hi} hops, exceeding the limit of {MAX_VAR_HOPS}"
+        )
+    if lo < 1 or lo > hi:
+        raise PatternQueryError(f"Invalid variable-length hop range {lo}..{hi}")
+    return lo, hi
 
 _WHERE_COND_RE = re.compile(
     r"""^([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*(=|!=|CONTAINS|STARTS\s+WITH)\s*['"]([^'"]+)['"]$""",
@@ -76,6 +110,13 @@ def parse_and_execute_pattern(
         MATCH (a:function)-[:calls]->(b) WHERE a.label CONTAINS 'main' RETURN a.label, b.label LIMIT 10
         MATCH (u)-[:handles]->(v) RETURN u.label, v.label
         MATCH (x)-[:imports]->(y:class) WHERE y.source_file CONTAINS 'auth' RETURN x.label, y.label
+        MATCH (fn:function)-[:calls*1..4]->(r:route) WHERE fn.label = 'authenticate' RETURN r.label
+        MATCH (a)-[:inherits*]->(b) RETURN a.label, b.label
+
+    A relationship step accepts an optional variable-length quantifier:
+    `[:rel*]` (1..MAX_VAR_HOPS), `[:rel*N]` (exactly N), `[:rel*N..M]`,
+    `[:rel*N..]`, or `[:rel*..M]` (min defaults to 1). Binds the end node
+    reached within that hop range, not the intermediate path.
     """
     query = query.strip()
     match_part = re.search(r"MATCH\s+(.+?)(?=\s+WHERE|\s+RETURN|\s+LIMIT|$)", query, re.IGNORECASE)
@@ -95,7 +136,7 @@ def parse_and_execute_pattern(
     # Parse node and edge sequence: (a:type)-[:rel]->(b:type)
     # Tokenize pattern:
     step_pattern = re.compile(
-        r"""\((?P<nvar>[a-zA-Z0-9_]+)?(?::(?P<ntype>[a-zA-Z0-9_]+))?\)(?:\s*(?P<arrow_left><)?-(?:\[:(?P<rel>[a-zA-Z0-9_]+)\])?-(?P<arrow_right>>)?\s*)?"""
+        r"""\((?P<nvar>[a-zA-Z0-9_]+)?(?::(?P<ntype>[a-zA-Z0-9_]+))?\)(?:\s*(?P<arrow_left><)?-(?:\[:(?P<rel>[a-zA-Z0-9_]+)(?P<varlen>\*\d*(?:\.\.\d*)?)?\])?-(?P<arrow_right>>)?\s*)?"""
     )
 
     steps: list[dict[str, Any]] = []
@@ -109,6 +150,7 @@ def parse_and_execute_pattern(
         arrow_left = bool(m.group("arrow_left"))
         arrow_right = bool(m.group("arrow_right"))
         rel = (m.group("rel") or "").lower()
+        varlen = _parse_varlen(m.group("varlen"))
 
         steps.append({
             "var": nvar,
@@ -116,6 +158,7 @@ def parse_and_execute_pattern(
             "arrow_left": arrow_left,
             "arrow_right": arrow_right,
             "rel": rel,
+            "varlen": varlen,
         })
         pos = m.end()
 
@@ -161,6 +204,42 @@ def parse_and_execute_pattern(
                 return False
         return True
 
+    def _varlen_reachable(start: str, rel: str, arrow_left: bool, arrow_right: bool, lo: int, hi: int) -> set[str]:
+        """BFS out to `hi` hops along `rel` edges, returning nodes first reached
+        at a hop count within [lo, hi] -- Cypher's `[:rel*lo..hi]` semantics
+        (binds the end node, not the intermediate path). A node found earlier
+        than `lo` hops away is not re-added once its shortest distance grows
+        past `lo`, matching hop-distance ranking elsewhere in this codebase
+        (query.py's `_hop_distances`)."""
+        visited = {start}
+        current = {start}
+        result: set[str] = set()
+        for hop in range(1, hi + 1):
+            nxt: set[str] = set()
+            for nid in current:
+                if arrow_right or (not arrow_left and not arrow_right):
+                    for succ in G.successors(nid) if G.is_directed() else G.neighbors(nid):
+                        datas = edge_datas(G, nid, succ) if G.is_multigraph() else [edge_data(G, nid, succ)]
+                        for d in datas:
+                            erel = str(d.get("relation", "")).lower()
+                            if not rel or rel in erel:
+                                nxt.add(succ)
+                if arrow_left or (not arrow_left and not arrow_right):
+                    for pred in G.predecessors(nid) if G.is_directed() else G.neighbors(nid):
+                        datas = edge_datas(G, pred, nid) if G.is_multigraph() else [edge_data(G, pred, nid)]
+                        for d in datas:
+                            erel = str(d.get("relation", "")).lower()
+                            if not rel or rel in erel:
+                                nxt.add(pred)
+            nxt -= visited
+            if not nxt:
+                break
+            visited |= nxt
+            if hop >= lo:
+                result |= nxt
+            current = nxt
+        return result
+
     # Backtracking search over the path pattern
     results: list[dict[str, str]] = []
 
@@ -202,22 +281,26 @@ def parse_and_execute_pattern(
             arrow_left = prev_step["arrow_left"]
             arrow_right = prev_step["arrow_right"]
 
-            # Outgoing or incoming neighbors
-            candidates: set[str] = set()
-            if arrow_right or (not arrow_left and not arrow_right):
-                for succ in G.successors(prev_nid) if G.is_directed() else G.neighbors(prev_nid):
-                    datas = edge_datas(G, prev_nid, succ) if G.is_multigraph() else [edge_data(G, prev_nid, succ)]
-                    for d in datas:
-                        erel = str(d.get("relation", "")).lower()
-                        if not rel or rel in erel:
-                            candidates.add(succ)
-            if arrow_left or (not arrow_left and not arrow_right):
-                for pred in G.predecessors(prev_nid) if G.is_directed() else G.neighbors(prev_nid):
-                    datas = edge_datas(G, pred, prev_nid) if G.is_multigraph() else [edge_data(G, pred, prev_nid)]
-                    for d in datas:
-                        erel = str(d.get("relation", "")).lower()
-                        if not rel or rel in erel:
-                            candidates.add(pred)
+            if prev_step["varlen"] is not None:
+                lo, hi = prev_step["varlen"]
+                candidates = _varlen_reachable(prev_nid, rel, arrow_left, arrow_right, lo, hi)
+            else:
+                # Outgoing or incoming neighbors
+                candidates = set()
+                if arrow_right or (not arrow_left and not arrow_right):
+                    for succ in G.successors(prev_nid) if G.is_directed() else G.neighbors(prev_nid):
+                        datas = edge_datas(G, prev_nid, succ) if G.is_multigraph() else [edge_data(G, prev_nid, succ)]
+                        for d in datas:
+                            erel = str(d.get("relation", "")).lower()
+                            if not rel or rel in erel:
+                                candidates.add(succ)
+                if arrow_left or (not arrow_left and not arrow_right):
+                    for pred in G.predecessors(prev_nid) if G.is_directed() else G.neighbors(prev_nid):
+                        datas = edge_datas(G, pred, prev_nid) if G.is_multigraph() else [edge_data(G, pred, prev_nid)]
+                        for d in datas:
+                            erel = str(d.get("relation", "")).lower()
+                            if not rel or rel in erel:
+                                candidates.add(pred)
 
             for cand in candidates:
                 _bind_and_recurse(cand)

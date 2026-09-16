@@ -745,7 +745,10 @@ def _build_server(graph_path: str):
                 name="match_pattern",
                 description=(
                     "Execute a Cypher-like graph pattern query over the codebase graph. "
-                    "Supports: MATCH (a:type)-[:relation]->(b:type) WHERE a.label CONTAINS 'foo' RETURN a.label, b.label LIMIT N"
+                    "Supports: MATCH (a:type)-[:relation]->(b:type) WHERE a.label CONTAINS 'foo' RETURN a.label, b.label LIMIT N. "
+                    "Relationship steps accept a variable-length quantifier, e.g. "
+                    "[:calls*1..4] or [:inherits*], to match transitive reachability "
+                    "within a bounded hop count instead of a single fixed hop."
                 ),
                 inputSchema={
                     "type": "object",
