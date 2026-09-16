@@ -266,9 +266,13 @@ def git_diff_changed_ranges(
 _RATIONALE_LIKE_FILE_TYPES = frozenset({"rationale", "document"})
 
 
-def _nodes_by_file(graph: nx.Graph) -> dict[str, list[tuple[int, str]]]:
-    """{source_file: [(line, node_id), ...]} sorted ascending, for nodes with a
-    parseable single-line source_location (the "Lnn" format every extractor emits).
+def _nodes_by_file(graph: nx.Graph) -> dict[str, list[tuple[int, str, int | None]]]:
+    """{source_file: [(line, node_id, end_line), ...]} sorted ascending, for
+    nodes with a parseable single-line source_location (the "Lnn" format
+    every extractor emits). end_line is None for a node whose extractor
+    hasn't been threaded through the (optional, additive) end_line field yet
+    (#2) — changed_seeds falls back to the old nearest-preceding heuristic
+    for those, so this is a no-op change wherever end_line isn't populated.
 
     Excludes rationale/document nodes (docstrings, headings — same file_type
     set dedup.py's _FILE_ANCHORED_NONCODE treats as identity-anchored, not the
@@ -279,7 +283,7 @@ def _nodes_by_file(graph: nx.Graph) -> dict[str, list[tuple[int, str]]]:
     over the real node with real dependents, silently losing the whole
     downstream traversal for that changed range.
     """
-    by_file: dict[str, list[tuple[int, str]]] = {}
+    by_file: dict[str, list[tuple[int, str, int | None]]] = {}
     for node_id, data in graph.nodes(data=True):
         source_file = data.get("source_file")
         loc = data.get("source_location")
@@ -290,7 +294,9 @@ def _nodes_by_file(graph: nx.Graph) -> dict[str, list[tuple[int, str]]]:
         m = re.match(r"^L(\d+)", str(loc))
         if not m:
             continue
-        by_file.setdefault(str(source_file), []).append((int(m.group(1)), str(node_id)))
+        end_line = data.get("end_line")
+        end_line = int(end_line) if isinstance(end_line, (int, float)) else None
+        by_file.setdefault(str(source_file), []).append((int(m.group(1)), str(node_id), end_line))
     for entries in by_file.values():
         entries.sort(key=lambda t: t[0])
     return by_file
@@ -303,10 +309,14 @@ def changed_seeds(
 
     Returns {file: [node_id, ...]} — for each changed range, the nearest
     node whose definition starts at or before the range (the innermost
-    enclosing definition, since source_location has no end line); if a
-    range starts before any node in the file, the file-level node (L1) is
-    used. New nodes whose own start line falls inside a changed range are
-    also included (covers newly-added functions).
+    enclosing definition). When that node's end_line is known (#2 — not
+    every extractor populates it yet), and the range starts past it, this
+    walks back to the nearest entry that actually contains `start` instead
+    of blaming a node the change fell outside of; entries with no end_line
+    keep the old bisect-only heuristic exactly. If a range starts before any
+    node in the file, the file-level node (L1) is used. New nodes whose own
+    start line falls inside a changed range are also included (covers
+    newly-added functions).
     """
     changed = git_diff_changed_ranges(repo_root, base)
     by_file = _nodes_by_file(graph)
@@ -317,18 +327,22 @@ def changed_seeds(
             continue
         hit_ids: list[str] = []
         seen: set[str] = set()
-        lines = [line for line, _nid in entries]
+        lines = [line for line, _nid, _end in entries]
         for start, end in ranges:
-            # Nearest-preceding node (bisect from the right).
+            # Nearest-preceding node (bisect from the right); walk back while
+            # its known end_line proves `start` already fell past it.
             idx = bisect.bisect_right(lines, start) - 1
+            while idx > 0 and entries[idx][2] is not None and start > entries[idx][2]:
+                idx -= 1
             if idx >= 0:
-                nid = entries[idx][1]
-                if nid not in seen:
-                    seen.add(nid)
-                    hit_ids.append(nid)
+                _line, nid, node_end = entries[idx]
+                if node_end is None or start <= node_end:
+                    if nid not in seen:
+                        seen.add(nid)
+                        hit_ids.append(nid)
             # Any node whose own definition starts inside the changed range
             # (new function/method added by this diff).
-            for line, nid in entries:
+            for line, nid, _end in entries:
                 if start <= line <= end and nid not in seen:
                     seen.add(nid)
                     hit_ids.append(nid)

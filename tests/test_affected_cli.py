@@ -409,6 +409,68 @@ def test_changed_seeds_maps_real_git_diff_to_nearest_node(tmp_path):
     assert result == {"mod.py": ["bar"]}
 
 
+def test_changed_seeds_uses_end_line_to_avoid_misattributing_a_gap_change(tmp_path):
+    """Regression (#2): a change in the gap AFTER a node's known end_line (blank
+    lines / comments between two definitions) must not be blamed on that earlier
+    node just because it's the nearest-preceding start line. When end_line is
+    known, changed_seeds falls back to the next entry that actually contains the
+    change (here, the file-level node) instead."""
+    from graphify.affected import changed_seeds
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "\ndef foo():\n    return 1\n\n\ndef bar():\n    return 2\n", encoding="utf-8"
+    )
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+
+    # Insert a comment in the gap between foo() (L2-L3) and bar() (L6-L7) --
+    # the change lands at L4, past foo's end_line but before bar's start.
+    src.write_text(
+        "\ndef foo():\n    return 1\n\n# a comment\n\ndef bar():\n    return 2\n",
+        encoding="utf-8",
+    )
+
+    graph = nx.DiGraph()
+    graph.add_node("file", label="mod.py", source_file="mod.py", source_location="L1", end_line=8)
+    graph.add_node("foo", label="foo()", source_file="mod.py", source_location="L2", end_line=3)
+    graph.add_node("bar", label="bar()", source_file="mod.py", source_location="L6", end_line=7)
+
+    result = changed_seeds(graph, tmp_path)
+    # Not "foo" -- the change is outside foo's body once end_line is known.
+    assert result == {"mod.py": ["file"]}
+
+
+def test_changed_seeds_without_end_line_keeps_old_nearest_preceding_behavior(tmp_path):
+    """Nodes with no end_line (most extractors haven't been threaded through
+    #2 yet) must behave exactly as before -- nearest-preceding-line bisect,
+    no containment check."""
+    from graphify.affected import changed_seeds
+
+    _init_git_repo(tmp_path)
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "\ndef foo():\n    return 1\n\n\ndef bar():\n    return 2\n", encoding="utf-8"
+    )
+    import subprocess
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+    src.write_text(
+        "\ndef foo():\n    return 1\n\n# a comment\n\ndef bar():\n    return 2\n",
+        encoding="utf-8",
+    )
+
+    graph = nx.DiGraph()
+    graph.add_node("file", label="mod.py", source_file="mod.py", source_location="L1")
+    graph.add_node("foo", label="foo()", source_file="mod.py", source_location="L2")
+    graph.add_node("bar", label="bar()", source_file="mod.py", source_location="L6")
+
+    result = changed_seeds(graph, tmp_path)
+    assert result == {"mod.py": ["foo"]}
+
+
 def test_format_git_diff_affected_reports_dependents(tmp_path):
     from graphify.affected import format_git_diff_affected
 
