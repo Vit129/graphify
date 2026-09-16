@@ -4247,7 +4247,7 @@ def _extract_generic(
         swift_overload_names = _swift_overloaded_method_names(root, source, stem)
 
     def add_node(nid: str, label: str, line: int, *, node_type: str | None = None,
-                 metadata: dict | None = None) -> None:
+                 metadata: dict | None = None, end_line: int | None = None) -> None:
         if nid in seen_ids:
             return
         seen_ids.add(nid)
@@ -4263,6 +4263,14 @@ def _extract_generic(
             "source_file": str_path,
             "source_location": f"L{line}",
         }
+        # Additive-only: source_location keeps its existing "Lnn" shape so no
+        # downstream consumer's parsing breaks. end_line is optional, only set
+        # where the caller still has the tree-sitter node in scope, and lets
+        # affected.py do exact interval containment instead of a
+        # nearest-preceding-line bisect (#2, definition-node coverage only —
+        # not every emission site in this file has been threaded through yet).
+        if end_line is not None and end_line >= line:
+            node["end_line"] = end_line
         if node_type:
             node["type"] = node_type
         if merged:
@@ -4313,7 +4321,7 @@ def _extract_generic(
         return nid
 
     file_nid = _make_id(str(path))
-    add_node(file_nid, path.name, 1)
+    add_node(file_nid, path.name, 1, end_line=root.end_point[0] + 1)
 
     def walk(node, parent_class_nid: str | None = None) -> None:
         t = node.type
@@ -4376,7 +4384,7 @@ def _extract_generic(
             ):
                 metadata = dict(metadata or {})
                 metadata["is_partial"] = True
-            add_node(class_nid, class_name, line, metadata=metadata)
+            add_node(class_nid, class_name, line, metadata=metadata, end_line=node.end_point[0] + 1)
             callable_def_nids.add(class_nid)  # a class is callable (constructor)
             callable_class_nids.add(class_nid)  # ...but only via its constructor (#2137)
             add_edge(file_nid, class_nid, "contains", line)
@@ -5167,7 +5175,7 @@ def _extract_generic(
                            if c.type in ("computed_property", "willset_didset_block")]
             if comp_bodies and prop_name:
                 prop_nid = _make_id(parent_class_nid, f"{prop_name}_prop")
-                add_node(prop_nid, f".{prop_name}", line)
+                add_node(prop_nid, f".{prop_name}", line, end_line=node.end_point[0] + 1)
                 add_edge(parent_class_nid, prop_nid, "method", line)
                 for body_block in comp_bodies:
                     function_bodies.append((prop_nid, body_block))
@@ -5223,7 +5231,7 @@ def _extract_generic(
                 if name:
                     line = decl.start_point[0] + 1
                     field_nid = _make_id(parent_class_nid, name)
-                    add_node(field_nid, name, line)
+                    add_node(field_nid, name, line, end_line=decl.end_point[0] + 1)
                     add_edge(parent_class_nid, field_nid, "defines", line, context="field")
             return
 
@@ -5268,14 +5276,15 @@ def _extract_generic(
                     func_nid = _make_id(parent_class_nid, selector)
                     add_node(func_nid, f".{selector}", line,
                              metadata={"swift_bare_name": func_name,
-                                       "swift_param_labels": param_labels})
+                                       "swift_param_labels": param_labels},
+                             end_line=node.end_point[0] + 1)
                 else:
                     func_nid = _make_id(parent_class_nid, func_name)
-                    add_node(func_nid, f".{func_name}()", line)
+                    add_node(func_nid, f".{func_name}()", line, end_line=node.end_point[0] + 1)
                 add_edge(parent_class_nid, func_nid, "method", line)
             else:
                 func_nid = _make_id(stem, func_name)
-                add_node(func_nid, f"{func_name}()", line)
+                add_node(func_nid, f"{func_name}()", line, end_line=node.end_point[0] + 1)
                 add_edge(file_nid, func_nid, "contains", line)
             callable_def_nids.add(func_nid)  # function / method def is callable
             if config.ts_module == "tree_sitter_python":
@@ -5635,7 +5644,7 @@ def _extract_generic(
                     m_name = tgt[2]
                     m_line = stmt.start_point[0] + 1
                     m_nid = _make_id(this_owner_nid, m_name)
-                    add_node(m_nid, f".{m_name}()", m_line)
+                    add_node(m_nid, f".{m_name}()", m_line, end_line=stmt.end_point[0] + 1)
                     add_edge(this_owner_nid, m_nid, "method", m_line)
                     m_body = val.child_by_field_name("body")
                     if m_body:
@@ -5770,7 +5779,7 @@ def _extract_generic(
                         call_line = n.start_point[0] + 1
                         call_nid = _make_id(owner_nid, "fetch", str(call_line))
                         call_label = f"fetch(action={literal_action})"
-                        add_node(call_nid, call_label, call_line)
+                        add_node(call_nid, call_label, call_line, end_line=n.end_point[0] + 1)
                         add_edge(owner_nid, call_nid, "contains", call_line)
                         # source_file/label ride along so Task 8's cross-file
                         # resolver can re-resolve this call-site's current id

@@ -2549,6 +2549,10 @@ def main() -> None:
         print("  clone <github-url>      clone a GitHub repo locally and print its path for /graphify")
         print("  merge-driver <base> <current> <other>  git merge driver: union-merge two graph.json files (set up via hook install)")
         print("  merge-graphs <g1> <g2>  merge two or more graph.json files into one cross-repo graph")
+        print("  ingest-scip <scip.json> convert a simplified SCIP-style JSON doc into {nodes, edges}")
+        print("    --source-file <path>    fallback source_file when a document has none")
+        print("    --language <lang>       fallback language tag (default: python)")
+        print("    --out <path>            output path (default: graphify-out/scip-ingested.json)")
         print("  diff <g1> <g2>          show node/edge delta between two graph.json snapshots")
         print("    --out <path>            output path (default: graphify-out/merged-graph.json)")
         print("    --branch <branch>       checkout a specific branch (default: repo default)")
@@ -6231,6 +6235,54 @@ def main() -> None:
         from graphify.paths import write_json_atomic as _wja
         _wja(out_path2, merged2, ensure_ascii=False)
         print(f"Merged: {len(merged2['nodes'])} nodes, {len(merged2['edges'])} edges")
+
+    elif cmd == "ingest-scip":
+        # graphify ingest-scip <scip.json> [--source-file <path>] [--language <lang>] [--out <output.json>]
+        # Converts a simplified SCIP-style JSON document (graphify.scip_ingest's
+        # accepted shape -- NOT the official SCIP protobuf/ndjson format) into
+        # {nodes, edges}. Combine the result with an existing extraction via
+        # `graphify merge-semantic --cached <existing.json> --new <output.json> --out <merged.json>`.
+        args = sys.argv[2:]
+        in_path3: Path | None = None
+        out_path3: Path | None = None
+        source_file_arg = ""
+        language_arg = "python"
+        i = 0
+        while i < len(args):
+            if args[i] == "--out" and i + 1 < len(args):
+                out_path3 = Path(args[i + 1]); i += 2
+            elif args[i] == "--source-file" and i + 1 < len(args):
+                source_file_arg = args[i + 1]; i += 2
+            elif args[i] == "--language" and i + 1 < len(args):
+                language_arg = args[i + 1]; i += 2
+            elif in_path3 is None:
+                in_path3 = Path(args[i]); i += 1
+            else:
+                i += 1
+        if in_path3 is None:
+            print(
+                "Usage: graphify ingest-scip <scip.json> [--source-file <path>] [--language <lang>] [--out <output.json>]",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not in_path3.exists():
+            print(f"error: not found: {in_path3}", file=sys.stderr)
+            sys.exit(1)
+        if out_path3 is None:
+            out_path3 = Path(_GRAPHIFY_OUT) / "scip-ingested.json"
+        from graphify.scip_ingest import ingest_scip_json
+        try:
+            scip_doc = json.loads(in_path3.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            print(f"error: {in_path3} is not valid JSON: {exc}", file=sys.stderr)
+            sys.exit(1)
+        ingested = ingest_scip_json(scip_doc, source_file=source_file_arg, language=language_arg)
+        out_path3.parent.mkdir(parents=True, exist_ok=True)
+        from graphify.paths import write_json_atomic as _wja
+        _wja(out_path3, ingested, ensure_ascii=False)
+        print(f"Ingested: {len(ingested['nodes'])} nodes, {len(ingested['edges'])} edges")
+        print(f"Written to: {out_path3}")
+        print(f"Merge into an existing extraction with: graphify merge-semantic --cached <existing.json> --new {out_path3} --out <merged.json>")
 
     elif Path(cmd).exists() or cmd in (".", "..") or cmd.startswith(("./", "../", "/", "~")):
         # User ran `graphify <path>` directly — treat as `graphify extract <path>`.
