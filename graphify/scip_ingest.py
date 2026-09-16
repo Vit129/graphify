@@ -4,7 +4,9 @@ Reads a simplified SCIP-style JSON structure and converts it into
 Graphify nodes and edges. NOT a full SCIP protobuf implementation —
 this is a skeleton that consumes the simplified shape described below.
 
-Not wired to the CLI in this phase.
+Wired to the CLI via `graphify ingest-scip <scip.json>` (__main__.py), which
+writes this function's {nodes, edges} result to a file for `graphify
+merge-semantic` to combine with an existing extraction.
 
 Entry point:
   ingest_scip_json(doc: object, source_file: str = "",
