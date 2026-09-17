@@ -1,3 +1,10 @@
+## Skills & Rules
+
+- **Global skills** (`~/.claude/skills/`) — always available every session; pick whichever fits the task.
+- **Project-local skills** (`.claude/skills/`, when this repo has any) — check first; these specialize/override the global ones for this repo's own conventions.
+- **Global rules** (`~/.claude/rules/`) — behavior/workflow/coding conventions that apply everywhere.
+- **Project-local rules** (`rules/`, when this repo has any) — check first; these specialize the global ones for this repo's own domain.
+
 ## graphify
 
 This project has a graphify knowledge graph at graphify-out/.
