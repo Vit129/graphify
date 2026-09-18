@@ -3,6 +3,15 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.25.1] - 2026-09-18
+
+### Added
+- Support YAML frontmatter and ADR supersedes relations in Markdown ([`2583421`](https://github.com/Vit129/graphify/commit/25834210872daa1e8e47ad0d6a87338ab77a8a05))
+
+### Documentation
+- Migrate GLOSSARY.md to standard CONTEXT.md ([`e340406`](https://github.com/Vit129/graphify/commit/e34040647a62b5b19d7f1181c89ec1a774a09425))
+- Consolidate CLAUDE/GEMINI/AGENTS into single AGENTS.md ([`ecdfc6a`](https://github.com/Vit129/graphify/commit/ecdfc6adccb576eca560a35577a5a9e09590122e))
+
 ## [0.25.0] - 2026-09-16
 
 ### Added
