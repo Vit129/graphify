@@ -513,7 +513,7 @@ const hiddenFiles = new Set();
 // excludes structural/containment relations (contains, method, defines, case_of)
 // and doc-explains-code (rationale_for), which aren't call/dependency structure.
 // Shared by the 'deps' (file-collapsed) and 'calls' (per-symbol) lenses.
-const REL_WHITELIST = new Set(['calls', 'imports', 'imports_from', 'references', 'inherits', 'implements', 'indirect_call', 're_exports', 'uses', 'embeds']);
+const REL_WHITELIST = new Set(['calls', 'imports', 'imports_from', 'references', 'inherits', 'implements', 'indirect_call', 're_exports', 'uses', 'embeds', 'supersedes', 'authored', 'tagged', 'cites']);
 let depNodesCache = null;
 let depEdgesCache = null;
 
@@ -1378,14 +1378,22 @@ def to_html(
         relation = data.get("relation", "")
         true_src = data.get("_src", u)
         true_tgt = data.get("_tgt", v)
+        is_supersedes = relation == "supersedes"
+        is_cites = relation == "cites"
+        edge_color = {"opacity": 0.85 if is_supersedes else (0.7 if confidence == "EXTRACTED" else 0.35)}
+        if is_supersedes:
+            edge_color["color"] = "#d19a66"
+        elif is_cites:
+            edge_color["color"] = "#61afef"
+
         vis_edges.append({
             "from": true_src,
             "to": true_tgt,
             "label": relation,
             "title": _html.escape(f"{relation} [{confidence}]"),
-            "dashes": confidence != "EXTRACTED",
-            "width": 2 if confidence == "EXTRACTED" else 1,
-            "color": {"opacity": 0.7 if confidence == "EXTRACTED" else 0.35},
+            "dashes": is_supersedes or (confidence != "EXTRACTED"),
+            "width": 2 if (confidence == "EXTRACTED" or is_supersedes) else 1,
+            "color": edge_color,
             "confidence": confidence,
         })
 

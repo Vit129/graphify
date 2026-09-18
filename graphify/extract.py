@@ -13697,12 +13697,64 @@ def _resolve_markdown_link(raw: str, source_dir: Path) -> "Path | None":
     return Path(os.path.normpath(str(candidate)))
 
 
+def _parse_yaml_frontmatter(lines: list[str]) -> tuple[dict, int]:
+    """Parse leading YAML frontmatter delimited by ^---$ lines.
+
+    Returns (frontmatter_dict, end_line_index_0_based).
+    If no valid frontmatter is found, returns ({}, -1).
+    """
+    if not lines or lines[0].strip() != "---":
+        return {}, -1
+    end_idx = -1
+    for i in range(1, min(len(lines), 300)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+    if end_idx == -1:
+        return {}, -1
+
+    raw = "\n".join(lines[1:end_idx])
+    data = {}
+    try:
+        import yaml
+        parsed = yaml.safe_load(raw)
+        if isinstance(parsed, dict):
+            return parsed, end_idx
+    except ImportError:
+        pass
+    except Exception:
+        # Non-standard or malformed YAML: fallback to simple top-level key: value mapping
+        pass
+
+    for line in lines[1:end_idx]:
+        line_s = line.strip()
+        if ":" in line_s and not line_s.startswith("#"):
+            k, v = line_s.split(":", 1)
+            data[k.strip()] = v.strip().strip("\"'")
+    return data, end_idx
+
+
+def _normalize_frontmatter_list(val: object) -> list[str]:
+    """Normalize frontmatter scalar or list into a list of non-empty strings."""
+    if val is None:
+        return []
+    if isinstance(val, list):
+        return [str(item).strip() for item in val if str(item).strip()]
+    s = str(val).strip()
+    if not s:
+        return []
+    if "," in s:
+        return [item.strip() for item in s.split(",") if item.strip()]
+    return [s]
+
+
 def extract_markdown(path: Path) -> dict:
     """Extract structural nodes and edges from a Markdown file.
 
     Produces nodes for:
-    - The file itself
+    - The file itself (enriched with frontmatter title, authors, tags if present)
     - Each heading (# / ## / ### etc.)
+    - Authors (person nodes) and tags (concept nodes) from YAML frontmatter
 
     Produces edges for:
     - file --contains--> heading
@@ -13711,10 +13763,10 @@ def extract_markdown(path: Path) -> dict:
     - file --references--> linked document, for inline ``[text](./other.md)``,
       reference-style ``[label]: ./other.md`` and ``[[wikilink]]`` links, so a
       hub doc (``index.md`` / ``table-of-contents.md``) becomes a real hub node
-      instead of an under-connected orphan (#1376). The target node ID is built
-      from the resolved target path with the same recipe as the target file's
-      own node, so the edge merges into that node (no ghost node). External
-      URLs, in-page anchors, images and non-document targets are skipped.
+      instead of an under-connected orphan (#1376).
+    - author --authored--> file
+    - file --tagged--> tag
+    - file --supersedes--> target_file (from frontmatter supersedes / superseded_by)
 
     Fenced code blocks (``` ... ```) are skipped during parsing so their
     contents don't get treated as headings, but no node is emitted for
@@ -13750,31 +13802,78 @@ def extract_markdown(path: Path) -> dict:
     add_node(file_nid, path.name, 1)
 
     source_dir = path.parent
-    # Dedup link edges by resolved target node so a hub doc that links to the
-    # same sibling many times yields one edge, not N (keeps weights meaningful).
-    linked_targets: set[str] = set()
+    # Dedup link edges by (relation, target_node) so a hub doc that links to the
+    # same sibling many times yields one edge, not N (keeps weights meaningful),
+    # while allowing different relations (e.g. supersedes and references) to coexist.
+    linked_targets: set[tuple[str, str]] = set()
 
-    def add_link(raw: str, line: int) -> None:
+    def add_link(raw: str, line: int, relation: str = "references") -> None:
         resolved = _resolve_markdown_link(raw, source_dir)
         if resolved is None:
             return
-        # Build the target ID with the SAME recipe as the target file's own
-        # node (_make_id(str(path)) at extract time, canonicalized to
-        # _file_node_id(rel) by the extract() post-pass). Using the absolute
-        # resolved path means both endpoints get remapped identically, so the
-        # edge merges into the existing doc node instead of spawning a ghost.
         tgt_nid = _make_id(str(resolved))
-        if tgt_nid == file_nid or tgt_nid in linked_targets:
+        pair = (relation, tgt_nid)
+        if tgt_nid == file_nid or pair in linked_targets:
             return
-        linked_targets.add(tgt_nid)
-        add_edge(file_nid, tgt_nid, "references", line)
+        linked_targets.add(pair)
+        add_edge(file_nid, tgt_nid, relation, line)
+
+    lines = source.splitlines()
+
+    # Frontmatter extraction
+    frontmatter, fm_end_idx = _parse_yaml_frontmatter(lines)
+    if frontmatter:
+        # Title override for document node
+        title = frontmatter.get("title")
+        if title and str(title).strip():
+            nodes[0]["label"] = str(title).strip()
+        if "status" in frontmatter and str(frontmatter["status"]).strip():
+            nodes[0]["status"] = str(frontmatter["status"]).strip()
+        nodes[0]["frontmatter"] = frontmatter
+
+        # Authors -> concept nodes + authored edges
+        authors = _normalize_frontmatter_list(frontmatter.get("authors") or frontmatter.get("author"))
+        for author in authors:
+            a_nid = _make_id("author", author)
+            add_node(a_nid, author, 1, file_type="concept")
+            add_edge(a_nid, file_nid, "authored", 1)
+
+        # Tags -> concept nodes + tagged edges
+        tags = _normalize_frontmatter_list(frontmatter.get("tags") or frontmatter.get("keywords"))
+        for tag in tags:
+            t_nid = _make_id("tag", tag)
+            add_node(t_nid, tag, 1, file_type="concept")
+            add_edge(file_nid, t_nid, "tagged", 1)
+
+        # ADR supersedes edges (current file supersedes target)
+        supersedes_list = _normalize_frontmatter_list(frontmatter.get("supersedes"))
+        for target_ref in supersedes_list:
+            add_link(target_ref, 1, relation="supersedes")
+
+        # ADR superseded_by edges (target file supersedes current file)
+        superseded_by_list = _normalize_frontmatter_list(frontmatter.get("superseded_by"))
+        for target_ref in superseded_by_list:
+            resolved = _resolve_markdown_link(target_ref, source_dir)
+            if resolved is not None:
+                tgt_nid = _make_id(str(resolved))
+                pair = ("supersedes", file_nid)
+                if tgt_nid != file_nid and pair not in linked_targets:
+                    linked_targets.add(pair)
+                    add_edge(tgt_nid, file_nid, "supersedes", 1)
+
+        # Frontmatter references / cites
+        ref_list = _normalize_frontmatter_list(
+            frontmatter.get("references") or frontmatter.get("cites")
+        )
+        for target_ref in ref_list:
+            add_link(target_ref, 1, relation="references")
 
     # Track heading stack for nesting: [(level, nid), ...]
     heading_stack: list[tuple[int, str]] = []
     in_code_block = False
 
-    lines = source.splitlines()
-    for line_num_0, line_text in enumerate(lines):
+    start_line_idx = fm_end_idx + 1 if fm_end_idx != -1 else 0
+    for line_num_0, line_text in enumerate(lines[start_line_idx:], start=start_line_idx):
         line_num = line_num_0 + 1
 
         # Skip over fenced code blocks so their contents are not parsed as
