@@ -3,6 +3,11 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.26.1] - 2026-10-03
+
+### Fixed
+- Tools/list crashed on the new edit tools (JSON false in Python source) ([`7644443`](https://github.com/Vit129/graphify/commit/7644443d135fec86621097495379b0e319475852))
+
 ## [0.26.0] - 2026-10-03
 
 ### Added
