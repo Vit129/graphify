@@ -2604,6 +2604,10 @@ def main() -> None:
         print("    --base REF              diff against REF instead of uncommitted changes")
         print("  affected --ci             CI test-impact: list only affected test files (implies --git-diff)")
         print("    --json                  emit the test-file list as a JSON array")
+        print("  edit replace|insert-after|rename|delete \"<node>\" ...   graph-guided symbol edits (dry run unless --apply)")
+        print("    --file F | --text T     new source for replace / insert-after")
+        print("    --all-occurrences       rename: also rename occurrences the graph does not confirm")
+        print("    --apply                 write the change (default: print a diff only)")
         print("  grep \"<text>\"          exact-text/regex search over the graph's files; hits show their enclosing symbol")
         print("    --regex                 treat <text> as a regular expression (default: literal)")
         print("    -i, --ignore-case       case-insensitive match")
@@ -3501,6 +3505,83 @@ def main() -> None:
             print(f"error: {exc}", file=sys.stderr)
             sys.exit(1)
         print(json.dumps(found, ensure_ascii=False, indent=2) if as_json else format_text_hits(found))
+    elif cmd == "edit":
+        edit_usage = (
+            "Usage: graphify edit replace \"<node>\" (--file F | --text T) [--apply]\n"
+            "       graphify edit insert-after \"<node>\" (--file F | --text T) [--apply]\n"
+            "       graphify edit rename \"<node>\" <new_name> [--all-occurrences] [--apply]\n"
+            "       graphify edit delete \"<node>\" [--apply]\n"
+            "       common: [--graph path] [--json]. Dry run (prints a diff) unless --apply; refuses when the\n"
+            "       graph is stale, the node is ambiguous, the file is outside the project, or Python would stop parsing."
+        )
+        eargs = sys.argv[2:]
+        if len(eargs) < 2 or eargs[0] not in ("replace", "insert-after", "rename", "delete", "safe-delete"):
+            print(edit_usage, file=sys.stderr)
+            sys.exit(1)
+        op, enode = eargs[0], eargs[1]
+        rest = eargs[2:]
+        e_apply = e_all = e_json = False
+        e_file = e_text = None
+        e_graph = _default_graph_path()
+        positional: list[str] = []
+        i = 0
+        while i < len(rest):
+            a = rest[i]
+            if a == "--apply":
+                e_apply = True
+                i += 1
+            elif a == "--all-occurrences":
+                e_all = True
+                i += 1
+            elif a == "--json":
+                e_json = True
+                i += 1
+            elif a in ("--file", "--text", "--graph") and i + 1 < len(rest):
+                if a == "--file":
+                    e_file = rest[i + 1]
+                elif a == "--text":
+                    e_text = rest[i + 1]
+                else:
+                    e_graph = rest[i + 1]
+                i += 2
+            elif a.startswith("--") and a not in ("--file", "--text", "--graph"):
+                print(f"error: unknown option {a}\n{edit_usage}", file=sys.stderr)
+                sys.exit(1)
+            else:
+                positional.append(a)
+                i += 1
+        from graphify.affected import load_graph
+        from graphify.edit import (
+            EditError, delete_symbol, format_edit_result, insert_after_symbol, rename_symbol, replace_symbol_body,
+        )
+        gp = Path(e_graph).resolve()
+        if not gp.exists() or gp.suffix != ".json":
+            print(f"error: graph file not found or not .json: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            G = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        root = gp.parent.parent
+        try:
+            if op in ("replace", "insert-after"):
+                if (e_file is None) == (e_text is None):
+                    raise EditError("give exactly one of --file / --text (use --file - for stdin)")
+                body = (sys.stdin.read() if e_file == "-" else Path(e_file).read_text(encoding="utf-8")) if e_file else e_text
+                fn = replace_symbol_body if op == "replace" else insert_after_symbol
+                outcome = fn(G, enode, body, root, apply=e_apply)
+            elif op == "rename":
+                if len(positional) != 1:
+                    raise EditError("rename needs exactly one <new_name>")
+                outcome = rename_symbol(G, enode, positional[0], root, apply=e_apply, all_occurrences=e_all)
+            else:
+                outcome = delete_symbol(G, enode, root, apply=e_apply)
+        except EditError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(outcome, ensure_ascii=False, indent=2) if e_json else format_edit_result(outcome))
     elif cmd in ("match", "pattern"):
         if len(sys.argv) < 3:
             print(

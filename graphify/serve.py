@@ -414,6 +414,46 @@ def _tool_get_snippet_text(G: nx.Graph, arguments: dict, graph_path: Path | str 
     return stale_banner + format_snippet(shown, snip)
 
 
+def _edit_tool_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None, op: str) -> str:
+    from graphify.edit import (
+        EditError, delete_symbol, format_edit_result, insert_after_symbol, rename_symbol, replace_symbol_body,
+    )
+    root = Path(graph_path).parent.parent if graph_path else Path.cwd()
+    apply = bool(arguments.get("apply", False))
+    node = str(arguments.get("node", ""))
+    try:
+        if op == "replace":
+            outcome = replace_symbol_body(G, node, str(arguments.get("new_source", "")), root, apply=apply)
+        elif op == "insert-after":
+            outcome = insert_after_symbol(G, node, str(arguments.get("text", "")), root, apply=apply)
+        elif op == "rename":
+            outcome = rename_symbol(
+                G, node, str(arguments.get("new_name", "")), root, apply=apply,
+                all_occurrences=bool(arguments.get("all_occurrences", False)),
+            )
+        else:
+            outcome = delete_symbol(G, node, root, apply=apply)
+    except EditError as exc:
+        return f"Error: {exc}"
+    return format_edit_result(outcome)
+
+
+def _tool_replace_symbol_body_text(G, arguments, graph_path=None) -> str:
+    return _edit_tool_text(G, arguments, graph_path, "replace")
+
+
+def _tool_insert_after_symbol_text(G, arguments, graph_path=None) -> str:
+    return _edit_tool_text(G, arguments, graph_path, "insert-after")
+
+
+def _tool_rename_symbol_text(G, arguments, graph_path=None) -> str:
+    return _edit_tool_text(G, arguments, graph_path, "rename")
+
+
+def _tool_safe_delete_symbol_text(G, arguments, graph_path=None) -> str:
+    return _edit_tool_text(G, arguments, graph_path, "delete")
+
+
 def _tool_get_community_text(
     G: nx.Graph, communities: dict, arguments: dict, graph_path: Path | str | None = None
 ) -> str:
@@ -768,6 +808,66 @@ def _build_server(graph_path: str):
                 },
             ),
             types.Tool(
+                name="replace_symbol_body",
+                description=(
+                    'Replace a function/method/class (its exact graph line range) with new source. Dry run by default (returns a diff); refuses a stale graph, an ambiguous node, or Python that would stop parsing.'
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string", "description": "Node label or exact node ID (ambiguous labels are refused)"},
+                        "new_source": {"type": "string", "description": "Full replacement source including the signature line"},
+                        "apply": {"type": "boolean", "default": false, "description": "Write the change. Default false = dry run that only returns the diff"},
+                    },
+                    "required": ["node", "new_source"],
+                },
+            ),
+            types.Tool(
+                name="insert_after_symbol",
+                description=(
+                    "Insert text right after a symbol's last line. Dry run by default (returns a diff)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string", "description": "Node label or exact node ID (ambiguous labels are refused)"},
+                        "text": {"type": "string", "description": "Text to insert (include blank lines you want)"},
+                        "apply": {"type": "boolean", "default": false, "description": "Write the change. Default false = dry run that only returns the diff"},
+                    },
+                    "required": ["node", "text"],
+                },
+            ),
+            types.Tool(
+                name="rename_symbol",
+                description=(
+                    'Rename a symbol: its definition plus every reference line the graph confirms (calls, imports, ...). Other occurrences of the name are REPORTED, not changed, unless all_occurrences=true. Dry run by default (returns a diff).'
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string", "description": "Node label or exact node ID (ambiguous labels are refused)"},
+                        "new_name": {"type": "string"},
+                        "all_occurrences": {"type": "boolean", "default": false},
+                        "apply": {"type": "boolean", "default": false, "description": "Write the change. Default false = dry run that only returns the diff"},
+                    },
+                    "required": ["node", "new_name"],
+                },
+            ),
+            types.Tool(
+                name="safe_delete_symbol",
+                description=(
+                    'Delete a symbol only when nothing else in the graph depends on it; otherwise return the dependents. Dry run by default (returns a diff).'
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string", "description": "Node label or exact node ID (ambiguous labels are refused)"},
+                        "apply": {"type": "boolean", "default": false, "description": "Write the change. Default false = dry run that only returns the diff"},
+                    },
+                    "required": ["node"],
+                },
+            ),
+            types.Tool(
                 name="save_result",
                 description=(
                     "Close the feedback loop: record whether a prior query_graph/get_node/etc. "
@@ -1067,6 +1167,18 @@ def _build_server(graph_path: str):
     def _tool_get_snippet(arguments: dict) -> str:
         return _tool_get_snippet_text(G, arguments, active_graph_path)
 
+    def _tool_replace_symbol_body(arguments: dict) -> str:
+        return _tool_replace_symbol_body_text(G, arguments, active_graph_path)
+
+    def _tool_insert_after_symbol(arguments: dict) -> str:
+        return _tool_insert_after_symbol_text(G, arguments, active_graph_path)
+
+    def _tool_rename_symbol(arguments: dict) -> str:
+        return _tool_rename_symbol_text(G, arguments, active_graph_path)
+
+    def _tool_safe_delete_symbol(arguments: dict) -> str:
+        return _tool_safe_delete_symbol_text(G, arguments, active_graph_path)
+
     _handlers = {
         "query_graph": _tool_query_graph,
         "save_result": _tool_save_result,
@@ -1081,6 +1193,10 @@ def _build_server(graph_path: str):
         "match_pattern": _tool_match_pattern,
         "search_text": _tool_search_text,
         "get_snippet": _tool_get_snippet,
+        "replace_symbol_body": _tool_replace_symbol_body,
+        "insert_after_symbol": _tool_insert_after_symbol,
+        "rename_symbol": _tool_rename_symbol,
+        "safe_delete_symbol": _tool_safe_delete_symbol,
         "list_prs": _tool_list_prs,
         "get_pr_impact": _tool_get_pr_impact,
         "triage_prs": _tool_triage_prs,
