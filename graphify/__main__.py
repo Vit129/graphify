@@ -76,7 +76,7 @@ def _default_graph_path() -> str:
 
 
 def _warn_if_graph_stale(gp: Path, raw: dict | None = None) -> None:
-    """One-line stderr note when graph.json's built_at_commit is behind HEAD.
+    """One-line stderr note when files the graph covers changed since graph.json was built.
 
     Mirrors update --all's `_is_git_fresh` freshness check but as a
     non-blocking hint on read commands (query/explain/path/affected)
@@ -97,9 +97,33 @@ def _warn_if_graph_stale(gp: Path, raw: dict | None = None) -> None:
         current_head = r.stdout.strip()
         if current_head.startswith(stored_commit) or stored_commit.startswith(current_head):
             return
+        # A graph committed to git is always at least one commit behind HEAD (committing it
+        # creates a new commit), so a hash mismatch alone is not staleness. Judge by content:
+        # warn only when a file the graph knows, or a new code file, changed since the build.
+        # If git cannot answer (unknown/rewritten commit) fall back to the plain hash warning.
+        detail = ""
+        d = _sp.run(
+            ["git", "-C", str(gp.parent.parent), "diff", "--name-only", f"{stored_commit}..{current_head}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if d.returncode == 0:
+            from graphify.watch import _WATCHED_EXTENSIONS
+            known = {
+                str(n.get("source_file", "")).replace("\\", "/").lstrip("./")
+                for n in data.get("nodes", []) if n.get("source_file")
+            }
+            relevant = [
+                p for p in d.stdout.splitlines()
+                if p and not p.startswith("graphify-out/")
+                and (p in known or Path(p).suffix.lower() in _WATCHED_EXTENSIONS)
+            ]
+            if not relevant:
+                return
+            shown = ", ".join(relevant[:3]) + (f" (+{len(relevant) - 3} more)" if len(relevant) > 3 else "")
+            detail = f" ({len(relevant)} file(s) changed since: {shown})"
         print(
             f"[graphify] note: graph.json was built at commit {stored_commit[:8]}, "
-            f"HEAD is now {current_head[:8]} - results may be stale. "
+            f"HEAD is now {current_head[:8]}{detail} - results may be stale. "
             f"Run `graphify update .` to refresh.",
             file=sys.stderr,
         )
