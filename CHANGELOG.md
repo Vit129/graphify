@@ -3,6 +3,22 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.26.0] - 2026-10-03
+
+### Added
+- Resolve Python module.func() calls to the module's function ([`eca8395`](https://github.com/Vit129/graphify/commit/eca83959854cbe2dec17003029cf9b8b3f94e502))
+- Graphify grep / search_text - exact-text and regex search inside the graph ([`d74a2d8`](https://github.com/Vit129/graphify/commit/d74a2d8cd07189830d6a7a7fefc140a45abcc884))
+- Code snippets - explain/query --snippet and the MCP get_snippet tool ([`80bacb6`](https://github.com/Vit129/graphify/commit/80bacb61b3d618c5de2c7e60de70ab03b0fff83d))
+- Graph-guided symbol edits - replace / insert-after / rename / safe delete ([`831072e`](https://github.com/Vit129/graphify/commit/831072e073b02fa95236ed66d26a277b1ed081fb))
+- Graphify flow / trace_flow - where a Python parameter flows ([`3a0266a`](https://github.com/Vit129/graphify/commit/3a0266a37ed654fe52167cdf2bab773704b5798c))
+
+### Documentation
+- Teach agents the new graph-first commands (grep, snippet, affected, flow, edit) ([`3b4306b`](https://github.com/Vit129/graphify/commit/3b4306be14772cc3312c101e986bab730d1aa40a))
+
+### Fixed
+- Stale-graph hint follows content, not commit identity ([`169b171`](https://github.com/Vit129/graphify/commit/169b1711ed19feca5c972cd8697ba421dd9377fd))
+- Do not open a browser from update/cluster-only unless in a real terminal ([`a10272d`](https://github.com/Vit129/graphify/commit/a10272d0565059eb78371648baa98f6627e27582))
+
 ## [0.25.1] - 2026-09-18
 
 ### Added

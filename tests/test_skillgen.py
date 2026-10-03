@@ -640,28 +640,34 @@ def test_always_on_roundtrip_is_byte_faithful():
         "of a session, check `graphify-out/reflections/LESSONS.md` if it exists (built via `graphify reflect`) "
         "for preferred sources, known dead ends, and past corrections."
     )
-    # The sanctioned-edit registry holds exactly these three old->new substitutions.
+    # Graph-first lookup guidance (grep / snippet / affected / flow), added with those commands.
+    old_graph_first, new_graph_first = gen._GF_OLD, gen._GF_NEW
+    # The sanctioned-edit registry holds exactly these four old->new substitutions.
     assert gen.ALWAYS_ON_SANCTIONED_EDITS["_AGENTS_MD_SECTION"] == (
         (old_instruction, new_instruction),
         (old_explain, new_explain),
         (old_saveresult, new_saveresult),
+        (old_graph_first, new_graph_first),
     )
     baseline_agents = gen._always_on_constants(gen.ALWAYS_ON_BASELINE_REF)["_AGENTS_MD_SECTION"]
-    # The ONLY divergences from the frozen baseline are the three sanctioned edits —
+    # The ONLY divergences from the frozen baseline are the four sanctioned edits —
     # any other byte drift would have surfaced as a problem above.
     assert old_instruction in baseline_agents
     assert old_explain in baseline_agents
     assert old_saveresult in baseline_agents
+    assert old_graph_first in baseline_agents
     assert (
         baseline_agents.replace(old_instruction, new_instruction)
         .replace(old_explain, new_explain)
         .replace(old_saveresult, new_saveresult)
+        .replace(old_graph_first, new_graph_first)
         == rendered_agents
     )
     assert "`skill` tool" not in rendered_agents
     assert 'skill: "graphify"' not in rendered_agents
     assert 'explain "<concept>"' not in rendered_agents
     assert "graphify save-result" in rendered_agents
+    assert 'graphify grep "<text>"' in rendered_agents
 
 
 def test_extracted_constants_equal_the_packaged_always_on_files():

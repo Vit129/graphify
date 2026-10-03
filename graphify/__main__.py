@@ -76,7 +76,7 @@ def _default_graph_path() -> str:
 
 
 def _warn_if_graph_stale(gp: Path, raw: dict | None = None) -> None:
-    """One-line stderr note when graph.json's built_at_commit is behind HEAD.
+    """One-line stderr note when files the graph covers changed since graph.json was built.
 
     Mirrors update --all's `_is_git_fresh` freshness check but as a
     non-blocking hint on read commands (query/explain/path/affected)
@@ -97,9 +97,33 @@ def _warn_if_graph_stale(gp: Path, raw: dict | None = None) -> None:
         current_head = r.stdout.strip()
         if current_head.startswith(stored_commit) or stored_commit.startswith(current_head):
             return
+        # A graph committed to git is always at least one commit behind HEAD (committing it
+        # creates a new commit), so a hash mismatch alone is not staleness. Judge by content:
+        # warn only when a file the graph knows, or a new code file, changed since the build.
+        # If git cannot answer (unknown/rewritten commit) fall back to the plain hash warning.
+        detail = ""
+        d = _sp.run(
+            ["git", "-C", str(gp.parent.parent), "diff", "--name-only", f"{stored_commit}..{current_head}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if d.returncode == 0:
+            from graphify.watch import _WATCHED_EXTENSIONS
+            known = {
+                str(n.get("source_file", "")).replace("\\", "/").lstrip("./")
+                for n in data.get("nodes", []) if n.get("source_file")
+            }
+            relevant = [
+                p for p in d.stdout.splitlines()
+                if p and not p.startswith("graphify-out/")
+                and (p in known or Path(p).suffix.lower() in _WATCHED_EXTENSIONS)
+            ]
+            if not relevant:
+                return
+            shown = ", ".join(relevant[:3]) + (f" (+{len(relevant) - 3} more)" if len(relevant) > 3 else "")
+            detail = f" ({len(relevant)} file(s) changed since: {shown})"
         print(
             f"[graphify] note: graph.json was built at commit {stored_commit[:8]}, "
-            f"HEAD is now {current_head[:8]} - results may be stale. "
+            f"HEAD is now {current_head[:8]}{detail} - results may be stale. "
             f"Run `graphify update .` to refresh.",
             file=sys.stderr,
         )
@@ -2321,6 +2345,15 @@ def _clone_repo(
 
 
 def _auto_open_browser(html_path: Path) -> None:
+    # Only from a real terminal: agents, git hooks and CI run with a non-TTY stdout and must
+    # never pop a browser tab (GRAPHIFY_NO_OPEN=1 also disables it for interactive use).
+    if os.environ.get("GRAPHIFY_NO_OPEN", "").lower() in ("1", "true", "yes"):
+        return
+    try:
+        if not sys.stdout.isatty():
+            return
+    except Exception:
+        return
     import webbrowser
     try:
         webbrowser.open(html_path.absolute().as_uri())
@@ -2533,6 +2566,8 @@ def main() -> None:
         print("    --target-path P         narrow only the target endpoint (for a duplicate label)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  explain \"X\"             plain-language explanation of a node and its neighbors")
+        print("    --snippet               also print the node's source (its exact line range)")
+        print("    --snippet-lines N       max lines for the snippet (default 60)")
         print("    --context C             explicit edge-context filter (repeatable)")
         print("    --path P                narrow a duplicate label to nodes whose file starts with P")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
@@ -2588,6 +2623,9 @@ def main() -> None:
         print("    --path P                only consider nodes whose source_file starts with P (repeatable)")
         print("    --exclude-path P        exclude nodes whose source_file starts with P (repeatable)")
         print("    --budget N              cap output at N tokens (default 2000)")
+        print("    --snippet               also print the source of the first matching code nodes")
+        print("    --snippet-limit N       how many nodes get a snippet (default 3)")
+        print("    --snippet-lines N       max lines per snippet (default 60)")
         print("    --semantic-fusion M     embedding fusion mode: boost (default) | rrf | off")
         print("                            (no effect unless the `embeddings` extra is installed)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
@@ -2599,6 +2637,23 @@ def main() -> None:
         print("    --base REF              diff against REF instead of uncommitted changes")
         print("  affected --ci             CI test-impact: list only affected test files (implies --git-diff)")
         print("    --json                  emit the test-file list as a JSON array")
+        print("  edit replace|insert-after|rename|delete \"<node>\" ...   graph-guided symbol edits (dry run unless --apply)")
+        print("    --file F | --text T     new source for replace / insert-after")
+        print("    --all-occurrences       rename: also rename occurrences the graph does not confirm")
+        print("    --apply                 write the change (default: print a diff only)")
+        print("  flow \"<function>\"       where a Python function's parameter flows (through the graph's calls)")
+        print("    --param NAME            trace one parameter (default: all except self/cls)")
+        print("    --to REGEX              keep only paths that reach a call matching REGEX (sink)")
+        print("    --depth N               function levels to follow (default 4)")
+        print("  grep \"<text>\"          exact-text/regex search over the graph's files; hits show their enclosing symbol")
+        print("    --regex                 treat <text> as a regular expression (default: literal)")
+        print("    -i, --ignore-case       case-insensitive match")
+        print("    --path P                only files whose path starts with P (repeatable)")
+        print("    --exclude-path P        skip files whose path starts with P (repeatable)")
+        print("    --context N             lines of context around each hit (max 10)")
+        print("    --limit N               max hits (default 100)")
+        print("    --json                  machine-readable output")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  dead-code               heuristic scan for function nodes unreachable from any entry point")
         print("    --top-n N               max results to show (default 15)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
@@ -3139,7 +3194,7 @@ def main() -> None:
             sys.exit(1)
     elif cmd == "query":
         if len(sys.argv) < 3:
-            print("Usage: graphify query \"<question>\" [--dfs] [--context C] [--path P] [--exclude-path P] [--budget N] [--semantic-fusion boost|rrf|off] [--graph path]", file=sys.stderr)
+            print("Usage: graphify query \"<question>\" [--snippet [--snippet-limit N] [--snippet-lines N]] [--dfs] [--context C] [--path P] [--exclude-path P] [--budget N] [--semantic-fusion boost|rrf|off] [--graph path]", file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _query_graph_text
         from graphify.security import sanitize_label
@@ -3154,10 +3209,23 @@ def main() -> None:
         include_paths: list[str] = []
         exclude_paths: list[str] = []
         semantic_fusion = "boost"
+        want_snippet = "--snippet" in sys.argv[3:]
+        snippet_limit, snippet_lines = 3, 60
         args = sys.argv[3:]
         i = 0
         while i < len(args):
-            if args[i] == "--budget" and i + 1 < len(args):
+            if args[i] in ("--snippet-limit", "--snippet-lines") and i + 1 < len(args):
+                try:
+                    _n = int(args[i + 1])
+                except ValueError:
+                    print(f"error: {args[i]} must be an integer", file=sys.stderr)
+                    sys.exit(1)
+                if args[i] == "--snippet-limit":
+                    snippet_limit = _n
+                else:
+                    snippet_lines = _n
+                i += 2
+            elif args[i] == "--budget" and i + 1 < len(args):
                 try:
                     budget = int(args[i + 1])
                 except ValueError:
@@ -3263,6 +3331,13 @@ def main() -> None:
             duration_ms=(_time.perf_counter() - _t0) * 1000,
         )
         print(_result)
+        if want_snippet:
+            from graphify.snippet import snippets_for_query_result
+            _snips = snippets_for_query_result(
+                G, _result, gp.parent.parent, limit=snippet_limit, max_lines=snippet_lines
+            )
+            if _snips:
+                print("\nSnippets:\n" + _snips)
     elif cmd == "affected":
         ci_mode = "--ci" in sys.argv[2:]
         git_diff_mode = ci_mode or "--git-diff" in sys.argv[2:]
@@ -3371,6 +3446,235 @@ def main() -> None:
                     depth=depth,
                 )
             )
+    elif cmd == "grep":
+        usage = (
+            "Usage: graphify grep \"<text>\" [--regex] [-i|--ignore-case] [--path P]... [--exclude-path P]...\n"
+            "                    [--context N] [--limit N] [--json] [--graph path]\n"
+            "       Exact-text / regex search over the files the graph knows; each hit shows its enclosing symbol."
+        )
+        args = sys.argv[2:]
+        pattern: str | None = None
+        regex = ignore_case = as_json = False
+        paths: list[str] = []
+        exclude_paths: list[str] = []
+        context, limit = 0, 100
+        graph_path = _default_graph_path()
+        i = 0
+
+        def _int_opt(name: str, value: str) -> int:
+            try:
+                return int(value)
+            except ValueError:
+                print(f"error: {name} must be an integer", file=sys.stderr)
+                sys.exit(1)
+
+        while i < len(args):
+            a = args[i]
+            if a == "--":
+                if i + 1 < len(args) and pattern is None:
+                    pattern = args[i + 1]
+                i += 2
+            elif a == "--regex":
+                regex = True
+                i += 1
+            elif a in ("-i", "--ignore-case"):
+                ignore_case = True
+                i += 1
+            elif a == "--json":
+                as_json = True
+                i += 1
+            elif a in ("--path", "--exclude-path", "--context", "--limit", "--graph") and i + 1 < len(args):
+                v = args[i + 1]
+                if a == "--path":
+                    paths.append(v)
+                elif a == "--exclude-path":
+                    exclude_paths.append(v)
+                elif a == "--context":
+                    context = _int_opt("--context", v)
+                elif a == "--limit":
+                    limit = _int_opt("--limit", v)
+                else:
+                    graph_path = v
+                i += 2
+            elif a.startswith(("--path=", "--exclude-path=", "--context=", "--limit=", "--graph=")):
+                k, v = a.split("=", 1)
+                if k == "--path":
+                    paths.append(v)
+                elif k == "--exclude-path":
+                    exclude_paths.append(v)
+                elif k == "--context":
+                    context = _int_opt("--context", v)
+                elif k == "--limit":
+                    limit = _int_opt("--limit", v)
+                else:
+                    graph_path = v
+                i += 1
+            elif a.startswith("-") and len(a) > 1:
+                print(f"error: unknown option {a}\n{usage}", file=sys.stderr)
+                sys.exit(1)
+            elif pattern is None:
+                pattern = a
+                i += 1
+            else:
+                print(f"error: unexpected argument {a!r} (quote multi-word text)\n{usage}", file=sys.stderr)
+                sys.exit(1)
+        if not pattern:
+            print(usage, file=sys.stderr)
+            sys.exit(1)
+        from graphify.affected import load_graph
+        from graphify.textsearch import format_text_hits, search_text
+        gp = Path(graph_path).resolve()
+        if not gp.exists() or gp.suffix != ".json":
+            print(f"error: graph file not found or not .json: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            graph = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        try:
+            found = search_text(
+                graph, pattern, root=gp.parent.parent, regex=regex, ignore_case=ignore_case,
+                paths=paths, exclude_paths=exclude_paths, context=context, limit=limit,
+            )
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(found, ensure_ascii=False, indent=2) if as_json else format_text_hits(found))
+    elif cmd == "edit":
+        edit_usage = (
+            "Usage: graphify edit replace \"<node>\" (--file F | --text T) [--apply]\n"
+            "       graphify edit insert-after \"<node>\" (--file F | --text T) [--apply]\n"
+            "       graphify edit rename \"<node>\" <new_name> [--all-occurrences] [--apply]\n"
+            "       graphify edit delete \"<node>\" [--apply]\n"
+            "       common: [--graph path] [--json]. Dry run (prints a diff) unless --apply; refuses when the\n"
+            "       graph is stale, the node is ambiguous, the file is outside the project, or Python would stop parsing."
+        )
+        eargs = sys.argv[2:]
+        if len(eargs) < 2 or eargs[0] not in ("replace", "insert-after", "rename", "delete", "safe-delete"):
+            print(edit_usage, file=sys.stderr)
+            sys.exit(1)
+        op, enode = eargs[0], eargs[1]
+        rest = eargs[2:]
+        e_apply = e_all = e_json = False
+        e_file = e_text = None
+        e_graph = _default_graph_path()
+        positional: list[str] = []
+        i = 0
+        while i < len(rest):
+            a = rest[i]
+            if a == "--apply":
+                e_apply = True
+                i += 1
+            elif a == "--all-occurrences":
+                e_all = True
+                i += 1
+            elif a == "--json":
+                e_json = True
+                i += 1
+            elif a in ("--file", "--text", "--graph") and i + 1 < len(rest):
+                if a == "--file":
+                    e_file = rest[i + 1]
+                elif a == "--text":
+                    e_text = rest[i + 1]
+                else:
+                    e_graph = rest[i + 1]
+                i += 2
+            elif a.startswith("--") and a not in ("--file", "--text", "--graph"):
+                print(f"error: unknown option {a}\n{edit_usage}", file=sys.stderr)
+                sys.exit(1)
+            else:
+                positional.append(a)
+                i += 1
+        from graphify.affected import load_graph
+        from graphify.edit import (
+            EditError, delete_symbol, format_edit_result, insert_after_symbol, rename_symbol, replace_symbol_body,
+        )
+        gp = Path(e_graph).resolve()
+        if not gp.exists() or gp.suffix != ".json":
+            print(f"error: graph file not found or not .json: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            G = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        root = gp.parent.parent
+        try:
+            if op in ("replace", "insert-after"):
+                if (e_file is None) == (e_text is None):
+                    raise EditError("give exactly one of --file / --text (use --file - for stdin)")
+                body = (sys.stdin.read() if e_file == "-" else Path(e_file).read_text(encoding="utf-8")) if e_file else e_text
+                fn = replace_symbol_body if op == "replace" else insert_after_symbol
+                outcome = fn(G, enode, body, root, apply=e_apply)
+            elif op == "rename":
+                if len(positional) != 1:
+                    raise EditError("rename needs exactly one <new_name>")
+                outcome = rename_symbol(G, enode, positional[0], root, apply=e_apply, all_occurrences=e_all)
+            else:
+                outcome = delete_symbol(G, enode, root, apply=e_apply)
+        except EditError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(outcome, ensure_ascii=False, indent=2) if e_json else format_edit_result(outcome))
+    elif cmd == "flow":
+        flow_usage = (
+            "Usage: graphify flow \"<function>\" [--param NAME] [--to REGEX] [--depth N] [--json] [--graph path]\n"
+            "       Where does a Python function's parameter flow? Follows calls through the graph; --to keeps only\n"
+            "       paths that reach a call matching REGEX (e.g. \"subprocess\\.|os\\.system\")."
+        )
+        fargs = sys.argv[2:]
+        if not fargs or fargs[0].startswith("--"):
+            print(flow_usage, file=sys.stderr)
+            sys.exit(1)
+        fnode, frest = fargs[0], fargs[1:]
+        f_param = f_to = None
+        f_depth, f_json = 4, False
+        f_graph = _default_graph_path()
+        i = 0
+        while i < len(frest):
+            a = frest[i]
+            if a == "--json":
+                f_json = True
+                i += 1
+            elif a in ("--param", "--to", "--depth", "--graph") and i + 1 < len(frest):
+                v = frest[i + 1]
+                if a == "--param":
+                    f_param = v
+                elif a == "--to":
+                    f_to = v
+                elif a == "--graph":
+                    f_graph = v
+                else:
+                    try:
+                        f_depth = int(v)
+                    except ValueError:
+                        print("error: --depth must be an integer", file=sys.stderr)
+                        sys.exit(1)
+                i += 2
+            else:
+                print(f"error: unknown or incomplete option {a}\n{flow_usage}", file=sys.stderr)
+                sys.exit(1)
+        from graphify.affected import load_graph
+        from graphify.dataflow import FlowError, format_flow, trace_flow
+        gp = Path(f_graph).resolve()
+        if not gp.exists() or gp.suffix != ".json":
+            print(f"error: graph file not found or not .json: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            G = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        try:
+            flow = trace_flow(G, fnode, gp.parent.parent, param=f_param, to=f_to, depth=f_depth)
+        except FlowError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(flow, ensure_ascii=False, indent=2) if f_json else format_flow(flow))
     elif cmd in ("match", "pattern"):
         if len(sys.argv) < 3:
             print(
@@ -3696,7 +4000,7 @@ def main() -> None:
 
     elif cmd == "explain":
         if len(sys.argv) < 3:
-            print('Usage: graphify explain "<node>" [--context C] [--path P] [--graph path]', file=sys.stderr)
+            print('Usage: graphify explain "<node>" [--snippet [--snippet-lines N]] [--context C] [--path P] [--graph path]', file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _find_node
         from graphify.query import _normalize_context_filters, _find_node_tied_group
@@ -3706,6 +4010,7 @@ def main() -> None:
         graph_path = _default_graph_path()
         context_filters: list[str] = []
         scope_path = None  # P16: narrow a duplicate label to one file/dir.
+        want_snippet, snippet_lines = False, 60
         args = sys.argv[3:]
         i = 0
         while i < len(args):
@@ -3720,6 +4025,16 @@ def main() -> None:
                 i += 1
             elif args[i] == "--path" and i + 1 < len(args):
                 scope_path = args[i + 1]
+                i += 2
+            elif args[i] == "--snippet":
+                want_snippet = True
+                i += 1
+            elif args[i] == "--snippet-lines" and i + 1 < len(args):
+                try:
+                    snippet_lines = int(args[i + 1])
+                except ValueError:
+                    print("error: --snippet-lines must be an integer", file=sys.stderr)
+                    sys.exit(1)
                 i += 2
             else:
                 i += 1
@@ -3842,6 +4157,14 @@ def main() -> None:
             corpus=str(gp),
             nodes_returned=len(connections),
         )
+        if want_snippet:
+            from graphify.security import sanitize_label as _sl2
+            from graphify.snippet import format_snippet, node_snippet
+            _snip = node_snippet(G, nid, gp.parent.parent, snippet_lines)
+            if _snip is not None:
+                print("\n" + format_snippet(_sl2(str(d.get("label", nid))), _snip))
+            else:
+                print("\n(no snippet: node has no line range, or its file is outside the project)")
 
     elif cmd == "diagnose":
         subcmd = sys.argv[2] if len(sys.argv) > 2 else ""

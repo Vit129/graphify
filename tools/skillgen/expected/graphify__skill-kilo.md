@@ -39,6 +39,11 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /graphify query "<question>" --budget 1500            # cap answer at N tokens
 /graphify path "AuthModule" "Database"                # shortest path between two concepts
 /graphify explain "SwinTransformer"                   # plain-language explanation of a node
+/graphify explain "SwinTransformer" --snippet         # ...plus the node's exact source (also: query "<q>" --snippet)
+/graphify grep "<text>"                               # exact-text / regex search over the graph's files; each hit shows its enclosing symbol
+/graphify affected "RateLimiter"                      # who is impacted if this changes (also: affected --git-diff / --ci)
+/graphify flow "handle()" --param user_text --to "subprocess"   # where a Python parameter flows (through the graph's calls)
+/graphify edit rename "old_name()" new_name           # graph-guided edit; dry run (diff) unless --apply; also replace | insert-after | delete
 ```
 
 ## What graphify is for

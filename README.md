@@ -303,6 +303,11 @@ graphify export callflow-html      # Mermaid architecture/call-flow HTML (auto-r
 /graphify query "what connects auth to the database?"
 /graphify path "UserService" "DatabasePool"
 /graphify explain "RateLimiter"
+/graphify explain "RateLimiter" --snippet          # plus the node's exact source
+/graphify grep "connection refused" -i             # exact-text / regex search over the graph's files; hits show their enclosing symbol
+/graphify affected "RateLimiter"                   # who is impacted if it changes (--git-diff for the current diff)
+/graphify flow "handle()" --param user_text --to "subprocess"   # where a Python parameter flows
+/graphify edit rename "old()" new --apply          # graph-guided rename/replace/insert-after/delete (dry run without --apply)
 
 /graphify add https://arxiv.org/abs/1706.03762   # fetch a paper and add it
 /graphify add <youtube-url>                       # transcribe and add a video

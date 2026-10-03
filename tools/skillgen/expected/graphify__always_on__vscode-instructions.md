@@ -5,6 +5,9 @@ code, your first action should be `graphify query "<question>"` when `graphify-o
 exists. Use `graphify path "<A>" "<B>"` for relationship questions and `graphify explain "<ClassName/FileName>"`
 for a known symbol/file - name match, not free-form concept search (use `query` for that). These
 return a scoped subgraph, usually much smaller than the full report or raw grep output.
+Find through graphify first: `graphify grep "<text>"` for exact text, `--snippet` on `query`/`explain` for source,
+`graphify affected "<X>"` before changing a symbol, `graphify flow` for Python parameter flow; use raw grep only to
+confirm an exhaustive caller list before changing a signature, or for files graphify does not index, and say so.
 
 Triggers: "how do I…", "where is…", "what does … do", "add/modify a <component>",
 "explain the architecture", or anything that depends on how files or classes relate.

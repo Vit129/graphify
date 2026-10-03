@@ -1991,7 +1991,7 @@ def _import_python(node, source: bytes, file_nid: str, stem: str, edges: list, s
                 raw = _read_text(child, source)
                 module_name = raw.split(" as ")[0].strip().lstrip(".")
                 tgt_nid = _make_id(module_name)
-                edges.append({
+                edge = {
                     "source": file_nid,
                     "target": tgt_nid,
                     "relation": "imports",
@@ -2000,7 +2000,15 @@ def _import_python(node, source: bytes, file_nid: str, stem: str, edges: list, s
                     "source_file": str_path,
                     "source_location": f"L{node.start_point[0] + 1}",
                     "weight": 1.0,
-                })
+                }
+                # Name the module is bound to in code (`import state` -> state,
+                # `import pkg.state as s` -> s); consumed and stripped by
+                # _resolve_python_module_calls. A bare `import a.b` binds the chain
+                # `a.b`, which the call extractor never captures as a receiver.
+                bound = raw.split(" as ")[-1].strip() if " as " in raw else module_name
+                if bound.isidentifier():
+                    edge["py_bind"] = [{"name": bound, "abs": module_name}]
+                edges.append(edge)
     elif t == "import_from_statement":
         module_node = node.child_by_field_name("module_name")
         if module_node:
@@ -2016,7 +2024,7 @@ def _import_python(node, source: bytes, file_nid: str, stem: str, edges: list, s
                 tgt_nid = _make_id(str(base / rel))
             else:
                 tgt_nid = _make_id(raw)
-            edges.append({
+            edge = {
                 "source": file_nid,
                 "target": tgt_nid,
                 "relation": "imports_from",
@@ -2025,7 +2033,19 @@ def _import_python(node, source: bytes, file_nid: str, stem: str, edges: list, s
                 "source_file": str_path,
                 "source_location": f"L{node.start_point[0] + 1}",
                 "weight": 1.0,
-            })
+            }
+            # `from pkg import state` may bind a SUBMODULE (pkg/state.py); record the
+            # candidate path so _resolve_python_module_calls can verify it exists.
+            binds = []
+            for imported, local in _python_imported_names(node, source):
+                if raw.startswith("."):
+                    sub = (module_name.replace(".", "/") + "/" if module_name else "") + imported
+                    binds.append({"name": local, "path": str(base / sub)})
+                else:
+                    binds.append({"name": local, "abs": f"{raw}.{imported}"})
+            if binds:
+                edge["py_bind"] = binds
+            edges.append(edge)
 
 
 def _resolve_js_import_target(raw: str, str_path: str) -> "tuple[str, Path | None] | None":
@@ -12674,6 +12694,97 @@ def _resolve_python_member_calls(
         })
 
 
+def _resolve_python_module_calls(
+    per_file: list[dict],
+    all_nodes: list[dict],
+    all_edges: list[dict],
+) -> None:
+    """Resolve ``module.func()`` calls to the module's top-level function.
+
+    ``import state`` / ``import state as st`` / ``from pkg import state`` /
+    ``from . import state`` followed by ``state.load()`` is an explicit reference, but
+    the shared cross-file pass drops every member call (a bare ``load`` collides across
+    the corpus) and the class-qualified pass only handles ``ClassName.method()``. This
+    pass uses the name -> module bindings recorded on the import edges (``py_bind``,
+    stripped here) and binds the call only when the module resolves to exactly one file
+    in the corpus that defines the called top-level function. Importer-directory
+    modules win over same-named modules elsewhere (Python's own resolution order);
+    anything else ambiguous, external or missing creates no edge and no node.
+    """
+    def norm(p: str) -> str:
+        return str(p).replace("\\", "/").lstrip("./")
+
+    file_nodes = {
+        n["id"]: norm(n.get("source_file", ""))
+        for n in all_nodes
+        if n.get("label", "").endswith(".py") and n.get("source_file")
+        and n.get("id")
+    }
+    nid_by_path = {p: nid for nid, p in file_nodes.items()}
+    funcs_by_file: dict[str, dict[str, str]] = {}
+    node_by_id = {n.get("id"): n for n in all_nodes}
+    for e in all_edges:
+        if e.get("relation") == "contains" and e.get("source") in file_nodes:
+            tgt = node_by_id.get(e.get("target"))
+            label = (tgt or {}).get("label", "")
+            if label.endswith("()") and not label.startswith("."):
+                funcs_by_file.setdefault(e["source"], {})[label[:-2]] = e["target"]
+
+    bindings: dict[str, dict[str, list[dict]]] = {}
+    for e in all_edges:
+        binds = e.pop("py_bind", None)
+        if binds:
+            for b in binds:
+                bindings.setdefault(e.get("source"), {}).setdefault(b["name"], []).append(b)
+
+    def candidates(bind: dict, importer_path: str) -> list[str]:
+        if "path" in bind:
+            stem = norm(bind["path"])
+            return [p for p in (stem + ".py", stem + "/__init__.py") if p in nid_by_path]
+        rel = bind["abs"].replace(".", "/")
+        found = [
+            p for p in nid_by_path
+            if p in (rel + ".py", rel + "/__init__.py")
+            or p.endswith(("/" + rel + ".py", "/" + rel + "/__init__.py"))
+        ]
+        local_dir = importer_path.rsplit("/", 1)[0] + "/" if "/" in importer_path else ""
+        same_dir = [p for p in found if p in (local_dir + rel + ".py", local_dir + rel + "/__init__.py")]
+        return same_dir or found
+
+    existing_pairs = {(e.get("source"), e.get("target")) for e in all_edges}
+    for result in per_file:
+        for rc in result.get("raw_calls", []):
+            receiver, callee, caller = rc.get("receiver"), rc.get("callee"), rc.get("caller_nid")
+            if not (rc.get("is_member_call") and receiver and callee and caller):
+                continue
+            if receiver[:1].isupper() or receiver in ("self", "cls"):
+                continue
+            importer_path = norm(rc.get("source_file", ""))
+            importer_nid = nid_by_path.get(importer_path)
+            if importer_nid is None:
+                continue
+            targets: set[str] = set()
+            for bind in bindings.get(importer_nid, {}).get(receiver, []):
+                targets.update(candidates(bind, importer_path))
+            if len(targets) != 1:  # external, missing, or ambiguous -> no edge
+                continue
+            func_nid = funcs_by_file.get(nid_by_path[next(iter(targets))], {}).get(callee)
+            if not func_nid or func_nid == caller or (caller, func_nid) in existing_pairs:
+                continue
+            existing_pairs.add((caller, func_nid))
+            all_edges.append({
+                "source": caller,
+                "target": func_nid,
+                "relation": "calls",
+                "context": "call",
+                "confidence": "EXTRACTED",
+                "confidence_score": 1.0,
+                "source_file": rc.get("source_file", ""),
+                "source_location": rc.get("source_location"),
+                "weight": 1.0,
+            })
+
+
 def _resolve_typescript_member_calls(
     per_file: list[dict],
     all_nodes: list[dict],
@@ -13211,6 +13322,9 @@ register_language_resolver(
 )
 register_language_resolver(
     LanguageResolver("python_member_calls", frozenset({".py"}), _resolve_python_member_calls)
+)
+register_language_resolver(
+    LanguageResolver("python_module_calls", frozenset({".py"}), _resolve_python_module_calls)
 )
 # Ruby type-aware member-call resolution (Class.new + typed var.method). Lives in
 # graphify.ruby_resolution; registered here as a second consumer of the framework.
