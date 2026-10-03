@@ -454,6 +454,27 @@ def _tool_safe_delete_symbol_text(G, arguments, graph_path=None) -> str:
     return _edit_tool_text(G, arguments, graph_path, "delete")
 
 
+def _tool_trace_flow_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.dataflow import FlowError, format_flow, trace_flow
+    root = Path(graph_path).parent.parent if graph_path else Path.cwd()
+    try:
+        result = trace_flow(
+            G,
+            str(arguments.get("node", "")),
+            root,
+            param=arguments.get("param") or None,
+            to=arguments.get("to") or None,
+            depth=min(int(arguments.get("depth", 4)), 8),
+        )
+    except FlowError as exc:
+        return f"Error: {exc}"
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        stale_banner = format_staleness_banner(graph_path, [result["file"]])
+    return stale_banner + format_flow(result)
+
+
 def _tool_get_community_text(
     G: nx.Graph, communities: dict, arguments: dict, graph_path: Path | str | None = None
 ) -> str:
@@ -868,6 +889,26 @@ def _build_server(graph_path: str):
                 },
             ),
             types.Tool(
+                name="trace_flow",
+                description=(
+                    "Trace where a Python function's parameter flows: through assignments inside the function "
+                    "and across calls (followed through the graph's calls edges, arguments mapped to the "
+                    "callee's parameters). Pass `to` (a regex such as 'subprocess\\.|os\\.system') to keep only "
+                    "paths that reach a matching call. Name-based and flow-insensitive; Python only; unresolved "
+                    "callees are leaves - use it to scope review/impact, not as a full taint engine."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string", "description": "Function/method node label or ID"},
+                        "param": {"type": "string", "description": "One parameter to trace (default: all except self/cls)"},
+                        "to": {"type": "string", "description": "Regex of sink call names; keeps only paths reaching one"},
+                        "depth": {"type": "integer", "default": 4, "description": "Function levels to follow (capped at 8)"},
+                    },
+                    "required": ["node"],
+                },
+            ),
+            types.Tool(
                 name="save_result",
                 description=(
                     "Close the feedback loop: record whether a prior query_graph/get_node/etc. "
@@ -1179,6 +1220,9 @@ def _build_server(graph_path: str):
     def _tool_safe_delete_symbol(arguments: dict) -> str:
         return _tool_safe_delete_symbol_text(G, arguments, active_graph_path)
 
+    def _tool_trace_flow(arguments: dict) -> str:
+        return _tool_trace_flow_text(G, arguments, active_graph_path)
+
     _handlers = {
         "query_graph": _tool_query_graph,
         "save_result": _tool_save_result,
@@ -1197,6 +1241,7 @@ def _build_server(graph_path: str):
         "insert_after_symbol": _tool_insert_after_symbol,
         "rename_symbol": _tool_rename_symbol,
         "safe_delete_symbol": _tool_safe_delete_symbol,
+        "trace_flow": _tool_trace_flow,
         "list_prs": _tool_list_prs,
         "get_pr_impact": _tool_get_pr_impact,
         "triage_prs": _tool_triage_prs,

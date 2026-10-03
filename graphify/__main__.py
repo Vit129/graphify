@@ -2608,6 +2608,10 @@ def main() -> None:
         print("    --file F | --text T     new source for replace / insert-after")
         print("    --all-occurrences       rename: also rename occurrences the graph does not confirm")
         print("    --apply                 write the change (default: print a diff only)")
+        print("  flow \"<function>\"       where a Python function's parameter flows (through the graph's calls)")
+        print("    --param NAME            trace one parameter (default: all except self/cls)")
+        print("    --to REGEX              keep only paths that reach a call matching REGEX (sink)")
+        print("    --depth N               function levels to follow (default 4)")
         print("  grep \"<text>\"          exact-text/regex search over the graph's files; hits show their enclosing symbol")
         print("    --regex                 treat <text> as a regular expression (default: literal)")
         print("    -i, --ignore-case       case-insensitive match")
@@ -3582,6 +3586,62 @@ def main() -> None:
             print(f"error: {exc}", file=sys.stderr)
             sys.exit(1)
         print(json.dumps(outcome, ensure_ascii=False, indent=2) if e_json else format_edit_result(outcome))
+    elif cmd == "flow":
+        flow_usage = (
+            "Usage: graphify flow \"<function>\" [--param NAME] [--to REGEX] [--depth N] [--json] [--graph path]\n"
+            "       Where does a Python function's parameter flow? Follows calls through the graph; --to keeps only\n"
+            "       paths that reach a call matching REGEX (e.g. \"subprocess\\.|os\\.system\")."
+        )
+        fargs = sys.argv[2:]
+        if not fargs or fargs[0].startswith("--"):
+            print(flow_usage, file=sys.stderr)
+            sys.exit(1)
+        fnode, frest = fargs[0], fargs[1:]
+        f_param = f_to = None
+        f_depth, f_json = 4, False
+        f_graph = _default_graph_path()
+        i = 0
+        while i < len(frest):
+            a = frest[i]
+            if a == "--json":
+                f_json = True
+                i += 1
+            elif a in ("--param", "--to", "--depth", "--graph") and i + 1 < len(frest):
+                v = frest[i + 1]
+                if a == "--param":
+                    f_param = v
+                elif a == "--to":
+                    f_to = v
+                elif a == "--graph":
+                    f_graph = v
+                else:
+                    try:
+                        f_depth = int(v)
+                    except ValueError:
+                        print("error: --depth must be an integer", file=sys.stderr)
+                        sys.exit(1)
+                i += 2
+            else:
+                print(f"error: unknown or incomplete option {a}\n{flow_usage}", file=sys.stderr)
+                sys.exit(1)
+        from graphify.affected import load_graph
+        from graphify.dataflow import FlowError, format_flow, trace_flow
+        gp = Path(f_graph).resolve()
+        if not gp.exists() or gp.suffix != ".json":
+            print(f"error: graph file not found or not .json: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            G = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        try:
+            flow = trace_flow(G, fnode, gp.parent.parent, param=f_param, to=f_to, depth=f_depth)
+        except FlowError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(flow, ensure_ascii=False, indent=2) if f_json else format_flow(flow))
     elif cmd in ("match", "pattern"):
         if len(sys.argv) < 3:
             print(
