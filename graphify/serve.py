@@ -395,6 +395,25 @@ def _tool_search_text_text(G: nx.Graph, arguments: dict, graph_path: Path | str 
     return stale_banner + body
 
 
+def _tool_get_snippet_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.snippet import DEFAULT_MAX_LINES, format_snippet, node_snippet
+    label = str(arguments.get("node", ""))
+    matches = _find_node(G, label)
+    if not matches:
+        return f"No node matching '{sanitize_label(label)}' found."
+    nid = matches[0]
+    root = Path(graph_path).parent.parent if graph_path else Path.cwd()
+    snip = node_snippet(G, nid, root, min(int(arguments.get("max_lines", DEFAULT_MAX_LINES)), 400))
+    shown = sanitize_label(str(G.nodes[nid].get("label", nid)))
+    if snip is None:
+        return f"{shown}: no snippet (node has no line range, or its file is outside the project)."
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        stale_banner = format_staleness_banner(graph_path, [snip["file"]])
+    return stale_banner + format_snippet(shown, snip)
+
+
 def _tool_get_community_text(
     G: nx.Graph, communities: dict, arguments: dict, graph_path: Path | str | None = None
 ) -> str:
@@ -734,6 +753,21 @@ def _build_server(graph_path: str):
                 },
             ),
             types.Tool(
+                name="get_snippet",
+                description=(
+                    "Return the exact source of a function/method/class node (from its line range) so "
+                    "you do not need a separate file read after query_graph / get_node / search_text."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "node": {"type": "string", "description": "Node label or ID"},
+                        "max_lines": {"type": "integer", "default": 60, "description": "Max lines (capped at 400)"},
+                    },
+                    "required": ["node"],
+                },
+            ),
+            types.Tool(
                 name="save_result",
                 description=(
                     "Close the feedback loop: record whether a prior query_graph/get_node/etc. "
@@ -1030,6 +1064,9 @@ def _build_server(graph_path: str):
     def _tool_search_text(arguments: dict) -> str:
         return _tool_search_text_text(G, arguments, active_graph_path)
 
+    def _tool_get_snippet(arguments: dict) -> str:
+        return _tool_get_snippet_text(G, arguments, active_graph_path)
+
     _handlers = {
         "query_graph": _tool_query_graph,
         "save_result": _tool_save_result,
@@ -1043,6 +1080,7 @@ def _build_server(graph_path: str):
         "shortest_path": _tool_shortest_path,
         "match_pattern": _tool_match_pattern,
         "search_text": _tool_search_text,
+        "get_snippet": _tool_get_snippet,
         "list_prs": _tool_list_prs,
         "get_pr_impact": _tool_get_pr_impact,
         "triage_prs": _tool_triage_prs,

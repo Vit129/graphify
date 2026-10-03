@@ -2533,6 +2533,8 @@ def main() -> None:
         print("    --target-path P         narrow only the target endpoint (for a duplicate label)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  explain \"X\"             plain-language explanation of a node and its neighbors")
+        print("    --snippet               also print the node's source (its exact line range)")
+        print("    --snippet-lines N       max lines for the snippet (default 60)")
         print("    --context C             explicit edge-context filter (repeatable)")
         print("    --path P                narrow a duplicate label to nodes whose file starts with P")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
@@ -2588,6 +2590,9 @@ def main() -> None:
         print("    --path P                only consider nodes whose source_file starts with P (repeatable)")
         print("    --exclude-path P        exclude nodes whose source_file starts with P (repeatable)")
         print("    --budget N              cap output at N tokens (default 2000)")
+        print("    --snippet               also print the source of the first matching code nodes")
+        print("    --snippet-limit N       how many nodes get a snippet (default 3)")
+        print("    --snippet-lines N       max lines per snippet (default 60)")
         print("    --semantic-fusion M     embedding fusion mode: boost (default) | rrf | off")
         print("                            (no effect unless the `embeddings` extra is installed)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
@@ -3148,7 +3153,7 @@ def main() -> None:
             sys.exit(1)
     elif cmd == "query":
         if len(sys.argv) < 3:
-            print("Usage: graphify query \"<question>\" [--dfs] [--context C] [--path P] [--exclude-path P] [--budget N] [--semantic-fusion boost|rrf|off] [--graph path]", file=sys.stderr)
+            print("Usage: graphify query \"<question>\" [--snippet [--snippet-limit N] [--snippet-lines N]] [--dfs] [--context C] [--path P] [--exclude-path P] [--budget N] [--semantic-fusion boost|rrf|off] [--graph path]", file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _query_graph_text
         from graphify.security import sanitize_label
@@ -3163,10 +3168,23 @@ def main() -> None:
         include_paths: list[str] = []
         exclude_paths: list[str] = []
         semantic_fusion = "boost"
+        want_snippet = "--snippet" in sys.argv[3:]
+        snippet_limit, snippet_lines = 3, 60
         args = sys.argv[3:]
         i = 0
         while i < len(args):
-            if args[i] == "--budget" and i + 1 < len(args):
+            if args[i] in ("--snippet-limit", "--snippet-lines") and i + 1 < len(args):
+                try:
+                    _n = int(args[i + 1])
+                except ValueError:
+                    print(f"error: {args[i]} must be an integer", file=sys.stderr)
+                    sys.exit(1)
+                if args[i] == "--snippet-limit":
+                    snippet_limit = _n
+                else:
+                    snippet_lines = _n
+                i += 2
+            elif args[i] == "--budget" and i + 1 < len(args):
                 try:
                     budget = int(args[i + 1])
                 except ValueError:
@@ -3272,6 +3290,13 @@ def main() -> None:
             duration_ms=(_time.perf_counter() - _t0) * 1000,
         )
         print(_result)
+        if want_snippet:
+            from graphify.snippet import snippets_for_query_result
+            _snips = snippets_for_query_result(
+                G, _result, gp.parent.parent, limit=snippet_limit, max_lines=snippet_lines
+            )
+            if _snips:
+                print("\nSnippets:\n" + _snips)
     elif cmd == "affected":
         ci_mode = "--ci" in sys.argv[2:]
         git_diff_mode = ci_mode or "--git-diff" in sys.argv[2:]
@@ -3801,7 +3826,7 @@ def main() -> None:
 
     elif cmd == "explain":
         if len(sys.argv) < 3:
-            print('Usage: graphify explain "<node>" [--context C] [--path P] [--graph path]', file=sys.stderr)
+            print('Usage: graphify explain "<node>" [--snippet [--snippet-lines N]] [--context C] [--path P] [--graph path]', file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _find_node
         from graphify.query import _normalize_context_filters, _find_node_tied_group
@@ -3811,6 +3836,7 @@ def main() -> None:
         graph_path = _default_graph_path()
         context_filters: list[str] = []
         scope_path = None  # P16: narrow a duplicate label to one file/dir.
+        want_snippet, snippet_lines = False, 60
         args = sys.argv[3:]
         i = 0
         while i < len(args):
@@ -3825,6 +3851,16 @@ def main() -> None:
                 i += 1
             elif args[i] == "--path" and i + 1 < len(args):
                 scope_path = args[i + 1]
+                i += 2
+            elif args[i] == "--snippet":
+                want_snippet = True
+                i += 1
+            elif args[i] == "--snippet-lines" and i + 1 < len(args):
+                try:
+                    snippet_lines = int(args[i + 1])
+                except ValueError:
+                    print("error: --snippet-lines must be an integer", file=sys.stderr)
+                    sys.exit(1)
                 i += 2
             else:
                 i += 1
@@ -3947,6 +3983,14 @@ def main() -> None:
             corpus=str(gp),
             nodes_returned=len(connections),
         )
+        if want_snippet:
+            from graphify.security import sanitize_label as _sl2
+            from graphify.snippet import format_snippet, node_snippet
+            _snip = node_snippet(G, nid, gp.parent.parent, snippet_lines)
+            if _snip is not None:
+                print("\n" + format_snippet(_sl2(str(d.get("label", nid))), _snip))
+            else:
+                print("\n(no snippet: node has no line range, or its file is outside the project)")
 
     elif cmd == "diagnose":
         subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
