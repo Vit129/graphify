@@ -188,6 +188,42 @@ ALWAYS_ON_SANCTIONED_EDITS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
 }
 
+# Graph-first lookup guidance (grep / snippet / affected / flow), added when those commands shipped.
+# Appended as one more sanctioned substitution per always-on block so the byte-faithful roundtrip
+# against the frozen baseline stays honest about exactly what changed.
+_GF_OLD = "These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output."
+_GF_NEW = (
+    _GF_OLD + ' Find through graphify first: `graphify grep "<text>"` for exact text/regex (each hit shows its enclosing symbol), '
+    '`--snippet` on `query`/`explain` to get the source without a separate file read, `graphify affected "<X>"` / `affected --git-diff` before changing a symbol, '
+    'and `graphify flow "<fn>" --param p --to "<sink regex>"` to see where a Python parameter flows. '
+    'Use raw grep/find only to confirm that a caller list is exhaustive before changing a signature (the graph can miss dynamic or attribute calls) or for files graphify does not index, and say so.'
+)
+_GF_TICK_OLD = "These return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output."
+_GF_EXTRA = {
+    "_AGENTS_MD_SECTION": (_GF_OLD, _GF_NEW),
+    "_CLAUDE_MD_SECTION": (_GF_OLD, _GF_NEW),
+    "_GEMINI_MD_SECTION": (_GF_OLD, _GF_NEW),
+    "_ANTIGRAVITY_RULES": (
+        _GF_TICK_OLD,
+        _GF_TICK_OLD + ' Find through graphify first: `graphify grep "<text>"` / `search_text` for exact text, `--snippet` / `get_snippet` for source, '
+        '`graphify affected "<X>"` / `blast_radius` before changing a symbol, `graphify flow` / `trace_flow` for Python parameter flow; use raw grep/find only to '
+        'confirm an exhaustive caller list before changing a signature, or for files graphify does not index, and say so.',
+    ),
+    "_KIRO_STEERING": (
+        _GF_TICK_OLD,
+        _GF_TICK_OLD + ' For exact text use `graphify grep "<text>"`; add `--snippet` to `query`/`explain` for source; check impact with `graphify affected "<X>"` before changes.',
+    ),
+    "_VSCODE_INSTRUCTIONS_SECTION": (
+        "return a scoped subgraph, usually much smaller than the full report or raw grep output.\n",
+        "return a scoped subgraph, usually much smaller than the full report or raw grep output.\n"
+        'Find through graphify first: `graphify grep "<text>"` for exact text, `--snippet` on `query`/`explain` for source,\n'
+        '`graphify affected "<X>"` before changing a symbol, `graphify flow` for Python parameter flow; use raw grep only to\n'
+        "confirm an exhaustive caller list before changing a signature, or for files graphify does not index, and say so.\n",
+    ),
+}
+for _const, _edit in _GF_EXTRA.items():
+    ALWAYS_ON_SANCTIONED_EDITS[_const] = ALWAYS_ON_SANCTIONED_EDITS[_const] + (_edit,)
+
 # The full six-value file_type enum (Decision A). Every rendered platform — split
 # or monolith — must carry exactly this enum, byte for byte. schema-singleton
 # guards it.
