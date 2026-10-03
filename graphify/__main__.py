@@ -2345,6 +2345,15 @@ def _clone_repo(
 
 
 def _auto_open_browser(html_path: Path) -> None:
+    # Only from a real terminal: agents, git hooks and CI run with a non-TTY stdout and must
+    # never pop a browser tab (GRAPHIFY_NO_OPEN=1 also disables it for interactive use).
+    if os.environ.get("GRAPHIFY_NO_OPEN", "").lower() in ("1", "true", "yes"):
+        return
+    try:
+        if not sys.stdout.isatty():
+            return
+    except Exception:
+        return
     import webbrowser
     try:
         webbrowser.open(html_path.absolute().as_uri())
