@@ -368,6 +368,33 @@ def _tool_blast_radius_text(G: nx.Graph, arguments: dict, graph_path: Path | str
     return stale_banner + "\n".join(lines)
 
 
+def _tool_search_text_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.textsearch import format_text_hits, search_text
+    pattern = str(arguments.get("pattern", ""))
+    root = Path(graph_path).parent.parent if graph_path else Path.cwd()
+    try:
+        result = search_text(
+            G,
+            pattern,
+            root=root,
+            regex=bool(arguments.get("regex", False)),
+            ignore_case=bool(arguments.get("ignore_case", False)),
+            paths=list(arguments.get("paths") or []),
+            exclude_paths=list(arguments.get("exclude_paths") or []),
+            context=int(arguments.get("context", 0)),
+            limit=min(int(arguments.get("limit", 100)), 500),
+        )
+    except ValueError as exc:
+        return f"Error: {exc}"
+    body = format_text_hits(result)
+    stale_banner = ""
+    if graph_path:
+        from graphify.staleness import format_staleness_banner
+        files = sorted({h["file"] for h in result["hits"]})
+        stale_banner = format_staleness_banner(graph_path, files)
+    return stale_banner + body
+
+
 def _tool_get_community_text(
     G: nx.Graph, communities: dict, arguments: dict, graph_path: Path | str | None = None
 ) -> str:
@@ -685,6 +712,28 @@ def _build_server(graph_path: str):
                 },
             ),
             types.Tool(
+                name="search_text",
+                description=(
+                    "Exact-text / regex search over the files the graph knows (error messages, config "
+                    "keys, TODOs - things a label query cannot find). Every hit is mapped to its "
+                    "enclosing symbol, so follow up with get_node / blast_radius on it. Literal by "
+                    "default; pass regex=true for a pattern. Prefer this over grep/find."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string", "description": "Text to find (literal unless regex=true)"},
+                        "regex": {"type": "boolean", "default": False},
+                        "ignore_case": {"type": "boolean", "default": False},
+                        "paths": {"type": "array", "items": {"type": "string"}, "description": "Only files whose path starts with one of these"},
+                        "exclude_paths": {"type": "array", "items": {"type": "string"}, "description": "Skip files whose path starts with one of these"},
+                        "context": {"type": "integer", "default": 0, "description": "Context lines around each hit (max 10)"},
+                        "limit": {"type": "integer", "default": 100, "description": "Max hits (capped at 500)"},
+                    },
+                    "required": ["pattern"],
+                },
+            ),
+            types.Tool(
                 name="save_result",
                 description=(
                     "Close the feedback loop: record whether a prior query_graph/get_node/etc. "
@@ -978,6 +1027,9 @@ def _build_server(graph_path: str):
     def _tool_match_pattern(arguments: dict) -> str:
         return _tool_match_pattern_text(G, arguments, active_graph_path)
 
+    def _tool_search_text(arguments: dict) -> str:
+        return _tool_search_text_text(G, arguments, active_graph_path)
+
     _handlers = {
         "query_graph": _tool_query_graph,
         "save_result": _tool_save_result,
@@ -990,6 +1042,7 @@ def _build_server(graph_path: str):
         "dead_code": _tool_dead_code,
         "shortest_path": _tool_shortest_path,
         "match_pattern": _tool_match_pattern,
+        "search_text": _tool_search_text,
         "list_prs": _tool_list_prs,
         "get_pr_impact": _tool_get_pr_impact,
         "triage_prs": _tool_triage_prs,

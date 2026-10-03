@@ -2599,6 +2599,15 @@ def main() -> None:
         print("    --base REF              diff against REF instead of uncommitted changes")
         print("  affected --ci             CI test-impact: list only affected test files (implies --git-diff)")
         print("    --json                  emit the test-file list as a JSON array")
+        print("  grep \"<text>\"          exact-text/regex search over the graph's files; hits show their enclosing symbol")
+        print("    --regex                 treat <text> as a regular expression (default: literal)")
+        print("    -i, --ignore-case       case-insensitive match")
+        print("    --path P                only files whose path starts with P (repeatable)")
+        print("    --exclude-path P        skip files whose path starts with P (repeatable)")
+        print("    --context N             lines of context around each hit (max 10)")
+        print("    --limit N               max hits (default 100)")
+        print("    --json                  machine-readable output")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  dead-code               heuristic scan for function nodes unreachable from any entry point")
         print("    --top-n N               max results to show (default 15)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
@@ -3371,6 +3380,102 @@ def main() -> None:
                     depth=depth,
                 )
             )
+    elif cmd == "grep":
+        usage = (
+            "Usage: graphify grep \"<text>\" [--regex] [-i|--ignore-case] [--path P]... [--exclude-path P]...\n"
+            "                    [--context N] [--limit N] [--json] [--graph path]\n"
+            "       Exact-text / regex search over the files the graph knows; each hit shows its enclosing symbol."
+        )
+        args = sys.argv[2:]
+        pattern: str | None = None
+        regex = ignore_case = as_json = False
+        paths: list[str] = []
+        exclude_paths: list[str] = []
+        context, limit = 0, 100
+        graph_path = _default_graph_path()
+        i = 0
+
+        def _int_opt(name: str, value: str) -> int:
+            try:
+                return int(value)
+            except ValueError:
+                print(f"error: {name} must be an integer", file=sys.stderr)
+                sys.exit(1)
+
+        while i < len(args):
+            a = args[i]
+            if a == "--":
+                if i + 1 < len(args) and pattern is None:
+                    pattern = args[i + 1]
+                i += 2
+            elif a == "--regex":
+                regex = True
+                i += 1
+            elif a in ("-i", "--ignore-case"):
+                ignore_case = True
+                i += 1
+            elif a == "--json":
+                as_json = True
+                i += 1
+            elif a in ("--path", "--exclude-path", "--context", "--limit", "--graph") and i + 1 < len(args):
+                v = args[i + 1]
+                if a == "--path":
+                    paths.append(v)
+                elif a == "--exclude-path":
+                    exclude_paths.append(v)
+                elif a == "--context":
+                    context = _int_opt("--context", v)
+                elif a == "--limit":
+                    limit = _int_opt("--limit", v)
+                else:
+                    graph_path = v
+                i += 2
+            elif a.startswith(("--path=", "--exclude-path=", "--context=", "--limit=", "--graph=")):
+                k, v = a.split("=", 1)
+                if k == "--path":
+                    paths.append(v)
+                elif k == "--exclude-path":
+                    exclude_paths.append(v)
+                elif k == "--context":
+                    context = _int_opt("--context", v)
+                elif k == "--limit":
+                    limit = _int_opt("--limit", v)
+                else:
+                    graph_path = v
+                i += 1
+            elif a.startswith("-") and len(a) > 1:
+                print(f"error: unknown option {a}\n{usage}", file=sys.stderr)
+                sys.exit(1)
+            elif pattern is None:
+                pattern = a
+                i += 1
+            else:
+                print(f"error: unexpected argument {a!r} (quote multi-word text)\n{usage}", file=sys.stderr)
+                sys.exit(1)
+        if not pattern:
+            print(usage, file=sys.stderr)
+            sys.exit(1)
+        from graphify.affected import load_graph
+        from graphify.textsearch import format_text_hits, search_text
+        gp = Path(graph_path).resolve()
+        if not gp.exists() or gp.suffix != ".json":
+            print(f"error: graph file not found or not .json: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            graph = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        try:
+            found = search_text(
+                graph, pattern, root=gp.parent.parent, regex=regex, ignore_case=ignore_case,
+                paths=paths, exclude_paths=exclude_paths, context=context, limit=limit,
+            )
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(found, ensure_ascii=False, indent=2) if as_json else format_text_hits(found))
     elif cmd in ("match", "pattern"):
         if len(sys.argv) < 3:
             print(
