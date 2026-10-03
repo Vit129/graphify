@@ -838,7 +838,7 @@ def _build_server(graph_path: str):
                     "properties": {
                         "node": {"type": "string", "description": "Node label or exact node ID (ambiguous labels are refused)"},
                         "new_source": {"type": "string", "description": "Full replacement source including the signature line"},
-                        "apply": {"type": "boolean", "default": false, "description": "Write the change. Default false = dry run that only returns the diff"},
+                        "apply": {"type": "boolean", "default": False, "description": "Write the change. Default false = dry run that only returns the diff"},
                     },
                     "required": ["node", "new_source"],
                 },
@@ -853,7 +853,7 @@ def _build_server(graph_path: str):
                     "properties": {
                         "node": {"type": "string", "description": "Node label or exact node ID (ambiguous labels are refused)"},
                         "text": {"type": "string", "description": "Text to insert (include blank lines you want)"},
-                        "apply": {"type": "boolean", "default": false, "description": "Write the change. Default false = dry run that only returns the diff"},
+                        "apply": {"type": "boolean", "default": False, "description": "Write the change. Default false = dry run that only returns the diff"},
                     },
                     "required": ["node", "text"],
                 },
@@ -868,8 +868,8 @@ def _build_server(graph_path: str):
                     "properties": {
                         "node": {"type": "string", "description": "Node label or exact node ID (ambiguous labels are refused)"},
                         "new_name": {"type": "string"},
-                        "all_occurrences": {"type": "boolean", "default": false},
-                        "apply": {"type": "boolean", "default": false, "description": "Write the change. Default false = dry run that only returns the diff"},
+                        "all_occurrences": {"type": "boolean", "default": False},
+                        "apply": {"type": "boolean", "default": False, "description": "Write the change. Default false = dry run that only returns the diff"},
                     },
                     "required": ["node", "new_name"],
                 },
@@ -883,7 +883,7 @@ def _build_server(graph_path: str):
                     "type": "object",
                     "properties": {
                         "node": {"type": "string", "description": "Node label or exact node ID (ambiguous labels are refused)"},
-                        "apply": {"type": "boolean", "default": false, "description": "Write the change. Default false = dry run that only returns the diff"},
+                        "apply": {"type": "boolean", "default": False, "description": "Write the change. Default false = dry run that only returns the diff"},
                     },
                     "required": ["node"],
                 },
