@@ -5,6 +5,10 @@
 - **Global rules** (`~/.claude/rules/`) — behavior/workflow/coding conventions that apply everywhere.
 - **Project-local rules** (`rules/`, when this repo has any) — check first; these specialize the global ones for this repo's own domain.
 
+## Agent Memory
+
+Per-project memory lives centrally in `~/Git/Personal/agent-memory-private/agent-memory/graphify/` (never in this repo). Resolve path via `python3 ~/.claude/scripts/lib/memory_root.py .` or search via `python3 ~/.claude/scripts/recall.py "<query>"`.
+
 ## graphify
 
 This project has a graphify knowledge graph at graphify-out/.
