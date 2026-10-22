@@ -333,10 +333,10 @@ const edgesDS = new vis.DataSet(RAW_EDGES.map((e, i) => ({{
   arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }},
 }})));
 
-// Layout: 'force' (physics simulation) or 'hierarchy' (vis-network layout.hierarchical,
-// left to right). The aggregated community view opens as a hierarchy, since its
-// few community nodes read best in layers; everything else starts in force mode.
-let layoutMode = IS_AGGREGATED ? 'hierarchy' : 'force';
+// Layout: 'force' (physics simulation, the default) or 'hierarchy' (vis-network
+// layout.hierarchical, left to right). Hierarchy is opt-in: it reads well on small
+// graphs but draws hundreds of communities as a tall, sparse strip.
+let layoutMode = 'force';
 // Spacing is tightened: with many small disconnected groups the defaults stack
 // them into a column tens of thousands of px tall.
 const HIERARCHY_OPTS = {{

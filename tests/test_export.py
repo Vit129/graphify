@@ -544,10 +544,10 @@ def test_html_has_layout_toggle(tmp_path):
     assert "function toggleLayout" in html
     assert "function applyLayoutMode" in html
     assert "direction: 'LR'" in html and "sortMethod: 'directed'" in html
-    assert "let layoutMode = IS_AGGREGATED ? 'hierarchy' : 'force';" in html
+    assert "let layoutMode = 'force';" in html
 
 
-def test_html_aggregated_view_defaults_to_hierarchy_and_labels(tmp_path):
+def test_html_aggregated_view_keeps_force_default_and_shows_labels(tmp_path):
     import networkx as nx
 
     from graphify.export import to_html
@@ -562,7 +562,7 @@ def test_html_aggregated_view_defaults_to_hierarchy_and_labels(tmp_path):
             member_counts={0: 1, 1: 1})
     html = out.read_text(encoding="utf-8")
     assert "const IS_AGGREGATED = true;" in html
-    assert "let layoutMode = IS_AGGREGATED ? 'hierarchy' : 'force';" in html
+    assert "let layoutMode = 'force';" in html
     # Community labels are always shown: outlined font, and the Show Labels box is disabled.
     assert '"strokeWidth": 3' in html
     assert "labelsCb.disabled = true" in html
