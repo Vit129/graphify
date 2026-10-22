@@ -2665,6 +2665,13 @@ def main() -> None:
         print("    --out <path>            write markdown to a file instead of stdout")
         print("    --steps N               max tour stops (default 8)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
+        print("  describe                opt-in: LLM-written plain-language notes for top nodes/communities (shown by tour/onboard)")
+        print("    --limit N               god nodes to describe (default 15)")
+        print("    --lang LANGUAGE         description language (default English)")
+        print("    --backend NAME          LLM backend (default: auto-detect from env)")
+        print("    --dry-run               show item count and estimated cost, make no API call")
+        print("    --refresh               re-describe everything, ignoring the cache")
+        print("    --root <dir>            project root for source excerpts (default .)")
         print("  save-result             save a Q&A result to graphify-out/memory/ for graph feedback loop")
         print("    --question Q            the question asked")
         print("    --answer A              the answer to save")
@@ -3794,6 +3801,9 @@ def main() -> None:
             sys.exit(1)
         _warn_if_graph_stale(gp)
         stops = build_tour(graph, max_steps=max(1, opts.steps))
+        from graphify.describe import apply_to_stops, descriptions_path, load_descriptions
+
+        apply_to_stops(stops, load_descriptions(descriptions_path(gp)))
         print(_json.dumps(stops, indent=2) if opts.json else format_tour(stops))
     elif cmd == "onboard":
         import argparse as _ap
@@ -3816,13 +3826,22 @@ def main() -> None:
             print(f"error: could not load graph: {exc}", file=sys.stderr)
             sys.exit(1)
         _warn_if_graph_stale(gp)
-        doc = build_onboarding(graph, project_name=Path.cwd().name, max_steps=max(1, opts.steps))
+        from graphify.describe import descriptions_path, load_descriptions
+
+        doc = build_onboarding(
+            graph, project_name=Path.cwd().name, max_steps=max(1, opts.steps),
+            descriptions=load_descriptions(descriptions_path(gp)),
+        )
         if opts.out:
             Path(opts.out).parent.mkdir(parents=True, exist_ok=True)
             Path(opts.out).write_text(doc, encoding="utf-8")
             print(f"Saved to {opts.out}")
         else:
             print(doc)
+    elif cmd == "describe":
+        from graphify.describe import describe_main
+
+        sys.exit(describe_main(sys.argv[2:]))
     elif cmd == "save-result":
         # graphify save-result --question Q --answer A [--type T] [--nodes N1 N2 ...]
         #                      [--outcome useful|dead_end|corrected] [--correction TEXT]
