@@ -22,6 +22,11 @@ LAYER_RULES: list[tuple[str, str, tuple[str, ...]]] = [
     ("Test", "Tests and test utilities", ("test", "spec", "__test__", "__spec__", "__tests__", "__specs__")),
     ("Config", "Configuration and environment settings", ("config", "setting", "env")),
 ]
+LAYER_COLORS = {
+    "API": "#4e9bff", "Service": "#43c478", "Data": "#f0a04b", "UI": "#e86fb0",
+    "Middleware": "#9b7bf0", "External": "#2fc6c0", "Background": "#e6cf4f",
+    "Utility": "#9aa3b2", "Test": "#6c7a96", "Config": "#b9835a", "Core": "#7fb7e6",
+}
 _DESCRIPTIONS = {name: desc for name, desc, _ in LAYER_RULES}
 _DESCRIPTIONS["Core"] = "Core application code (no layer-style directory name)"
 
