@@ -24,7 +24,14 @@ def _communities(G: nx.Graph) -> dict[int, list[str]]:
     return dict(out)
 
 
-def build_onboarding(G: nx.Graph, project_name: str = "this project", max_steps: int = 8) -> str:
+def build_onboarding(
+    G: nx.Graph,
+    project_name: str = "this project",
+    max_steps: int = 8,
+    descriptions: dict[str, str] | None = None,
+) -> str:
+    """`descriptions` is the optional output of `graphify describe` (load_descriptions); None = unchanged output."""
+    descriptions = descriptions or {}
     files = {d["source_file"] for _, d in G.nodes(data=True) if d.get("source_file")}
     exts = Counter(Path(f).suffix.lower() for f in files if Path(f).suffix)
     lines = [f"# Onboarding: {project_name}", ""]
@@ -53,6 +60,9 @@ def build_onboarding(G: nx.Graph, project_name: str = "this project", max_steps:
         lines += ["## Guided tour", "Read in this order; entry points first, foundations last.", ""]
         for s in stops:
             lines.append(f"{s['step']}. **{s['title']}** ({s['size']} nodes)")
+            desc = descriptions.get(f"community:{s['community']}")
+            if desc:
+                lines.append(f"   - {desc}")
             if s["files"]:
                 lines.append("   - start with: " + ", ".join(f"`{f}`" for f in s["files"]))
             if s["key_nodes"]:
@@ -67,7 +77,11 @@ def build_onboarding(G: nx.Graph, project_name: str = "this project", max_steps:
         core = god_nodes(G, top_n=8)
     if core:
         lines += ["## Core abstractions", "Most central nodes in the graph.", ""]
-        lines += [f"- `{c['label']}` (degree {c['degree']})" for c in core]
+        for c in core:
+            lines.append(f"- `{c['label']}` (degree {c['degree']})")
+            desc = descriptions.get(f"node:{c['id']}")
+            if desc:
+                lines.append(f"  - {desc}")
         lines.append("")
 
     couplers = cross_cutting_nodes(G, _communities(G), top_n=5)

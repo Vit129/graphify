@@ -312,6 +312,9 @@ graphify export callflow-html      # Mermaid architecture/call-flow HTML (auto-r
 /graphify add https://arxiv.org/abs/1706.03762   # fetch a paper and add it
 /graphify add <youtube-url>                       # transcribe and add a video
 
+graphify describe --dry-run        # opt-in: preview cost of plain-language notes for top nodes/communities (shown by tour/onboard)
+graphify describe --lang Thai      # actually call your configured LLM backend (~15-25 short calls; cached, re-runs only changed items)
+
 graphify hook install              # auto-rebuild on git commit
 graphify merge-graphs a.json b.json              # combine two graphs
 graphify lsp-resolve --dry-run              # opt-in: confirm INFERRED call edges with a language server (default pyright for .py; --server "CMD ARGS" for others)
@@ -321,6 +324,8 @@ graphify prs 42                    # deep dive on PR #42 with graph impact
 graphify prs --triage              # AI ranks your review queue (uses whatever backend is configured)
 graphify prs --conflicts           # PRs sharing graph communities — merge-order risk
 ```
+
+`graphify describe` is the only command here that sends code to an LLM, and only when you run it. It sends one short prompt per item (definition lines plus neighbour labels, not whole files) for the top 15 god nodes and each tour community, roughly 20 calls of a few hundred input tokens each; that is typically cents or less on hosted backends and free on a local Ollama model. Use `--dry-run` for an estimate on your backend. Descriptions are model-written and may be wrong; the prompt asks for "unclear" when the excerpt is not enough.
 
 See the [full command reference](#full-command-reference) below.
 
