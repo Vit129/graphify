@@ -312,14 +312,20 @@ graphify export callflow-html      # Mermaid architecture/call-flow HTML (auto-r
 /graphify add https://arxiv.org/abs/1706.03762   # fetch a paper and add it
 /graphify add <youtube-url>                       # transcribe and add a video
 
+graphify describe --dry-run        # opt-in: preview cost of plain-language notes for top nodes/communities (shown by tour/onboard)
+graphify describe --lang Thai      # actually call your configured LLM backend (~15-25 short calls; cached, re-runs only changed items)
+
 graphify hook install              # auto-rebuild on git commit
 graphify merge-graphs a.json b.json              # combine two graphs
+graphify lsp-resolve --dry-run              # opt-in: confirm INFERRED call edges with a language server (default pyright for .py; --server "CMD ARGS" for others)
 
 graphify prs                       # PR dashboard: CI state, review status, worktree mapping
 graphify prs 42                    # deep dive on PR #42 with graph impact
 graphify prs --triage              # AI ranks your review queue (uses whatever backend is configured)
 graphify prs --conflicts           # PRs sharing graph communities — merge-order risk
 ```
+
+`graphify describe` is the only command here that sends code to an LLM, and only when you run it. It sends one short prompt per item (definition lines plus neighbour labels, not whole files) for the top 15 god nodes and each tour community, roughly 20 calls of a few hundred input tokens each; that is typically cents or less on hosted backends and free on a local Ollama model. Use `--dry-run` for an estimate on your backend. Descriptions are model-written and may be wrong; the prompt asks for "unclear" when the excerpt is not enough.
 
 See the [full command reference](#full-command-reference) below.
 
@@ -412,9 +418,37 @@ python -m graphify.serve graphify-out/graph.json --transport http --port 8080
 python -m graphify.serve graphify-out/graph.json --transport http --host 0.0.0.0 --api-key "$SECRET"
 ```
 
-The MCP server gives your assistant structured access: `query_graph`, `get_node`, `get_neighbors`, `shortest_path`, `list_prs`, `get_pr_impact`, `triage_prs`.
+The MCP server gives your assistant structured access: `query_graph`, `get_node`, `get_neighbors`, `shortest_path`, `cypher_query`, `list_prs`, `get_pr_impact`, `triage_prs`.
 
 Queries are scored with real BM25 over camelCase/snake_case-aware tokens, plus a small curated synonym map (`login`/`authenticate`, `delete`/`remove`, etc.) so a query phrased differently from the code it targets still has a chance to match. A typo (`sesion` → `session`) or abbreviation (`hus` → `handleUserSession`) that returns nothing on the first pass is automatically corrected against the graph's own vocabulary and re-run, with a note in the response when that happens.
+
+### Cypher subset (`graphify cypher`)
+
+A small, read-only **subset** of Cypher that runs directly on `graph.json` (no Neo4j, no extra dependency). It is **not full Cypher**: anything outside the list below is rejected with an error naming the construct. Also exposed to agents as the MCP tool `cypher_query`.
+
+```bash
+# who calls load_graph()?
+graphify cypher "MATCH (a:code)-[:calls]->(b) WHERE b.label = 'load_graph()' RETURN a.label AS caller, a.source_file AS file ORDER BY file"
+# which files import something named like 'affected'?
+graphify cypher "MATCH (a)-[:imports|imports_from]->(m) WHERE m.label =~ '.*affected.*' RETURN DISTINCT a.source_file, m.label"
+# top 5 functions by degree
+graphify cypher "MATCH (f:code) WHERE f.label ENDS WITH '()' RETURN f.label, f.degree AS degree ORDER BY degree DESC LIMIT 5" --json
+```
+
+Options: `--graph PATH`, `--json`, `--limit N` (default row limit when the query has no `LIMIT`).
+
+| Supported | Notes |
+|---|---|
+| `MATCH` one chain | `(a)-[r:calls\|imports]->(b)`, `<-`, undirected `-`, `--`/`-->`, optional variable, `:label` (matches `file_type`, e.g. `:code`, `:document`) and `{prop: "x"}` equality. Direction comes from the stored `_src`/`_tgt`. |
+| Variable-length hops | `*`, `*N`, `*a..b`, `*..b`, `*a..`; at most 5 hops (`*` means `*1..5`). A relationship is never reused within one path. |
+| Node properties | `id`, `label`, `source_file`, `source_location`, `community`, `community_name`, `file_type`, `layer`, `degree` |
+| Relationship properties | `relation` (also `type(r)`), `confidence`, `context` |
+| `WHERE` | `AND`/`OR`/`NOT`, parentheses, `=` `<>` `<` `<=` `>` `>=`, `CONTAINS`, `STARTS WITH`, `ENDS WITH`, `=~` (whole-string regex), `IN [..]`, `IS [NOT] NULL` (null follows Cypher three-valued logic) |
+| `RETURN` | property access, `AS`, `DISTINCT`, `count(*)`, `count(x)`, `count(DISTINCT x)`, whole nodes/relationships; `ORDER BY [ASC\|DESC]`, `SKIP`, `LIMIT` |
+
+Not supported (rejected): `CREATE`, `MERGE`, `DELETE`, `SET`, `REMOVE`, `CALL`, `WITH`, `UNION`, `UNWIND`, `OPTIONAL MATCH`, multiple `MATCH` clauses or comma-separated patterns, path variables, parameters, arithmetic, list/map expressions, and every function except `count()` and `type()`.
+
+Limits: default `LIMIT 100`, hard cap 1000 rows; a step budget (1,000,000 node/edge visits) and a 15 s wall-clock check abort runaway queries such as `MATCH (a)-[*1..5]-(b) RETURN count(*)`. Regexes are capped at 200 characters, reject nested repetition (`(a+)+`) and backreferences, and only match values up to 300 characters, because Python's `re` cannot be interrupted mid-match. Queries are parsed by a hand-written parser and never `eval`'d; the graph is never modified.
 
 ### Shared HTTP server
 

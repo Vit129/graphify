@@ -2637,6 +2637,10 @@ def main() -> None:
         print("    --base REF              diff against REF instead of uncommitted changes")
         print("  affected --ci             CI test-impact: list only affected test files (implies --git-diff)")
         print("    --json                  emit the test-file list as a JSON array")
+        print("  cypher \"MATCH ... RETURN ...\"  read-only Cypher SUBSET over graph.json (not full Cypher)")
+        print("    --json                  emit {columns, rows, truncated, notes} as JSON")
+        print("    --limit N               default row limit when the query has no LIMIT (default 100, max 1000)")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  edit replace|insert-after|rename|delete \"<node>\" ...   graph-guided symbol edits (dry run unless --apply)")
         print("    --file F | --text T     new source for replace / insert-after")
         print("    --all-occurrences       rename: also rename occurrences the graph does not confirm")
@@ -2665,6 +2669,21 @@ def main() -> None:
         print("    --out <path>            write markdown to a file instead of stdout")
         print("    --steps N               max tour stops (default 8)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
+        print("  lsp-resolve             confirm INFERRED call edges with a language server (opt-in; default pyright for .py)")
+        print("    --server \"CMD ARGS\"    language server command (default: pyright-langserver --stdio for .py)")
+        print("    --ext .py               only edges whose source file has this extension (default .py)")
+        print("    --root <dir>            project root the graph was built from (default .)")
+        print("    --max-edges N           examine at most N edges")
+        print("    --timeout S             per-request timeout in seconds (default 15)")
+        print("    --dry-run               report counts without writing graph.json")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
+        print("  describe                opt-in: LLM-written plain-language notes for top nodes/communities (shown by tour/onboard)")
+        print("    --limit N               god nodes to describe (default 15)")
+        print("    --lang LANGUAGE         description language (default English)")
+        print("    --backend NAME          LLM backend (default: auto-detect from env)")
+        print("    --dry-run               show item count and estimated cost, make no API call")
+        print("    --refresh               re-describe everything, ignoring the cache")
+        print("    --root <dir>            project root for source excerpts (default .)")
         print("  save-result             save a Q&A result to graphify-out/memory/ for graph feedback loop")
         print("    --question Q            the question asked")
         print("    --answer A              the answer to save")
@@ -3794,6 +3813,9 @@ def main() -> None:
             sys.exit(1)
         _warn_if_graph_stale(gp)
         stops = build_tour(graph, max_steps=max(1, opts.steps))
+        from graphify.describe import apply_to_stops, descriptions_path, load_descriptions
+
+        apply_to_stops(stops, load_descriptions(descriptions_path(gp)))
         print(_json.dumps(stops, indent=2) if opts.json else format_tour(stops))
     elif cmd == "onboard":
         import argparse as _ap
@@ -3816,13 +3838,111 @@ def main() -> None:
             print(f"error: could not load graph: {exc}", file=sys.stderr)
             sys.exit(1)
         _warn_if_graph_stale(gp)
-        doc = build_onboarding(graph, project_name=Path.cwd().name, max_steps=max(1, opts.steps))
+        from graphify.describe import descriptions_path, load_descriptions
+
+        doc = build_onboarding(
+            graph, project_name=Path.cwd().name, max_steps=max(1, opts.steps),
+            descriptions=load_descriptions(descriptions_path(gp)),
+        )
         if opts.out:
             Path(opts.out).parent.mkdir(parents=True, exist_ok=True)
             Path(opts.out).write_text(doc, encoding="utf-8")
             print(f"Saved to {opts.out}")
         else:
             print(doc)
+    elif cmd == "lsp-resolve":
+        # graphify lsp-resolve [--graph PATH] [--root DIR] [--server "CMD ARGS"] [--ext .py]
+        #                      [--max-edges N] [--timeout S] [--dry-run]
+        import argparse as _ap
+
+        p = _ap.ArgumentParser(prog="graphify lsp-resolve")
+        p.add_argument("--graph", default=_default_graph_path())
+        p.add_argument("--root", default=".")
+        p.add_argument("--server", default=None)
+        p.add_argument("--ext", default=".py")
+        p.add_argument("--max-edges", type=int, default=None)
+        p.add_argument("--timeout", type=float, default=15.0)
+        p.add_argument("--dry-run", action="store_true")
+        opts = p.parse_args(sys.argv[2:])
+        from graphify.lsp_resolve import LspError, format_summary, run as _lsp_run
+
+        try:
+            stats = _lsp_run(
+                Path(opts.graph).resolve(), Path(opts.root), server=opts.server, ext=opts.ext,
+                max_edges=opts.max_edges, timeout=opts.timeout, dry_run=opts.dry_run,
+            )
+        except LspError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(format_summary(stats, opts.dry_run))
+    elif cmd == "cypher":
+        # graphify cypher "<query>" [--graph PATH] [--json] [--limit N]  (read-only Cypher SUBSET)
+        cy_usage = "Usage: graphify cypher \"MATCH ... RETURN ...\" [--graph path] [--json] [--limit N]"
+        cy_query, cy_graph, cy_json, cy_limit = None, _default_graph_path(), False, None
+        cy_args = sys.argv[2:]
+        i = 0
+        while i < len(cy_args):
+            a = cy_args[i]
+            if a == "--json":
+                cy_json = True
+                i += 1
+            elif a in ("--graph", "--limit") and i + 1 < len(cy_args):
+                if a == "--graph":
+                    cy_graph = cy_args[i + 1]
+                else:
+                    try:
+                        cy_limit = int(cy_args[i + 1])
+                    except ValueError:
+                        print("error: --limit must be an integer", file=sys.stderr)
+                        sys.exit(1)
+                i += 2
+            elif a.startswith("--graph="):
+                cy_graph = a.split("=", 1)[1]
+                i += 1
+            elif a.startswith("--limit="):
+                try:
+                    cy_limit = int(a.split("=", 1)[1])
+                except ValueError:
+                    print("error: --limit must be an integer", file=sys.stderr)
+                    sys.exit(1)
+                i += 1
+            elif a.startswith("-") and len(a) > 1:
+                print(f"error: unknown or incomplete option {a}\n{cy_usage}", file=sys.stderr)
+                sys.exit(1)
+            elif cy_query is None:
+                cy_query = a
+                i += 1
+            else:
+                print(f"error: unexpected argument {a!r} (quote the query)\n{cy_usage}", file=sys.stderr)
+                sys.exit(1)
+        if not cy_query:
+            print(cy_usage, file=sys.stderr)
+            sys.exit(1)
+        from graphify.affected import load_graph
+        from graphify.cypher import CypherError, format_table, load_community_names, run_cypher
+        gp = Path(cy_graph).resolve()
+        if not gp.exists() or gp.suffix != ".json":
+            print(f"error: graph file not found or not .json: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            graph = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        try:
+            cy_res = run_cypher(graph, cy_query, limit=cy_limit, community_names=load_community_names(gp))
+        except CypherError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        if cy_json:
+            print(json.dumps(cy_res.to_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(format_table(cy_res))
+    elif cmd == "describe":
+        from graphify.describe import describe_main
+
+        sys.exit(describe_main(sys.argv[2:]))
     elif cmd == "save-result":
         # graphify save-result --question Q --answer A [--type T] [--nodes N1 N2 ...]
         #                      [--outcome useful|dead_end|corrected] [--correction TEXT]

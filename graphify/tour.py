@@ -165,6 +165,8 @@ def format_tour(stops: list[dict]) -> str:
     lines = ["Guided tour - read in this order:", ""]
     for s in stops:
         lines.append(f"{s['step']}. {s['title']} ({s['size']} nodes)")
+        if s.get("description"):  # present only after the opt-in `graphify describe`
+            lines.append(f"   {s['description']}")
         if s["files"]:
             lines.append("   start with: " + ", ".join(s["files"]))
         if s["key_nodes"]:

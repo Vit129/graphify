@@ -25,10 +25,13 @@ Each stage is a single function in its own module. They communicate through plai
 | `tour.py` | `build_tour(G)`, `find_entry_points(G)` | graph → ordered reading stops (communities, callers first); likely entry-point files |
 | `layers.py` | `detect_layers(G)`, `layer_of_path(path)` | graph / path → architecture layer (API, Service, Data, UI, ...) from directory names |
 | `onboard.py` | `build_onboarding(G)` | graph → one-page onboarding markdown (entry points, layers, tour, core abstractions) |
+| `lsp_resolve.py` | `run(graph, root, server)` | graph.json + language server → INFERRED `calls` edges confirmed/retargeted to EXTRACTED (opt-in `graphify lsp-resolve`) |
+| `describe.py` | `describe_main(argv)`, `load_descriptions(path)` | **opt-in, the only LLM-using part of the reading aids**: graph → `graphify-out/descriptions.json` (1-2 sentence notes for top god nodes + tour communities, hash-cached); `tour` / `onboard` read it if present |
 | `ingest.py` | `ingest(url, ...)` | URL → file saved to corpus dir |
 | `cache.py` | `check_semantic_cache / save_semantic_cache` | files → (cached, uncached) split |
 | `security.py` | validation helpers | URL / path / label → validated or raises |
 | `validate.py` | `validate_extraction(data)` | extraction dict → raises on schema errors |
+| `cypher.py` | `run_cypher(G, query)`, `parse_cypher(query)` | graph + read-only Cypher-subset query → rows (`graphify cypher`, MCP `cypher_query`) |
 | `serve.py` | `start_server(graph_path)` | graph file path → MCP stdio server |
 | `watch.py` | `watch(root, flag_path)` | directory → writes flag file on change |
 | `benchmark.py` | `run_benchmark(graph_path)` | graph file → corpus vs subgraph token comparison |
@@ -36,6 +39,8 @@ Each stage is a single function in its own module. They communicate through plai
 ## Reading aids
 
 `tour`, `layers` and `onboard` turn an existing `graph.json` into a "where do I start" view. They add no extraction work and call no LLM, so they stay free and deterministic.
+
+The one exception is the separate, opt-in `graphify describe`: it sends a small excerpt (definition lines plus neighbour labels, wrapped as untrusted input) per item to the configured backend and caches the result in `descriptions.json`. `tour` and `onboard` only read that file; without it their output is unchanged and nothing calls an LLM.
 
 - **Tour order**: the largest communities are ordered top-down by the direction of cross-community edges (condensation topological order), so entry points come first and foundations last.
 - **Layers** are a directory-name heuristic, not an inferred truth. Repos without conventional folder names land mostly in "Core". Each `graph.html` node carries a `layer`; aggregated community nodes take their members' dominant layer.
