@@ -29,6 +29,7 @@ Each stage is a single function in its own module. They communicate through plai
 | `cache.py` | `check_semantic_cache / save_semantic_cache` | files → (cached, uncached) split |
 | `security.py` | validation helpers | URL / path / label → validated or raises |
 | `validate.py` | `validate_extraction(data)` | extraction dict → raises on schema errors |
+| `cypher.py` | `run_cypher(G, query)`, `parse_cypher(query)` | graph + read-only Cypher-subset query → rows (`graphify cypher`, MCP `cypher_query`) |
 | `serve.py` | `start_server(graph_path)` | graph file path → MCP stdio server |
 | `watch.py` | `watch(root, flag_path)` | directory → writes flag file on change |
 | `benchmark.py` | `run_benchmark(graph_path)` | graph file → corpus vs subgraph token comparison |

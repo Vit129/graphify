@@ -2637,6 +2637,10 @@ def main() -> None:
         print("    --base REF              diff against REF instead of uncommitted changes")
         print("  affected --ci             CI test-impact: list only affected test files (implies --git-diff)")
         print("    --json                  emit the test-file list as a JSON array")
+        print("  cypher \"MATCH ... RETURN ...\"  read-only Cypher SUBSET over graph.json (not full Cypher)")
+        print("    --json                  emit {columns, rows, truncated, notes} as JSON")
+        print("    --limit N               default row limit when the query has no LIMIT (default 100, max 1000)")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  edit replace|insert-after|rename|delete \"<node>\" ...   graph-guided symbol edits (dry run unless --apply)")
         print("    --file F | --text T     new source for replace / insert-after")
         print("    --all-occurrences       rename: also rename occurrences the graph does not confirm")
@@ -3823,6 +3827,70 @@ def main() -> None:
             print(f"Saved to {opts.out}")
         else:
             print(doc)
+    elif cmd == "cypher":
+        # graphify cypher "<query>" [--graph PATH] [--json] [--limit N]  (read-only Cypher SUBSET)
+        cy_usage = "Usage: graphify cypher \"MATCH ... RETURN ...\" [--graph path] [--json] [--limit N]"
+        cy_query, cy_graph, cy_json, cy_limit = None, _default_graph_path(), False, None
+        cy_args = sys.argv[2:]
+        i = 0
+        while i < len(cy_args):
+            a = cy_args[i]
+            if a == "--json":
+                cy_json = True
+                i += 1
+            elif a in ("--graph", "--limit") and i + 1 < len(cy_args):
+                if a == "--graph":
+                    cy_graph = cy_args[i + 1]
+                else:
+                    try:
+                        cy_limit = int(cy_args[i + 1])
+                    except ValueError:
+                        print("error: --limit must be an integer", file=sys.stderr)
+                        sys.exit(1)
+                i += 2
+            elif a.startswith("--graph="):
+                cy_graph = a.split("=", 1)[1]
+                i += 1
+            elif a.startswith("--limit="):
+                try:
+                    cy_limit = int(a.split("=", 1)[1])
+                except ValueError:
+                    print("error: --limit must be an integer", file=sys.stderr)
+                    sys.exit(1)
+                i += 1
+            elif a.startswith("-") and len(a) > 1:
+                print(f"error: unknown or incomplete option {a}\n{cy_usage}", file=sys.stderr)
+                sys.exit(1)
+            elif cy_query is None:
+                cy_query = a
+                i += 1
+            else:
+                print(f"error: unexpected argument {a!r} (quote the query)\n{cy_usage}", file=sys.stderr)
+                sys.exit(1)
+        if not cy_query:
+            print(cy_usage, file=sys.stderr)
+            sys.exit(1)
+        from graphify.affected import load_graph
+        from graphify.cypher import CypherError, format_table, load_community_names, run_cypher
+        gp = Path(cy_graph).resolve()
+        if not gp.exists() or gp.suffix != ".json":
+            print(f"error: graph file not found or not .json: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            graph = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        try:
+            cy_res = run_cypher(graph, cy_query, limit=cy_limit, community_names=load_community_names(gp))
+        except CypherError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        if cy_json:
+            print(json.dumps(cy_res.to_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(format_table(cy_res))
     elif cmd == "save-result":
         # graphify save-result --question Q --answer A [--type T] [--nodes N1 N2 ...]
         #                      [--outcome useful|dead_end|corrected] [--correction TEXT]
