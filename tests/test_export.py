@@ -488,3 +488,20 @@ def test_existing_graph_node_count(tmp_path):
     p.write_text('{"nodes": [{"id": "a"}, {"id": "b"}], "links": []}', encoding="utf-8")
     assert existing_graph_node_count(p) == 2               # valid
 
+
+
+def test_html_has_layer_lens(tmp_path):
+    import networkx as nx
+
+    from graphify.export import to_html
+
+    G = nx.Graph()
+    G.add_node("a", label="get_users()", source_file="app/routes/users.py", file_type="code", community=0)
+    G.add_node("b", label="User", source_file="app/models/user.py", file_type="code", community=0)
+    G.add_edge("a", "b", relation="calls", confidence="EXTRACTED")
+    out = tmp_path / "graph.html"
+    to_html(G, {0: ["a", "b"]}, str(out))
+    html = out.read_text(encoding="utf-8")
+    assert 'id="lens-btn-layer"' in html
+    assert "function layerOfPath" in html
+    assert '"Service"' in html and '"#4e9bff"' in html

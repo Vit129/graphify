@@ -296,9 +296,10 @@ network.on('afterDrawing', function(ctx) {{
 </script>"""
 
 
-def _html_script(nodes_json: str, edges_json: str, legend_json: str) -> str:
+def _html_script(nodes_json: str, edges_json: str, legend_json: str, layers_json: str = 'null') -> str:
     return f"""<script>
 const RAW_NODES = {nodes_json};
+const LAYER_CFG = {layers_json};
 const RAW_EDGES = {edges_json};
 const LEGEND = {legend_json};
 
@@ -506,7 +507,8 @@ document.addEventListener('click', e => {{
 // computed lazily here in the browser from data already embedded above, so
 // building/updating the graph (`extract`, `update`, `cluster-only`) does no
 // extra work and graph.html isn't any bigger than before.
-let currentLens = 'community'; // 'community' | 'file' | 'deps' | 'calls'
+let currentLens = 'community'; // 'community' | 'file' | 'deps' | 'calls' | 'layer'
+const hiddenLayers = new Set();
 const hiddenCommunities = new Set();
 const hiddenFiles = new Set();
 // Real relation vocabulary measured across Python/YAML, Swift, and JS/TS corpora (2026-07-04):
@@ -531,13 +533,26 @@ function colorForFile(f) {{
   return _fileColorCache[f];
 }}
 
+// Architecture layer from directory names (mirrors graphify/layers.py).
+function layerOfPath(p) {{
+  const segs = (p || '').split(String.fromCharCode(92)).join('/').toLowerCase().split('/').slice(0, -1);
+  for (const [name, words] of LAYER_CFG.rules)
+    for (const seg of segs)
+      if (words.some(w => seg === w || seg === w + 's')) return name;
+  return 'Core';
+}}
+function layerOfNode(n) {{ return n.layer || n._layer || layerOfPath(n.source_file || n._source_file || ''); }}
+function colorForLayer(name) {{ return LAYER_CFG.colors[name] || '#7fb7e6'; }}
+
 function isNodeHidden(n) {{
+  if (currentLens === 'layer') return hiddenLayers.has(layerOfNode(n));
   if (currentLens === 'calls' && (n.file_type || n._file_type) !== 'code') return true;
   if (currentLens === 'file' || currentLens === 'calls') return hiddenFiles.has(n.source_file || n._source_file || '(none)');
   return hiddenCommunities.has(n.community !== undefined ? n.community : n._community);
 }}
 
 function nodeDisplayColor(n) {{
+  if (currentLens === 'layer') return colorForLayer(layerOfNode(n));
   if (currentLens === 'file' || currentLens === 'calls') return colorForFile(n.source_file || n._source_file || '(none)');
   return n.color.background;
 }}
@@ -570,15 +585,20 @@ function toggleAllGroups(hide) {{
     hide ? item.classList.add('dimmed') : item.classList.remove('dimmed');
   }});
   document.querySelectorAll('.legend-cb').forEach(cb => {{ cb.checked = !hide; }});
-  if (currentLens === 'community') {{
+  if (currentLens === 'layer') {{
+    const layers = new Set(RAW_NODES.map(layerOfNode));
+    layers.forEach(l => {{ if (hide) hiddenLayers.add(l); else hiddenLayers.delete(l); }});
+  }} else if (currentLens === 'community') {{
     LEGEND.forEach(c => {{ if (hide) hiddenCommunities.add(c.cid); else hiddenCommunities.delete(c.cid); }});
   }} else {{
     const files = new Set(fileScopedNodes().map(n => n.source_file || '(none)'));
     files.forEach(f => {{ if (hide) hiddenFiles.add(f); else hiddenFiles.delete(f); }});
   }}
   applyVisibility();
-  const total = currentLens === 'community' ? LEGEND.length : new Set(fileScopedNodes().map(n => n.source_file || '(none)')).size;
-  const hidden = currentLens === 'community' ? hiddenCommunities.size : hiddenFiles.size;
+  const total = currentLens === 'layer' ? new Set(RAW_NODES.map(layerOfNode)).size
+    : currentLens === 'community' ? LEGEND.length : new Set(fileScopedNodes().map(n => n.source_file || '(none)')).size;
+  const hidden = currentLens === 'layer' ? hiddenLayers.size
+    : currentLens === 'community' ? hiddenCommunities.size : hiddenFiles.size;
   updateSelectAllState(total, hidden);
 }}
 
@@ -640,8 +660,39 @@ function renderFileLegend() {{
   updateSelectAllState(files.length, hiddenFiles.size);
 }}
 
+function renderLayerLegend() {{
+  legendTitleEl.textContent = 'Architecture layers';
+  legendEl.innerHTML = '';
+  const counts = {{}};
+  RAW_NODES.forEach(n => {{ const l = layerOfNode(n); counts[l] = (counts[l] || 0) + 1; }});
+  const layers = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  layers.forEach(l => {{
+    const item = document.createElement('div');
+    item.className = 'legend-item' + (hiddenLayers.has(l) ? ' dimmed' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'legend-cb';
+    cb.checked = !hiddenLayers.has(l);
+    cb.addEventListener('change', (e) => {{
+      e.stopPropagation();
+      if (cb.checked) {{ hiddenLayers.delete(l); item.classList.remove('dimmed'); }}
+      else {{ hiddenLayers.add(l); item.classList.add('dimmed'); }}
+      applyVisibility();
+      updateSelectAllState(layers.length, hiddenLayers.size);
+    }});
+    item.innerHTML = `<div class="legend-dot" style="background:${{colorForLayer(l)}}"></div>
+      <span class="legend-label" title="${{esc(LAYER_CFG.descriptions[l] || '')}}">${{esc(l)}}</span>
+      <span class="legend-count">${{counts[l]}}</span>`;
+    item.prepend(cb);
+    item.onclick = (e) => {{ if (e.target === cb) return; cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }};
+    legendEl.appendChild(item);
+  }});
+  updateSelectAllState(layers.length, hiddenLayers.size);
+}}
+
 function renderLegend() {{
-  if (currentLens === 'community') renderCommunityLegend();
+  if (currentLens === 'layer') renderLayerLegend();
+  else if (currentLens === 'community') renderCommunityLegend();
   else renderFileLegend();
 }}
 
@@ -718,12 +769,13 @@ function switchLens(lens) {{
     nodesDS.clear();
     nodesDS.add(RAW_NODES.map(n => ({{
       id: n.id, label: n.label,
-      color: (lens === 'file' || lens === 'calls')
-        ? {{ background: colorForFile(n.source_file || '(none)'), border: colorForFile(n.source_file || '(none)'), highlight: {{ background: '#fff', border: colorForFile(n.source_file || '(none)') }} }}
+      color: (lens === 'file' || lens === 'calls' || lens === 'layer')
+        ? (() => {{ const c = lens === 'layer' ? colorForLayer(layerOfNode(n)) : colorForFile(n.source_file || '(none)');
+            return {{ background: c, border: c, highlight: {{ background: '#fff', border: c }} }}; }})()
         : n.color,
       size: n.size, font: n.font, title: n.title,
       _community: n.community, _community_name: n.community_name,
-      _source_file: n.source_file, _file_type: n.file_type, _degree: n.degree,
+      _source_file: n.source_file, _file_type: n.file_type, _degree: n.degree, _layer: n.layer,
       hidden: isNodeHidden(n),
     }})));
     edgesDS.clear();
@@ -1238,8 +1290,20 @@ def to_html(
             print(f"Graph has {G.number_of_nodes()} nodes (above {limit} limit). Building aggregated community view...")
             node_to_community = {nid: cid for cid, members in communities.items() for nid in members}
             meta = _nx.Graph()
+            from graphify.layers import layer_of_path as _layer_of_path
+
             for cid, members in communities.items():
-                meta.add_node(str(cid), label=(community_labels or {}).get(cid, f"Community {cid}"))
+                # Dominant architecture layer of the members, so the Layers lens
+                # still means something when nodes are collapsed to communities.
+                layer_votes = _Counter(
+                    _layer_of_path(str(G.nodes[m].get("source_file") or ""))
+                    for m in members if m in G
+                )
+                meta.add_node(
+                    str(cid),
+                    label=(community_labels or {}).get(cid, f"Community {cid}"),
+                    layer=layer_votes.most_common(1)[0][0] if layer_votes else "Core",
+                )
             edge_counts = _Counter()
             for u, v in G.edges():
                 cu, cv = node_to_community.get(u), node_to_community.get(v)
@@ -1309,6 +1373,8 @@ def to_html(
     _RING = {"preferred": "#22c55e", "contested": "#f59e0b"}
 
     # Build nodes list for vis.js
+    from graphify.layers import layer_of_path
+
     vis_nodes = []
     for node_id, data in G.nodes(data=True):
         cid = node_community.get(node_id, 0)
@@ -1335,6 +1401,7 @@ def to_html(
             "source_file": sanitize_label(str(data.get("source_file") or "")),
             "file_type": data.get("file_type", ""),
             "degree": deg,
+            "layer": data.get("layer") or layer_of_path(str(data.get("source_file") or "")),
         }
         # Conditional learning fields — only present for annotated nodes, so
         # un-annotated output keeps the exact pre-feature node dict shape.
@@ -1409,6 +1476,13 @@ def to_html(
     def _js_safe(obj) -> str:
         return json.dumps(obj).replace("</", "<\\/")
 
+    from graphify.layers import _DESCRIPTIONS, LAYER_COLORS, LAYER_RULES
+
+    layers_json = _js_safe({
+        "rules": [[name, list(words)] for name, _, words in LAYER_RULES],
+        "colors": LAYER_COLORS,
+        "descriptions": _DESCRIPTIONS,
+    })
     nodes_json = _js_safe(vis_nodes)
     edges_json = _js_safe(vis_edges)
     legend_json = _js_safe(legend_data)
@@ -1442,6 +1516,7 @@ def to_html(
     <button id="lens-btn-community" class="toggle-btn active lens-btn" onclick="switchLens('community')" title="Group/color by inferred community">Community</button>
     <button id="lens-btn-file" class="toggle-btn lens-btn" onclick="switchLens('file')" title="Group/color by source file">File</button>
     <button id="lens-btn-deps" class="toggle-btn lens-btn" onclick="switchLens('deps')" title="Collapse to one node per file, edges = calls/imports/references/extends between files">Dependencies</button>
+    <button id="lens-btn-layer" class="toggle-btn lens-btn" onclick="switchLens('layer')" title="Color by architecture layer inferred from directory names (API, Service, Data, UI, ...)">Layers</button>
     <button id="lens-btn-calls" class="toggle-btn lens-btn" onclick="switchLens('calls')" title="Code symbols only (functions/classes/methods) — hides concept/rationale/document nodes, edges = real calls/imports/references between symbols">Calls</button>
   </div>
   <div id="search-wrap">
@@ -1519,7 +1594,7 @@ def to_html(
   </div>
   <div id="stats">{stats}</div>
 </div>
-{_html_script(nodes_json, edges_json, legend_json)}
+{_html_script(nodes_json, edges_json, legend_json, layers_json)}
 {_hyperedge_script(hyperedges_json)}
 </body>
 </html>"""
