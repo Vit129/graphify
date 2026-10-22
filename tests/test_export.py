@@ -251,7 +251,7 @@ def test_to_html_search_respects_lens_and_has_type_filter():
         assert "search-type-filter" in content
         assert "function tokenize(text)" in content
         assert "function runSearch()" in content
-        assert "if (isNodeHidden(n)) return;" in content
+        assert "if (isScopeHidden(n)) return;" in content
         assert "typeFilter !== 'all' && n.file_type !== typeFilter" in content
         assert "file.includes(q)" in content
 
@@ -505,3 +505,64 @@ def test_html_has_layer_lens(tmp_path):
     assert 'id="lens-btn-layer"' in html
     assert "function layerOfPath" in html
     assert '"Service"' in html and '"#4e9bff"' in html
+
+
+def test_html_has_isolated_toggle(tmp_path):
+    import networkx as nx
+
+    from graphify.export import to_html
+
+    G = nx.Graph()
+    G.add_node("a", label="get_users()", source_file="app/routes/users.py", file_type="code", community=0)
+    G.add_node("b", label="User", source_file="app/models/user.py", file_type="code", community=0)
+    G.add_node("lonely", label="unused_helper()", source_file="app/util.py", file_type="code", community=0)
+    G.add_edge("a", "b", relation="calls", confidence="EXTRACTED")
+    out = tmp_path / "graph.html"
+    to_html(G, {0: ["a", "b", "lonely"]}, str(out))
+    html = out.read_text(encoding="utf-8")
+    assert 'id="isolated-btn"' in html
+    assert "Show isolated nodes (" in html
+    assert "function computeIsolation" in html
+    assert "function isScopeHidden" in html
+    assert "function toggleIsolated" in html
+    assert "const IS_AGGREGATED = false;" in html
+
+
+def test_html_has_layout_toggle(tmp_path):
+    import networkx as nx
+
+    from graphify.export import to_html
+
+    G = nx.Graph()
+    G.add_node("a", label="get_users()", source_file="app/routes/users.py", file_type="code", community=0)
+    G.add_node("b", label="User", source_file="app/models/user.py", file_type="code", community=0)
+    G.add_edge("a", "b", relation="calls", confidence="EXTRACTED")
+    out = tmp_path / "graph.html"
+    to_html(G, {0: ["a", "b"]}, str(out))
+    html = out.read_text(encoding="utf-8")
+    assert 'id="layout-btn"' in html
+    assert "function toggleLayout" in html
+    assert "function applyLayoutMode" in html
+    assert "direction: 'LR'" in html and "sortMethod: 'directed'" in html
+    assert "let layoutMode = IS_AGGREGATED ? 'hierarchy' : 'force';" in html
+
+
+def test_html_aggregated_view_defaults_to_hierarchy_and_labels(tmp_path):
+    import networkx as nx
+
+    from graphify.export import to_html
+
+    G = nx.Graph()
+    G.add_node("a", label="get_users()", source_file="app/routes/users.py", file_type="code", community=0)
+    G.add_node("b", label="User", source_file="app/models/user.py", file_type="code", community=1)
+    G.add_edge("a", "b", relation="calls", confidence="EXTRACTED")
+    out = tmp_path / "graph.html"
+    communities = {0: ["a"], 1: ["b"]}
+    to_html(G, communities, str(out), community_labels={0: "Routes", 1: "Models"},
+            member_counts={0: 1, 1: 1})
+    html = out.read_text(encoding="utf-8")
+    assert "const IS_AGGREGATED = true;" in html
+    assert "let layoutMode = IS_AGGREGATED ? 'hierarchy' : 'force';" in html
+    # Community labels are always shown: outlined font, and the Show Labels box is disabled.
+    assert '"strokeWidth": 3' in html
+    assert "labelsCb.disabled = true" in html

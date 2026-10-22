@@ -201,6 +201,11 @@ def _html_styles() -> str:
   #graph-3d { flex: 1; display: none; }
   #sidebar { width: 280px; background: #1a1a2e; border-left: 1px solid #2a2a4e; display: flex; flex-direction: column; overflow: hidden; }
   #mode-toggle-wrap, #lens-toggle-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; display: flex; gap: 8px; }
+  #lens-toggle-wrap { border-bottom: none; padding-bottom: 8px; flex-wrap: wrap; }
+  #lens-toggle-wrap .toggle-btn { white-space: nowrap; }
+  #view-toggle-wrap { padding: 0 12px 12px; border-bottom: 1px solid #2a2a4e; display: flex; gap: 8px; }
+  #view-toggle-wrap .toggle-btn { font-size: 11px; padding: 5px 8px; white-space: nowrap; }
+  #view-toggle-wrap .toggle-btn:disabled { opacity: 0.4; cursor: default; }
   .toggle-btn { flex: 1; background: #0f0f1a; border: 1px solid #3a3a5e; color: #aaa; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s ease; outline: none; font-weight: 500; text-align: center; }
   .toggle-btn:hover { border-color: #4E79A7; color: #fff; }
   .toggle-btn.active { background: #4E79A7; border-color: #4E79A7; color: #fff; box-shadow: 0 0 8px rgba(78, 121, 167, 0.4); }
@@ -296,12 +301,14 @@ network.on('afterDrawing', function(ctx) {{
 </script>"""
 
 
-def _html_script(nodes_json: str, edges_json: str, legend_json: str, layers_json: str = 'null') -> str:
+def _html_script(nodes_json: str, edges_json: str, legend_json: str, layers_json: str = 'null', aggregated: bool = False) -> str:
     return f"""<script>
 const RAW_NODES = {nodes_json};
 const LAYER_CFG = {layers_json};
 const RAW_EDGES = {edges_json};
 const LEGEND = {legend_json};
+// True for the aggregated community view (nodes are communities, not symbols).
+const IS_AGGREGATED = {'true' if aggregated else 'false'};
 
 // HTML-escape helper — prevents XSS when injecting graph data into innerHTML
 function esc(s) {{
@@ -326,10 +333,25 @@ const edgesDS = new vis.DataSet(RAW_EDGES.map((e, i) => ({{
   arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }},
 }})));
 
+// Layout: 'force' (physics simulation) or 'hierarchy' (vis-network layout.hierarchical,
+// left to right). The aggregated community view opens as a hierarchy, since its
+// few community nodes read best in layers; everything else starts in force mode.
+let layoutMode = IS_AGGREGATED ? 'hierarchy' : 'force';
+// Spacing is tightened: with many small disconnected groups the defaults stack
+// them into a column tens of thousands of px tall.
+const HIERARCHY_OPTS = {{
+  enabled: true, direction: 'LR', sortMethod: 'directed',
+  nodeSpacing: 60, treeSpacing: 80, levelSeparation: 160, shakeTowards: 'roots',
+}};
+// Nodes with no visible edge under the active lens are hidden until revealed.
+let showIsolated = false;
+let isolatedIds = new Set();
+
 const container = document.getElementById('graph');
 const network = new vis.Network(container, {{ nodes: nodesDS, edges: edgesDS }}, {{
+  layout: {{ hierarchical: layoutMode === 'hierarchy' ? HIERARCHY_OPTS : {{ enabled: false }} }},
   physics: {{
-    enabled: true,
+    enabled: layoutMode === 'force',
     solver: 'forceAtlas2Based',
     forceAtlas2Based: {{
       gravitationalConstant: -60,
@@ -376,6 +398,8 @@ function showInfo(nodeId) {{
 }}
 
 function focusNode(nodeId) {{
+  // Search still finds isolated nodes; reveal them so the focus has a target.
+  if (!showIsolated && isolatedIds.has(nodeId)) {{ showIsolated = true; applyVisibility(); }}
   const is3D = document.getElementById('graph-3d').style.display !== 'none';
   if (is3D && graph3DInstance) {{
     const node3d = graph3DInstance.graphData().nodes.find(n => n.id === nodeId);
@@ -458,7 +482,7 @@ function runSearch() {{
   const qTokens = tokenize(raw);
   const scored = [];
   RAW_NODES.forEach(n => {{
-    if (isNodeHidden(n)) return; // respect the active lens (e.g. Calls hides concept/doc nodes)
+    if (isScopeHidden(n)) return; // respect the active lens and legend (e.g. Calls hides concept/doc nodes)
     if (typeFilter !== 'all' && n.file_type !== typeFilter) return;
     const label = n.label.toLowerCase();
     const file = (n.source_file || '').toLowerCase();
@@ -544,11 +568,74 @@ function layerOfPath(p) {{
 function layerOfNode(n) {{ return n.layer || n._layer || layerOfPath(n.source_file || n._source_file || ''); }}
 function colorForLayer(name) {{ return LAYER_CFG.colors[name] || '#7fb7e6'; }}
 
-function isNodeHidden(n) {{
+// Hidden by the active lens or its legend checkboxes (ignores isolation).
+function isScopeHidden(n) {{
   if (currentLens === 'layer') return hiddenLayers.has(layerOfNode(n));
   if (currentLens === 'calls' && (n.file_type || n._file_type) !== 'code') return true;
-  if (currentLens === 'file' || currentLens === 'calls') return hiddenFiles.has(n.source_file || n._source_file || '(none)');
+  if (currentLens === 'file' || currentLens === 'calls' || currentLens === 'deps') return hiddenFiles.has(n.source_file || n._source_file || '(none)');
   return hiddenCommunities.has(n.community !== undefined ? n.community : n._community);
+}}
+
+function isNodeHidden(n) {{
+  return isScopeHidden(n) || (!showIsolated && isolatedIds.has(n.id));
+}}
+
+// Edges the active lens draws (same filter switchLens and the 3D view apply).
+function lensEdges() {{
+  if (currentLens === 'deps') return depEdgesCache || [];
+  return RAW_EDGES.filter(e => currentLens !== 'calls' || REL_WHITELIST.has((e.label || '').toLowerCase()));
+}}
+
+// A node is isolated when it has no edge to another visible node under the
+// active lens. Recomputed on every visibility change, so legend toggles update
+// the count and the set of hidden dots together.
+function computeIsolation() {{
+  const scope = currentLens === 'deps' ? (depNodesCache || []) : RAW_NODES;
+  const visible = new Set(scope.filter(n => !isScopeHidden(n)).map(n => n.id));
+  const connected = new Set();
+  lensEdges().forEach(e => {{
+    if (visible.has(e.from) && visible.has(e.to)) {{ connected.add(e.from); connected.add(e.to); }}
+  }});
+  isolatedIds = new Set([...visible].filter(id => !connected.has(id)));
+}}
+
+function updateIsolationControl() {{
+  const btn = document.getElementById('isolated-btn');
+  btn.textContent = `Show isolated nodes (${{isolatedIds.size}})`;
+  btn.classList.toggle('active', showIsolated);
+  btn.setAttribute('aria-pressed', String(showIsolated));
+  btn.disabled = isolatedIds.size === 0 && !showIsolated;
+}}
+
+function toggleIsolated() {{
+  showIsolated = !showIsolated;
+  applyVisibility();
+}}
+
+// Hierarchy turns physics off; Force restores physics and settles it once, as on
+// first load and on every lens switch.
+function applyLayoutMode() {{
+  const hier = layoutMode === 'hierarchy';
+  network.setOptions({{
+    layout: {{ hierarchical: hier ? HIERARCHY_OPTS : {{ enabled: false }} }},
+    physics: {{ enabled: !hier }},
+  }});
+  if (!hier) network.once('stabilizationIterationsDone', () => network.setOptions({{ physics: {{ enabled: false }} }}));
+  // A hierarchy can be far larger than the viewport; fit it once it has been laid out.
+  if (hier) network.once('afterDrawing', () => network.fit({{ animation: false }}));
+  updateLayoutControl();
+}}
+
+function toggleLayout() {{
+  layoutMode = layoutMode === 'force' ? 'hierarchy' : 'force';
+  applyLayoutMode();
+  network.fit({{ animation: true }});
+}}
+
+function updateLayoutControl() {{
+  const btn = document.getElementById('layout-btn');
+  btn.textContent = layoutMode === 'hierarchy' ? 'Layout: Hierarchy' : 'Layout: Force';
+  btn.classList.toggle('active', layoutMode === 'hierarchy');
 }}
 
 function nodeDisplayColor(n) {{
@@ -563,8 +650,10 @@ function updateSelectAllState(total, hidden) {{
 }}
 
 function applyVisibility() {{
+  computeIsolation();
+  updateIsolationControl();
   if (currentLens === 'deps') {{
-    const updates = depNodesCache.map(n => ({{ id: n.id, hidden: hiddenFiles.has(n._source_file) }}));
+    const updates = depNodesCache.map(n => ({{ id: n.id, hidden: isNodeHidden(n) }}));
     nodesDS.update(updates);
     return; // collapsed file graph has no 3D view to keep in sync
   }}
@@ -758,11 +847,12 @@ function switchLens(lens) {{
   }}
 
   currentLens = lens;
+  if (lens === 'deps' && !depNodesCache) buildFileDependencyGraph();
+  computeIsolation(); // before the node rebuild below, which reads isNodeHidden()
 
   if (lens === 'deps') {{
-    if (!depNodesCache) buildFileDependencyGraph();
     nodesDS.clear();
-    nodesDS.add(depNodesCache);
+    nodesDS.add(depNodesCache.map(n => ({{ ...n, hidden: isNodeHidden(n) }})));
     edgesDS.clear();
     edgesDS.add(depEdgesCache);
   }} else {{
@@ -788,8 +878,8 @@ function switchLens(lens) {{
   }}
 
   renderLegend();
-  network.setOptions({{ physics: {{ enabled: true }} }});
-  network.once('stabilizationIterationsDone', () => network.setOptions({{ physics: {{ enabled: false }} }}));
+  updateIsolationControl();
+  applyLayoutMode();
 }}
 
 renderLegend();
@@ -857,7 +947,9 @@ function updateDisplay2D() {{
   const updatedNodes = RAW_NODES.map(n => {{
     const maxDeg = Math.max(...RAW_NODES.map(x => x.degree || 1));
     let fontSz = 0;
-    if (showLabels) {{
+    if (IS_AGGREGATED) {{
+      fontSz = 14; // community labels are always shown; the Show Labels box is disabled
+    }} else if (showLabels) {{
       fontSz = (n.degree >= maxDeg * 0.15) ? 12 : 0;
     }}
     return {{
@@ -1036,6 +1128,15 @@ function update3DGraphData() {{
       width: e.width || 1
     }}))
   }});
+}}
+
+// Initial state, run last: the 3D globals above must be initialised first.
+applyVisibility();
+applyLayoutMode();
+if (IS_AGGREGATED) {{
+  const labelsCb = document.getElementById('check-labels');
+  labelsCb.disabled = true;
+  labelsCb.parentElement.title = 'Community labels are always shown';
 }}
 
 </script>"""
@@ -1384,7 +1485,7 @@ def to_html(
         if member_counts:
             mc = member_counts.get(cid, 1)
             size = 10 + 30 * (mc / max_mc)
-            font_size = 12
+            font_size = 14  # community labels are always shown (see IS_AGGREGATED)
         else:
             size = 10 + 30 * (deg / max_deg)
             # Only show label for high-degree nodes by default; others show on hover
@@ -1394,7 +1495,10 @@ def to_html(
             "label": label,
             "color": {"background": color, "border": color, "highlight": {"background": "#ffffff", "border": color}},
             "size": round(size, 1),
-            "font": {"size": font_size, "color": "#ffffff"},
+            # Aggregated view: a dark outline keeps the (few, important) community
+            # labels readable over any community colour.
+            "font": ({"size": font_size, "color": "#ffffff", "strokeWidth": 3, "strokeColor": "#0f0f1a"}
+                     if member_counts else {"size": font_size, "color": "#ffffff"}),
             "title": _html.escape(label),
             "community": cid,
             "community_name": sanitize_label((community_labels or {}).get(cid, f"Community {cid}")),
@@ -1519,6 +1623,10 @@ def to_html(
     <button id="lens-btn-layer" class="toggle-btn lens-btn" onclick="switchLens('layer')" title="Color by architecture layer inferred from directory names (API, Service, Data, UI, ...)">Layers</button>
     <button id="lens-btn-calls" class="toggle-btn lens-btn" onclick="switchLens('calls')" title="Code symbols only (functions/classes/methods) — hides concept/rationale/document nodes, edges = real calls/imports/references between symbols">Calls</button>
   </div>
+  <div id="view-toggle-wrap">
+    <button id="isolated-btn" class="toggle-btn" onclick="toggleIsolated()" aria-pressed="false" title="Nodes with no visible edges are hidden by default. Click to show them.">Show isolated nodes (0)</button>
+    <button id="layout-btn" class="toggle-btn" onclick="toggleLayout()" title="Switch between the force-directed layout and a left-to-right hierarchy">Layout: Force</button>
+  </div>
   <div id="search-wrap">
     <input id="search" type="text" placeholder="Search nodes... (label, tokens, or file path)" autocomplete="off">
     <select id="search-type-filter">
@@ -1594,7 +1702,7 @@ def to_html(
   </div>
   <div id="stats">{stats}</div>
 </div>
-{_html_script(nodes_json, edges_json, legend_json, layers_json)}
+{_html_script(nodes_json, edges_json, legend_json, layers_json, aggregated=member_counts is not None)}
 {_hyperedge_script(hyperedges_json)}
 </body>
 </html>"""
