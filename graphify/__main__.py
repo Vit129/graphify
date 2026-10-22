@@ -2657,6 +2657,10 @@ def main() -> None:
         print("  dead-code               heuristic scan for function nodes unreachable from any entry point")
         print("    --top-n N               max results to show (default 15)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
+        print("  tour                    guided reading order through the graph, entry points first")
+        print("    --steps N               max stops (default 8)")
+        print("    --json                  machine-readable output")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  save-result             save a Q&A result to graphify-out/memory/ for graph feedback loop")
         print("    --question Q            the question asked")
         print("    --answer A              the answer to save")
@@ -3763,6 +3767,30 @@ def main() -> None:
             print(f"Unreachable functions (heuristic, {len(dead)} shown):")
             for d in dead:
                 print(f"  {d['label']} [{d['source_file']}]")
+    elif cmd == "tour":
+        import argparse as _ap
+        import json as _json
+
+        from graphify.affected import load_graph
+        from graphify.tour import build_tour, format_tour
+
+        p = _ap.ArgumentParser(prog="graphify tour")
+        p.add_argument("--graph", default=_default_graph_path())
+        p.add_argument("--steps", type=int, default=8)
+        p.add_argument("--json", action="store_true")
+        opts = p.parse_args(sys.argv[2:])
+        gp = Path(opts.graph).resolve()
+        if not gp.exists():
+            print(f"error: graph file not found: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            graph = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        stops = build_tour(graph, max_steps=max(1, opts.steps))
+        print(_json.dumps(stops, indent=2) if opts.json else format_tour(stops))
     elif cmd == "save-result":
         # graphify save-result --question Q --answer A [--type T] [--nodes N1 N2 ...]
         #                      [--outcome useful|dead_end|corrected] [--correction TEXT]
