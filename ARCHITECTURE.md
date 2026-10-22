@@ -22,6 +22,9 @@ Each stage is a single function in its own module. They communicate through plai
 | `report.py` | `render_report(G, analysis)` | graph + analysis → GRAPH_REPORT.md string |
 | `export.py` | `export(G, out_dir, ...)` | graph → graph.json, graph.html, graph.svg |
 | `callflow_html.py` | `write_callflow_html(...)` | graphify-out files → Mermaid architecture/call-flow HTML |
+| `tour.py` | `build_tour(G)`, `find_entry_points(G)` | graph → ordered reading stops (communities, callers first); likely entry-point files |
+| `layers.py` | `detect_layers(G)`, `layer_of_path(path)` | graph / path → architecture layer (API, Service, Data, UI, ...) from directory names |
+| `onboard.py` | `build_onboarding(G)` | graph → one-page onboarding markdown (entry points, layers, tour, core abstractions) |
 | `ingest.py` | `ingest(url, ...)` | URL → file saved to corpus dir |
 | `cache.py` | `check_semantic_cache / save_semantic_cache` | files → (cached, uncached) split |
 | `security.py` | validation helpers | URL / path / label → validated or raises |
@@ -29,6 +32,16 @@ Each stage is a single function in its own module. They communicate through plai
 | `serve.py` | `start_server(graph_path)` | graph file path → MCP stdio server |
 | `watch.py` | `watch(root, flag_path)` | directory → writes flag file on change |
 | `benchmark.py` | `run_benchmark(graph_path)` | graph file → corpus vs subgraph token comparison |
+
+## Reading aids
+
+`tour`, `layers` and `onboard` turn an existing `graph.json` into a "where do I start" view. They add no extraction work and call no LLM, so they stay free and deterministic.
+
+- **Tour order**: the largest communities are ordered top-down by the direction of cross-community edges (condensation topological order), so entry points come first and foundations last.
+- **Layers** are a directory-name heuristic, not an inferred truth. Repos without conventional folder names land mostly in "Core". Each `graph.html` node carries a `layer`; aggregated community nodes take their members' dominant layer.
+- **graph.html** has a Layers lens next to Community / File / Dependencies / Calls. Isolated nodes are hidden by default (button shows the count), and a Force / Hierarchy toggle is available; Force stays the default because hierarchy turns hundreds of communities into a tall sparse strip.
+
+The tour, layer and onboarding ideas are adapted from [Understand Anything](https://github.com/Egonex-AI/Understand-Anything) (MIT), reimplemented on graphify's graph model.
 
 ## Extraction output schema
 

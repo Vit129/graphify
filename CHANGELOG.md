@@ -3,6 +3,20 @@
 All notable changes to graphify are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and graphify follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.27.0] - 2026-10-22
+
+### Added
+- `graphify tour` - guided reading order through the graph, entry points first ([`011bf31`](https://github.com/Vit129/graphify/commit/011bf31))
+- `graphify onboard` - one-page onboarding guide, plus directory-name layer detection and entry-point scoring ([`a85ce60`](https://github.com/Vit129/graphify/commit/a85ce60))
+- Layers lens in graph.html ([`0d5c857`](https://github.com/Vit129/graphify/commit/0d5c857))
+- graph.html hides isolated nodes by default (with a count button), adds a Force / Hierarchy layout toggle, and always labels communities in the aggregated view
+
+### Fixed
+- graph.html lens buttons were cut off in the sidebar
+
+### Documentation
+- ARCHITECTURE.md describes the tour / layers / onboard modules
+
 ## [0.26.1] - 2026-10-03
 
 ### Fixed
