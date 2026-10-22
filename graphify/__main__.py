@@ -2661,6 +2661,10 @@ def main() -> None:
         print("    --steps N               max stops (default 8)")
         print("    --json                  machine-readable output")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
+        print("  onboard                 onboarding guide: entry points, layers, tour, core abstractions")
+        print("    --out <path>            write markdown to a file instead of stdout")
+        print("    --steps N               max tour stops (default 8)")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  save-result             save a Q&A result to graphify-out/memory/ for graph feedback loop")
         print("    --question Q            the question asked")
         print("    --answer A              the answer to save")
@@ -3791,6 +3795,34 @@ def main() -> None:
         _warn_if_graph_stale(gp)
         stops = build_tour(graph, max_steps=max(1, opts.steps))
         print(_json.dumps(stops, indent=2) if opts.json else format_tour(stops))
+    elif cmd == "onboard":
+        import argparse as _ap
+
+        from graphify.affected import load_graph
+        from graphify.onboard import build_onboarding
+
+        p = _ap.ArgumentParser(prog="graphify onboard")
+        p.add_argument("--graph", default=_default_graph_path())
+        p.add_argument("--out", default=None, help="write markdown here instead of stdout")
+        p.add_argument("--steps", type=int, default=8)
+        opts = p.parse_args(sys.argv[2:])
+        gp = Path(opts.graph).resolve()
+        if not gp.exists():
+            print(f"error: graph file not found: {gp}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            graph = load_graph(gp)
+        except Exception as exc:
+            print(f"error: could not load graph: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _warn_if_graph_stale(gp)
+        doc = build_onboarding(graph, project_name=Path.cwd().name, max_steps=max(1, opts.steps))
+        if opts.out:
+            Path(opts.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(opts.out).write_text(doc, encoding="utf-8")
+            print(f"Saved to {opts.out}")
+        else:
+            print(doc)
     elif cmd == "save-result":
         # graphify save-result --question Q --answer A [--type T] [--nodes N1 N2 ...]
         #                      [--outcome useful|dead_end|corrected] [--correction TEXT]

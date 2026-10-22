@@ -28,12 +28,56 @@ def _is_real_entity(G: nx.Graph, node_id: str) -> bool:
 
 def _is_test_path(path: str) -> bool:
     parts = path.replace("\\", "/").split("/")
-    return any(p in ("tests", "test", "__tests__") for p in parts[:-1]) or parts[-1].startswith("test_")
+    return any(p in ("tests", "test", "__tests__", "fixtures") for p in parts[:-1]) or parts[-1].startswith("test_")
 
 
 def _community_of(G: nx.Graph, node_id: str) -> int | None:
     cid = G.nodes[node_id].get("community")
     return cid if isinstance(cid, int) and cid >= 0 else None
+
+
+_ENTRY_NAMES = frozenset({
+    "main.py", "__main__.py", "app.py", "manage.py", "run.py", "wsgi.py", "asgi.py",
+    "index.ts", "index.js", "main.ts", "main.js", "app.ts", "app.js", "server.ts", "server.js",
+    "main.go", "main.rs", "mod.rs", "main.c", "main.cpp", "program.cs", "main.java",
+    "application.java", "application.kt", "index.php", "app.swift", "config.ru",
+})
+
+
+def find_entry_points(G: nx.Graph, top_n: int = 5) -> list[dict]:
+    """Score files as likely entry points: entry-style filename, shallow path, wide fan-out, low fan-in."""
+    file_nodes = [
+        n for n in G.nodes()
+        if _is_file_node(G, n) and G.nodes[n].get("source_file")
+        and not _is_test_path(G.nodes[n]["source_file"])
+    ]
+    if not file_nodes:
+        return []
+    out_deg = {n: G.out_degree(n) if G.is_directed() else G.degree(n) for n in file_nodes}
+    in_deg = {n: G.in_degree(n) if G.is_directed() else G.degree(n) for n in file_nodes}
+    ranked_out = sorted(out_deg.values())
+    ranked_in = sorted(in_deg.values())
+    hi_out = ranked_out[int(len(ranked_out) * 0.9)] if ranked_out else 0
+    lo_in = ranked_in[int(len(ranked_in) * 0.25)] if ranked_in else 0
+    scored = []
+    for n in file_nodes:
+        path = G.nodes[n]["source_file"].replace("\\", "/")
+        parts = path.split("/")
+        score = 0
+        if parts[-1].lower() in _ENTRY_NAMES:
+            score += 3
+        if len(parts) <= 2:
+            score += 1
+        if out_deg[n] > 0 and out_deg[n] >= hi_out:
+            score += 1
+        if in_deg[n] <= lo_in:
+            score += 1
+        if score >= 3:
+            scored.append({"id": n, "source_file": path, "score": score})
+    scored.sort(key=lambda e: (-e["score"], e["source_file"]))
+    seen: set[str] = set()
+    unique = [e for e in scored if not (e["source_file"] in seen or seen.add(e["source_file"]))]
+    return unique[:top_n]
 
 
 def build_tour(G: nx.Graph, max_steps: int = 8, per_stop: int = 3) -> list[dict]:
