@@ -25,6 +25,7 @@ Each stage is a single function in its own module. They communicate through plai
 | `tour.py` | `build_tour(G)`, `find_entry_points(G)` | graph → ordered reading stops (communities, callers first); likely entry-point files |
 | `layers.py` | `detect_layers(G)`, `layer_of_path(path)` | graph / path → architecture layer (API, Service, Data, UI, ...) from directory names |
 | `onboard.py` | `build_onboarding(G)` | graph → one-page onboarding markdown (entry points, layers, tour, core abstractions) |
+| `lsp_resolve.py` | `run(graph, root, server)` | graph.json + language server → INFERRED `calls` edges confirmed/retargeted to EXTRACTED (opt-in `graphify lsp-resolve`) |
 | `ingest.py` | `ingest(url, ...)` | URL → file saved to corpus dir |
 | `cache.py` | `check_semantic_cache / save_semantic_cache` | files → (cached, uncached) split |
 | `security.py` | validation helpers | URL / path / label → validated or raises |

@@ -2665,6 +2665,14 @@ def main() -> None:
         print("    --out <path>            write markdown to a file instead of stdout")
         print("    --steps N               max tour stops (default 8)")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
+        print("  lsp-resolve             confirm INFERRED call edges with a language server (opt-in; default pyright for .py)")
+        print("    --server \"CMD ARGS\"    language server command (default: pyright-langserver --stdio for .py)")
+        print("    --ext .py               only edges whose source file has this extension (default .py)")
+        print("    --root <dir>            project root the graph was built from (default .)")
+        print("    --max-edges N           examine at most N edges")
+        print("    --timeout S             per-request timeout in seconds (default 15)")
+        print("    --dry-run               report counts without writing graph.json")
+        print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  save-result             save a Q&A result to graphify-out/memory/ for graph feedback loop")
         print("    --question Q            the question asked")
         print("    --answer A              the answer to save")
@@ -3823,6 +3831,31 @@ def main() -> None:
             print(f"Saved to {opts.out}")
         else:
             print(doc)
+    elif cmd == "lsp-resolve":
+        # graphify lsp-resolve [--graph PATH] [--root DIR] [--server "CMD ARGS"] [--ext .py]
+        #                      [--max-edges N] [--timeout S] [--dry-run]
+        import argparse as _ap
+
+        p = _ap.ArgumentParser(prog="graphify lsp-resolve")
+        p.add_argument("--graph", default=_default_graph_path())
+        p.add_argument("--root", default=".")
+        p.add_argument("--server", default=None)
+        p.add_argument("--ext", default=".py")
+        p.add_argument("--max-edges", type=int, default=None)
+        p.add_argument("--timeout", type=float, default=15.0)
+        p.add_argument("--dry-run", action="store_true")
+        opts = p.parse_args(sys.argv[2:])
+        from graphify.lsp_resolve import LspError, format_summary, run as _lsp_run
+
+        try:
+            stats = _lsp_run(
+                Path(opts.graph).resolve(), Path(opts.root), server=opts.server, ext=opts.ext,
+                max_edges=opts.max_edges, timeout=opts.timeout, dry_run=opts.dry_run,
+            )
+        except LspError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(format_summary(stats, opts.dry_run))
     elif cmd == "save-result":
         # graphify save-result --question Q --answer A [--type T] [--nodes N1 N2 ...]
         #                      [--outcome useful|dead_end|corrected] [--correction TEXT]

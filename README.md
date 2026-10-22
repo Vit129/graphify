@@ -314,6 +314,7 @@ graphify export callflow-html      # Mermaid architecture/call-flow HTML (auto-r
 
 graphify hook install              # auto-rebuild on git commit
 graphify merge-graphs a.json b.json              # combine two graphs
+graphify lsp-resolve --dry-run              # opt-in: confirm INFERRED call edges with a language server (default pyright for .py; --server "CMD ARGS" for others)
 
 graphify prs                       # PR dashboard: CI state, review status, worktree mapping
 graphify prs 42                    # deep dive on PR #42 with graph impact
