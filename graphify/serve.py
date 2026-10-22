@@ -557,6 +557,20 @@ def _tool_match_pattern_text(G: nx.Graph, arguments: dict, graph_path: Path | st
         return f"Error executing pattern: {exc}"
 
 
+def _tool_cypher_query_text(G: nx.Graph, arguments: dict, graph_path: Path | str | None = None) -> str:
+    from graphify.cypher import CypherError, format_table, load_community_names, run_cypher
+    limit = arguments.get("limit")
+    try:
+        res = run_cypher(
+            G, str(arguments["query"]),
+            limit=int(limit) if limit is not None else None,
+            community_names=load_community_names(graph_path),
+        )
+    except CypherError as exc:
+        return f"Cypher error: {exc}"
+    return format_table(res)
+
+
 def _build_server(graph_path: str):
     """Build the configured low-level MCP Server (shared by every transport).
 
@@ -986,6 +1000,30 @@ def _build_server(graph_path: str):
                 },
             ),
             types.Tool(
+                name="cypher_query",
+                description=(
+                    "Run a read-only Cypher SUBSET (not full Cypher) over the code graph. "
+                    "Form: MATCH (a:code)-[r:calls|imports]->(b) [WHERE ...] RETURN [DISTINCT] a.label, count(*) AS n "
+                    "[ORDER BY n DESC] [SKIP n] [LIMIT n]. Directions ->, <-, -; variable-length *1..5. "
+                    "Node props: id, label, source_file, source_location, community, community_name, file_type, layer, degree. "
+                    "Relationship props: relation (or type(r)), confidence, context. Node labels match file_type. "
+                    "WHERE supports AND/OR/NOT, = <> < <= > >=, CONTAINS, STARTS WITH, ENDS WITH, =~, IN [..], IS NULL. "
+                    "Write clauses (CREATE/MERGE/DELETE/SET/...), CALL, WITH, UNION, OPTIONAL MATCH are rejected. "
+                    "Default LIMIT 100, max 1000 rows."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "e.g. MATCH (a)-[:calls]->(b) WHERE b.label = 'load_graph()' RETURN a.label, a.source_file",
+                        },
+                        "limit": {"type": "integer", "description": "Default row limit when the query has no LIMIT (max 1000)"},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            types.Tool(
                 name="triage_prs",
                 description=(
                     "Return all actionable open PRs (correct base, not stale) with full graph impact data "
@@ -1202,6 +1240,9 @@ def _build_server(graph_path: str):
     def _tool_match_pattern(arguments: dict) -> str:
         return _tool_match_pattern_text(G, arguments, active_graph_path)
 
+    def _tool_cypher_query(arguments: dict) -> str:
+        return _tool_cypher_query_text(G, arguments, active_graph_path)
+
     def _tool_search_text(arguments: dict) -> str:
         return _tool_search_text_text(G, arguments, active_graph_path)
 
@@ -1235,6 +1276,7 @@ def _build_server(graph_path: str):
         "dead_code": _tool_dead_code,
         "shortest_path": _tool_shortest_path,
         "match_pattern": _tool_match_pattern,
+        "cypher_query": _tool_cypher_query,
         "search_text": _tool_search_text,
         "get_snippet": _tool_get_snippet,
         "replace_symbol_body": _tool_replace_symbol_body,
