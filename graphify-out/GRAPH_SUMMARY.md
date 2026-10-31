@@ -1,15 +1,15 @@
-# Graph Summary — graphify-refresh
+# Graph Summary — delivery-workflow-completion
 _Auto-generated from GRAPH_REPORT.md · do not edit manually_
 _Regen: `graphify update .`_
 
 ## Summary
-- 11152 nodes · 20895 edges · 797 communities (609 shown, 188 thin omitted)
+- 11152 nodes · 20895 edges · 795 communities (607 shown, 188 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 318 edges (avg confidence: 0.67)
 - Token cost: 0 input · 0 output
 
 
 ## Graph Freshness
-- Built from commit: `ca7452c1`
+- Built from commit: `bc858c65`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -34,7 +34,7 @@ ever touching one area. This ranks by how many DIFFERENT communities a
 node's neighbors span, not by raw edge count.
 1. `main()` - bridges 82 areas (264 edges)
 2. `extract()` - bridges 62 areas (282 edges)
-3. `Changelog` - bridges 53 areas (81 edges)
+3. `Changelog` - bridges 51 areas (81 edges)
 4. `Graph` - bridges 42 areas (195 edges)
 5. `build_from_json()` - bridges 41 areas (132 edges)
 6. `_make_id()` - bridges 34 areas (103 edges)
