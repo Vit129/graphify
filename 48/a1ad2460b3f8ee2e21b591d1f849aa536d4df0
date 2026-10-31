@@ -1,0 +1,28 @@
+tests/test_frontmatter_markdown.py
+  s_53ad839a68fb1c::t_0f637cad187397 1,24-41
+  s_53ad839a68fb1c::t_80a89fd99ada4a 42-43
+tests/test_extract.py
+  s_53ad839a68fb1c::t_95db0f8cc45225 349
+tests/test_hooks.py
+  s_53ad839a68fb1c::t_95db0f8cc45225 10-17
+graphify/extract.py
+  s_53ad839a68fb1c::t_e35c1c482b5f49 13852
+  s_53ad839a68fb1c::t_0f637cad187397 11,13837,13853-13860
+  s_53ad839a68fb1c::t_c3218475aa8f07 13861-13862
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.3",
+  "base_commit_sha": "48a1ad2460b3f8ee2e21b591d1f849aa536d4df0",
+  "prompts": {},
+  "sessions": {
+    "s_53ad839a68fb1c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18fb7-5316-7db2-acef-76f7f2031027",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Vit129 <vitosk129@gmail.com>"
+    }
+  }
+}
