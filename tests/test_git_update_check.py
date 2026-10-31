@@ -11,6 +11,7 @@ import graphify.git_update_check as guc
 
 
 def _isolate_config(monkeypatch, tmp_path):
+    monkeypatch.delenv("CI", raising=False)
     config_dir = tmp_path / "config"
     monkeypatch.setattr(guc, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(guc, "CONFIG_PATH", config_dir / "config.json")

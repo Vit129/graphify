@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -13833,7 +13834,7 @@ def _parse_yaml_frontmatter(lines: list[str]) -> tuple[dict, int]:
         import yaml
         parsed = yaml.safe_load(raw)
         if isinstance(parsed, dict):
-            return parsed, end_idx
+            return _json_safe_frontmatter(parsed), end_idx
     except ImportError:
         pass
     except Exception:
@@ -13846,6 +13847,17 @@ def _parse_yaml_frontmatter(lines: list[str]) -> tuple[dict, int]:
             k, v = line_s.split(":", 1)
             data[k.strip()] = v.strip().strip("\"'")
     return data, end_idx
+
+
+def _json_safe_frontmatter(value: Any) -> Any:
+    """Convert YAML date values to JSON-safe ISO strings without changing shape."""
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe_frontmatter(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_frontmatter(item) for item in value]
+    return value
 
 
 def _normalize_frontmatter_list(val: object) -> list[str]:

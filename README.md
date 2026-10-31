@@ -809,6 +809,22 @@ uv run pytest tests/test_extract.py -q # one module
 uv run pytest tests/ -q -k "python"    # filter by name
 ```
 
+### Local delivery checks
+
+Graphify is a command-line tool, so `make start` opens the local CLI help as its
+safe preview; it does not publish or connect to a production service. `make dev`
+prints the installed checkout version. Before a release, `make release-check`
+runs version parity, the full test suite, and builds the package. The release
+script updates the package semver and editable-install build counter, then runs
+that gate on the versioned commit before creating or pushing a tag.
+
+```bash
+make start
+make dev
+make preview
+make release-check
+```
+
 > macOS note: the test suite includes both `sample.f90` and `sample.F90` fixtures. These collide on case-insensitive HFS+ / APFS file systems. Run on Linux or in a Docker container if you need to test both Fortran variants simultaneously.
 
 ### Git workflow

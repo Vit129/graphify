@@ -7,6 +7,14 @@ import pytest
 from graphify.hooks import install, uninstall, status, _hooks_dir, _HOOK_MARKER, _CHECKOUT_MARKER
 
 
+@pytest.fixture(autouse=True)
+def isolate_global_git_config(tmp_path, monkeypatch):
+    """Keep hook-install tests independent of the user's global hooksPath."""
+    config = tmp_path / "global-gitconfig"
+    config.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+
+
 def _make_git_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     return tmp_path

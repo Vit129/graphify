@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import pytest
 from graphify.extract import extract_markdown, extract
@@ -18,6 +19,26 @@ def test_markdown_frontmatter_title_override(tmp_path: Path):
     res = extract_markdown(doc)
     doc_node = next(n for n in res["nodes"] if n["source_file"] == str(doc) and "Section 1" not in n["label"])
     assert doc_node["label"] == "ADR-005: Event-Driven Processing"
+
+
+def test_markdown_date_frontmatter_is_json_serializable(tmp_path: Path):
+    source = tmp_path / "dated.md"
+    source.write_text(
+        "---\nlast_improved: 2026-10-21\nmetadata:\n"
+        "  captured_at: 2026-10-21T12:30:00Z\n---\n# Dated\n",
+        encoding="utf-8",
+    )
+
+    result = extract_markdown(source)
+    frontmatter = next(
+        node for node in result["nodes"] if node["source_file"] == str(source)
+    )["frontmatter"]
+
+    assert frontmatter == {
+        "last_improved": "2026-10-21",
+        "metadata": {"captured_at": "2026-10-21T12:30:00+00:00"},
+    }
+    json.dumps(result)
 
 
 def test_markdown_frontmatter_authors_and_tags(tmp_path: Path):
