@@ -1,0 +1,21 @@
+DESIGN.md
+  s_5da5069f1fb275::t_93eae289a1d716 1-7
+PRODUCT.md
+  s_5da5069f1fb275::t_4aebdc5c9835d7 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.3",
+  "base_commit_sha": "3a3dc03c69b7927326086067bcae08d375f5a858",
+  "prompts": {},
+  "sessions": {
+    "s_5da5069f1fb275": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0575ed29-8a7f-4017-a825-daa5e6a56e4c",
+        "model": "claude-haiku-5-5"
+      },
+      "human_author": "Vit129 <vitosk129@gmail.com>"
+    }
+  }
+}
