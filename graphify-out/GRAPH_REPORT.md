@@ -1,16 +1,16 @@
-# Graph Report - delivery-workflow-completion  (2026-10-31)
+# Graph Report - checkout-skip-hook  (2026-11-09)
 
 ## Corpus Check
-- 717 files · ~863,693 words
+- 719 files · ~863,964 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 11153 nodes · 20895 edges · 769 communities (597 shown, 172 thin omitted)
+- 11178 nodes · 20925 edges · 772 communities (602 shown, 170 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 319 edges (avg confidence: 0.67)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a534184d`
+- Built from commit: `20d4dc45`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -31,573 +31,569 @@ A high-degree node isn't always architecturally central - a widely-used
 utility/config file can rack up more edges than a real coupler while only
 ever touching one area. This ranks by how many DIFFERENT communities a
 node's neighbors span, not by raw edge count.
-1. `main()` - bridges 78 areas (264 edges)
-2. `extract()` - bridges 66 areas (282 edges)
-3. `Changelog` - bridges 51 areas (81 edges)
+1. `main()` - bridges 81 areas (264 edges)
+2. `extract()` - bridges 62 areas (282 edges)
+3. `Changelog` - bridges 53 areas (81 edges)
 4. `Graph` - bridges 41 areas (195 edges)
 5. `build_from_json()` - bridges 41 areas (132 edges)
-6. `ingest_scip_json()` - bridges 32 areas (85 edges)
-7. `_file_stem()` - bridges 30 areas (84 edges)
-8. `_make_id()` - bridges 28 areas (103 edges)
-9. `_rebuild_code()` - bridges 20 areas (80 edges)
+6. `_make_id()` - bridges 38 areas (103 edges)
+7. `_file_stem()` - bridges 35 areas (84 edges)
+8. `ingest_scip_json()` - bridges 32 areas (85 edges)
+9. `_rebuild_code()` - bridges 19 areas (80 edges)
 10. `check_graph_file_size_cap()` - bridges 18 areas (39 edges)
 
 ## Surprising Connections (you probably didn't know these)
 - `test_find_node_resolves_paraphrased_query_across_conventions()` --calls--> `_find_node()`  [INFERRED]
   tests/test_real_world_naming_conventions.py → graphify/query.py
-- `test_skills_alias_resolves_to_agents()` --calls--> `_canonical_platform()`  [EXTRACTED]
-  tests/test_agents_platform.py → graphify/__main__.py
 - `main()` --calls--> `_build()`  [INFERRED]
   graphify/__main__.py → tests/test_indirect_dispatch.py
 - `test_affected_cli_source_file_path_uses_file_level_node()` --calls--> `main()`  [EXTRACTED]
   tests/test_affected_cli.py → graphify/__main__.py
 - `test_cli_help_lists_cypher()` --calls--> `main()`  [EXTRACTED]
   tests/test_cypher.py → graphify/__main__.py
+- `test_diagnose_multigraph_cli_usage_errors()` --calls--> `main()`  [EXTRACTED]
+  tests/test_multigraph_diagnostics.py → graphify/__main__.py
 
 ## Import Cycles
 - 1-file cycle: `tests/fixtures/sample.sv -> tests/fixtures/sample.sv`
 
-## Communities (769 total, 172 thin omitted)
+## Communities (772 total, 170 thin omitted)
 
-### Community 0 - "extract.py"
+### Community 0 - "test_watch.py"
 Cohesion: 0.02
-Nodes (190): _augment_systemverilog_semantics(), _c_collect_type_refs(), _collect_js_symbol_resolution_facts(), _collect_python_symbol_resolution_facts(), _cpp_collect_type_refs(), _cpp_declarator_name(), _cpp_local_var_types(), _csharp_attribute_names() (+182 more)
+Nodes (170): Generate questions the graph is uniquely positioned to answer.     Based on: AMB, suggest_questions(), dedupe_nodes(), _norm_source_file(), Normalize path separators and relativize absolute paths.      Converts backslash, Collapse nodes sharing an ``id``, last-writer-wins on attributes.      Mirrors w, load_learning_for_report(), Assemble the report's work-memory inputs from sibling artifacts.      Reads the (+162 more)
 
-### Community 1 - "test_watch.py"
+### Community 1 - "extract.py"
 Cohesion: 0.02
-Nodes (184): backup_if_protected(), Snapshot graph artifacts to a dated subfolder before an overwrite.      Triggers, load_learning_for_report(), Assemble the report's work-memory inputs from sibling artifacts.      Reads the, Condense a full GRAPH_REPORT.md into a ~50-line digest for auto-loading     into, summarize(), _apply_resource_limits(), _canonical_graph_for_compare() (+176 more)
+Nodes (144): _augment_systemverilog_semantics(), _c_collect_type_refs(), _collect_js_symbol_resolution_facts(), _collect_python_symbol_resolution_facts(), _cpp_collect_type_refs(), _csharp_classify_base(), _csharp_extra_walk(), _csharp_namespace_id() (+136 more)
 
-### Community 2 - "test_extract.py"
-Cohesion: 0.02
-Nodes (126): collect_files(), extract_bash(), extract_json(), Extract functions, source imports, and cross-function calls from a .sh file., Extract structure and dependency edges from a *config/manifest* .json file., _semantic_reference_edge(), _source_location(), by_label_by_id() (+118 more)
+### Community 2 - "main"
+Cohesion: 0.04
+Nodes (82): gemini_uninstall(), _kilo_install(), _kilo_uninstall(), _kilo_uninstall_global(), Remove the graphify section from GEMINI.md, uninstall hook, and remove skill fil, Install native Kilo skill + command globally and always-on project wiring locall, Remove Kilo always-on project wiring and global skill/command files., _agents_install() (+74 more)
 
 ### Community 3 - "__main__.py"
 Cohesion: 0.03
-Nodes (125): _agents_install(), _agents_platform_install(), _agents_platform_uninstall(), _agents_uninstall(), _always_on(), _amp_install(), _amp_legacy_cleanup(), _amp_uninstall() (+117 more)
+Nodes (123): _agents_install(), _agents_platform_install(), _agents_platform_uninstall(), _agents_uninstall(), _always_on(), _amp_install(), _amp_legacy_cleanup(), _amp_uninstall() (+115 more)
 
-### Community 4 - "test_detect.py"
-Cohesion: 0.03
-Nodes (110): classify_file(), _is_sensitive(), Return True if this file likely contains secrets and should be skipped., Return the interpreter name from a shebang line.      Handles forms that a naive, _shebang_interpreter(), Plain shebang returns the interpreter basename., `#!/usr/bin/env python3` returns the interpreter, not 'env'., `#!/usr/bin/env -S python3 -u` (-S split-args form) recovers the interpreter. (+102 more)
+### Community 4 - "detect.py"
+Cohesion: 0.02
+Nodes (136): _auto_follow_symlinks(), convert_office_file(), _could_contain_included_path(), count_words(), detect_incremental(), docx_to_markdown(), extract_pdf_text(), _file_within_size_cap() (+128 more)
 
-### Community 5 - "detect.py"
-Cohesion: 0.03
-Nodes (103): Enum, _auto_follow_symlinks(), convert_office_file(), _could_contain_included_path(), count_words(), detect_incremental(), docx_to_markdown(), _env_command_args() (+95 more)
-
-### Community 6 - "test_serve.py"
-Cohesion: 0.03
-Nodes (102): _blast_radius_hops(), _pick_seeds(), Walk outward from `nid` hop by hop, direction-aware (callers/callees/both)., Select BFS seed nodes, stopping when score drops too far below the top.      `ga, _communities_from_graph(), _community_header(), _load_graph(), Body of the `shortest_path` MCP tool (module-level so tests can call it     with (+94 more)
-
-### Community 7 - "_make_id"
+### Community 5 - "test_analyze.py"
 Cohesion: 0.04
-Nodes (81): extract_dmi(), _extract_python_rationale(), extract_sql(), _import_js(), _is_autogenerated_python(), _pascal_resolve_class(), Two-pass import resolution: turn file-level imports into class-level edges., Resolve a Pascal class/interface name to the node ID of its defining file's clas (+73 more)
+Nodes (93): _cross_community_surprises(), cross_cutting_nodes(), _cross_file_surprises(), _cross_language(), _file_category(), find_import_cycles(), god_nodes(), graph_diff() (+85 more)
 
-### Community 8 - "cluster"
+### Community 6 - "test_scip_ingest.py"
 Cohesion: 0.05
-Nodes (92): _node_community_map(), Invert communities dict: node_id -> community_id., cluster(), Run Leiden community detection. Returns {community_id: [node_ids]}.      Communi, _cypher_escape(), _cypher_label(), existing_graph_node_count(), _git_head() (+84 more)
+Nodes (40): ingest_scip_json(), Convert a SCIP-style JSON document into Graphify nodes and edges.      Parameter, Result passes Graphify's validate_extraction and build_from_json keeps the edges, A symbol with `relationships: None` ingests without error and emits no edges., A symbol with `kind` as a non-string falls back to 'unknown'., `display_name` as a non-string falls back to the symbol suffix., `documentation` first entry that isn't a string yields empty description (not cr, A non-dict entry in `documents` is silently skipped. (+32 more)
 
-### Community 9 - "extract_js"
+### Community 7 - "_read_text"
 Cohesion: 0.03
-Nodes (91): extract_js(), Extract classes, functions, arrow functions, and imports from a .js/.ts/.tsx fil, Functions defined alongside a JSX-returning component must be captured., Calls inside JSX expressions like `{fmtDate(now)}` must yield call edges.      R, export { X } from './mod' must emit re_exports edges for each named specifier., Barrel file must emit file-level imports_from edges to source modules., re_exports edges should have context='re-export'., export function/const in a barrel file must still create nodes. (+83 more)
+Nodes (101): _cpp_declarator_name(), _cpp_local_var_types(), _csharp_method_receiver_types(), _csharp_pre_scan_interfaces(), _csharp_receiver_type_name(), _dynamic_import_js(), _extract_generic(), _extract_spock_fallback() (+93 more)
 
-### Community 10 - "test_install.py"
-Cohesion: 0.03
-Nodes (93): gemini_install(), gemini_uninstall(), _kilo_uninstall(), _kilo_uninstall_global(), Remove the graphify section from GEMINI.md, uninstall hook, and remove skill fil, Remove Kilo always-on project wiring and global skill/command files., Copy skill file, write GEMINI.md section, and install BeforeTool hook., _agents_install() (+85 more)
+### Community 8 - "test_detect.py"
+Cohesion: 0.02
+Nodes (190): Enum, classify_file(), detect(), _env_command_args(), FileType, _is_sensitive(), _is_skipped_file(), Return True if this file likely contains secrets and should be skipped. (+182 more)
+
+### Community 9 - "test_serve.py"
+Cohesion: 0.04
+Nodes (92): _blast_radius_hops(), _pick_seeds(), Walk outward from `nid` hop by hop, direction-aware (callers/callees/both)., Select BFS seed nodes, stopping when score drops too far below the top.      `ga, _community_header(), _directed_chain(), _make_call_chain(), DiGraph (+84 more)
+
+### Community 10 - "cluster"
+Cohesion: 0.12
+Nodes (43): cluster(), Run Leiden community detection. Returns {community_id: [node_ids]}.      Communi, Generate an interactive vis.js HTML visualization of the graph.      Features: n, Export graph as GraphML - opens in Gephi, yEd, and any GraphML-compatible tool., to_graphml(), to_html(), make_graph(), nx.write_graphml raises ValueError on a None attribute value; to_graphml     mus (+35 more)
 
 ### Community 11 - "test_languages.py"
 Cohesion: 0.04
-Nodes (90): _dmm_type_path(), extract_csharp(), extract_dmf(), extract_dmm(), extract_fortran(), extract_julia(), extract_verilog(), Extract type-path references from a .dmm map file's tile dictionary. (+82 more)
+Nodes (99): extract_c(), extract_dm(), extract_dmf(), extract_julia(), extract_swift(), Extract types, procs, includes, and calls from a .dm/.dme file., Extract windows and controls from a .dmf interface file., Extract functions and includes from a .c/.h file. (+91 more)
 
-### Community 12 - "test_multigraph_diagnostics.py"
+### Community 12 - "test_extract.py"
+Cohesion: 0.02
+Nodes (126): collect_files(), extract_bash(), extract_json(), Extract functions, source imports, and cross-function calls from a .sh file., Extract structure and dependency edges from a *config/manifest* .json file., _semantic_reference_edge(), _source_location(), by_label_by_id() (+118 more)
+
+### Community 13 - "test_dotnet.py"
 Cohesion: 0.06
-Nodes (76): load_graph(), _canonical_edge(), _count_extra(), diagnose_extraction(), diagnose_file(), _edge_list(), _exact_signature(), format_diagnostic_json() (+68 more)
-
-### Community 13 - "main"
-Cohesion: 0.04
-Nodes (79): load_community_names(), Path, Community labels written next to graph.json (empty when absent or unreadable)., global_path(), _custom_providers_path(), estimate_cost(), _load_custom_providers(), provider_base_url_ok() (+71 more)
+Nodes (62): extract_slnx(), extract_xaml(), _project_xml_is_safe(), Reject XML that declares DTDs or entities.      Stdlib ``xml.etree.ElementTree``, Extract projects and inter-project dependencies from a .slnx file.      .slnx is, Extract WPF/XAML structure, bindings, x:Class, and event handler references., _xaml_explicit_viewmodel_names(), _xaml_inferred_viewmodel_names() (+54 more)
 
 ### Community 14 - "test_import_extension_resolution.py"
 Cohesion: 0.05
-Nodes (75): Resolve a JS/TS module path or specifier to a local source file.      With a Pat, _resolve_js_module_path(), _import_targets(), Path, Tests for #716 — TypeScript bare-path imports, Svelte 5 rune file imports (`from, JS variant of the rune file pattern: a `.svelte.js` file (used in     JavaScript, When both `.svelte.ts` and `.svelte.js` exist (hybrid project mid-     migration, If `foo.svelte` IS a real markup file, importing `./foo.svelte`     must resolve (+67 more)
+Nodes (83): extract_svelte(), _load_tsconfig_aliases(), _match_tsconfig_alias(), Walk up from start_dir to find tsconfig.json and return compilerOptions.paths al, Return (specificity, captured text, is_wildcard) when pattern matches raw., Resolve `raw` against the most specific matching tsconfig alias pattern.      Wi, Resolve a JS/TS module path or specifier to a local source file.      With a Pat, Extract imports from .svelte files: script-block via JS AST + template regex fal (+75 more)
 
-### Community 15 - "detect"
-Cohesion: 0.03
-Nodes (73): detect(), _is_skipped_file(), Files matching .graphifyignore patterns are excluded from detect()., .graphifyignore is evaluated after .gitignore, so a `!` negation in it can     r, Files inside .worktrees/ are never indexed (#947)., Files inside .claude/worktrees/ (nested placement) are never indexed (#1023)., extra_excludes patterns exclude matching files from detect() (#947)., No .graphifyignore is not an error. (+65 more)
+### Community 15 - "Graph"
+Cohesion: 0.11
+Nodes (37): Heuristic dead-code scan: function nodes unreachable from any recognized entry p, unreachable_functions(), _find_node_tied_group(), Nodes tied for the top precedence tier `_find_node` would resolve to -     i.e., Strip control characters and cap length.      Safe for embedding in JSON data (i, sanitize_label(), _load_graph(), Path (+29 more)
 
-### Community 16 - "test_multilang.py"
+### Community 16 - "detect"
+Cohesion: 0.07
+Nodes (32): _cypher_escape(), _cypher_label(), existing_graph_node_count(), _git_head(), _html_script(), _html_styles(), _hyperedge_script(), prune_dangling_edges() (+24 more)
+
+### Community 17 - "extract_js"
+Cohesion: 0.02
+Nodes (100): extract_js(), Extract classes, functions, arrow functions, and imports from a .js/.ts/.tsx fil, Functions defined alongside a JSX-returning component must be captured., Calls inside JSX expressions like `{fmtDate(now)}` must yield call edges.      R, export { X } from './mod' must emit re_exports edges for each named specifier., Barrel file must emit file-level imports_from edges to source modules., re_exports edges should have context='re-export'., export function/const in a barrel file must still create nodes. (+92 more)
+
+### Community 18 - "test_multilang.py"
 Cohesion: 0.05
 Nodes (71): extract_go(), extract_rust(), Extract functions, methods, type declarations, and imports from a .go file., Extract functions, structs, enums, traits, impl methods, and use declarations fr, Methods on the same receiver type must share one canonical type node., Type node id should be scoped to directory, not file stem., test_go_receiver_methods_share_type_node(), test_go_receiver_uses_pkg_scope() (+63 more)
 
-### Community 17 - "test_dotnet.py"
-Cohesion: 0.05
-Nodes (69): extract_sln(), extract_slnx(), extract_xaml(), _project_xml_is_safe(), Reject XML that declares DTDs or entities.      Stdlib ``xml.etree.ElementTree``, Extract projects and inter-project dependencies from a .sln file., Extract projects and inter-project dependencies from a .slnx file.      .slnx is, Extract WPF/XAML structure, bindings, x:Class, and event handler references. (+61 more)
-
-### Community 18 - "test_chunking.py"
-Cohesion: 0.04
-Nodes (67): extract_corpus_parallel(), _extract_with_adaptive_retry(), _merge_into(), _pack_chunks_by_tokens(), Greedily pack files/slices into chunks that fit a token budget.      Units are f, Extract a chunk; if the response is truncated (`finish_reason="length"`)     or, Extract a corpus in chunks, merging results.      Chunking strategy:         - I, Append a chunk result into the running merged accumulator. (+59 more)
-
-### Community 19 - "test_analyze.py"
-Cohesion: 0.06
-Nodes (68): find_import_cycles(), god_nodes(), graph_diff(), Return the top_n most-connected real entities - the core abstractions.      File, Find connections that are genuinely surprising - not obvious from file structure, Heuristic dead-code scan: function nodes unreachable from any recognized entry p, Compare two graph snapshots and return what changed.      Returns:         {, Detect circular import dependencies at the file level.      Collapses symbol-lev (+60 more)
-
-### Community 20 - "Path"
-Cohesion: 0.04
-Nodes (69): _is_noise_dir(), Return True if this directory name looks like a venv, cache, or dep dir., _apply_symbol_resolution_facts(), _augment_js_reexport_edges(), _augment_symbol_resolution_edges(), _contained_in_package(), _decldef_class_stem(), _disambiguate_colliding_node_ids() (+61 more)
-
-### Community 21 - "test_csharp_member_calls.py"
+### Community 19 - "test_csharp_member_calls.py"
 Cohesion: 0.06
 Nodes (68): _calls(), _find(), C# receiver-typed member-call resolution (#1609).  `recv.Method()` where `recv`, `Svc` exists in namespaces A and B; a caller file `using A;` must bind an     `A, No using directive and `Svc` in two foreign namespaces: genuinely     ambiguous, A caller in namespace A resolves `Svc` to A.Svc even though B.Svc also     exist, A local `Other x` shadowing a field `Server x` makes the name's type     conflic, `var x = Compute();` (untypable) redeclaring a typed field poisons the     name: (+60 more)
 
-### Community 22 - "test_codebuddy.py"
+### Community 20 - "test_codebuddy.py"
 Cohesion: 0.05
-Nodes (66): codebuddy_install(), codebuddy_uninstall(), Install the graphify skill and CODEBUDDY.md section for CodeBuddy., Remove the graphify skill tree (SKILL.md + references/) and the CODEBUDDY.md sec, _codebuddy_install_user(), _codebuddy_md_path(), Tests for graphify codebuddy install / uninstall commands., The installed hook must include Read|Glob matcher for file-read interception. (+58 more)
+Nodes (62): codebuddy_install(), codebuddy_uninstall(), Install the graphify skill and CODEBUDDY.md section for CodeBuddy., Remove the graphify skill tree (SKILL.md + references/) and the CODEBUDDY.md sec, _codebuddy_install_user(), _codebuddy_md_path(), Tests for graphify codebuddy install / uninstall commands., The installed hook must include Read|Glob matcher for file-read interception. (+54 more)
 
-### Community 23 - "test_pascal.py"
-Cohesion: 0.07
-Nodes (60): extract_delphi_form(), extract_lazarus_form(), extract_lazarus_package(), extract_pascal(), Extract units, classes, procedures, uses-imports, and calls from Pascal/Delphi f, Extract component hierarchy from Lazarus .lfm form files.      .lfm is a text-ba, Extract component hierarchy from Delphi .dfm form files.      .dfm files come in, Extract package metadata from Lazarus .lpk package files (XML format).      .lpk (+52 more)
+### Community 21 - "Path"
+Cohesion: 0.03
+Nodes (74): _apply_symbol_resolution_facts(), _augment_js_reexport_edges(), _augment_symbol_resolution_edges(), _contained_in_package(), _cpp_preprocess(), _decldef_class_stem(), _disambiguate_colliding_node_ids(), extract_dmi() (+66 more)
 
-### Community 24 - "Graph"
-Cohesion: 0.07
-Nodes (59): edge_data(), Return one edge attribute dict for (u, v), tolerating MultiGraph.      For Multi, _find_node(), _find_node_core(), _find_node_tied_group(), _find_node_tiers(), _get_bm25_corpus(), _find_node_core, with one vocabulary-correction retry (P5) if the     label matc (+51 more)
-
-### Community 25 - "_make_graph"
+### Community 22 - "_make_graph"
 Cohesion: 0.04
-Nodes (65): _bfs(), _dfs(), _embedding_corpus_hash(), _embedding_seed_fallback(), _embedding_similarity_map(), _fuse_embedding_rrf(), _get_embedding_index(), _get_embedding_model() (+57 more)
+Nodes (69): _bfs(), _dfs(), _embedding_corpus_hash(), _embedding_seed_fallback(), _embedding_similarity_map(), _fuse_embedding_rrf(), _get_embedding_index(), _get_embedding_model() (+61 more)
 
-### Community 26 - "to_wiki"
+### Community 23 - "to_wiki"
 Cohesion: 0.06
 Nodes (63): _community_article(), _cross_community_links(), _god_node_article(), _index_md(), _md_link(), Path, Make a label safe for use as a filename across platforms.      Substitutes chara, Generate a Wikipedia-style wiki from the graph.      Writes:       - index.md (+55 more)
 
-### Community 27 - "analyze.py"
-Cohesion: 0.06
-Nodes (58): _cross_community_surprises(), cross_cutting_nodes(), _cross_file_surprises(), _is_builtin_noise_label(), _is_concept_node(), _is_file_node(), _is_json_key_node(), Graph analysis: god nodes (most connected), surprising connections (cross-commun (+50 more)
+### Community 24 - "extract"
+Cohesion: 0.08
+Nodes (69): _canonicalize_csharp_namespace_nodes(), extract(), Collapse duplicate C# namespace node entries to one canonical node per label., Extract AST nodes and edges from a list of code files.      Two-pass process:, _defs(), _node_by_id(), Path, _targets() (+61 more)
 
-### Community 28 - "llm.py"
-Cohesion: 0.06
-Nodes (59): _best_cut(), bisect_slice(), expand_oversized_files(), FileSlice, is_splittable_text(), Path, Intra-file slicing for oversized text documents (#1369).  The extraction packer, Replace each oversized splittable-text file with a list of ``FileSlice``s. (+51 more)
-
-### Community 29 - "Changelog"
-Cohesion: 0.03
-Nodes (61): [0.11.1] - 2026-07-02, [0.14.0] - 2026-07-02, [0.20.0] - 2026-07-24, [0.24.3] - 2026-08-24, [0.26.1] - 2026-10-03, [0.3.12] - 2026-04-08, [0.3.13] - 2026-04-08, [0.3.14] - 2026-04-08 (+53 more)
-
-### Community 30 - "_labels"
-Cohesion: 0.04
-Nodes (61): extract_csproj(), extract_swift(), Extract packages, project refs, and target framework from a .csproj/.fsproj/.vbp, Extract classes, structs, protocols, functions, imports, and calls from a .swift, extract_apex(), Path, Extract classes, interfaces, enums, methods, and Salesforce constructs from, _labels() (+53 more)
-
-### Community 31 - "test_js_import_resolution.py"
-Cohesion: 0.15
-Nodes (59): _file_node_id(), File-level node ID matching the skill.md spec: ``{parent_dir}_{stem}`` —     one, _extract_for(), _has_edge(), _has_no_symbol_to_symbol_edge(), _has_symbol_edge(), _has_symbol_to_symbol_edge(), Path (+51 more)
-
-### Community 32 - "extract"
-Cohesion: 0.12
-Nodes (57): _canonicalize_csharp_namespace_nodes(), extract(), Collapse duplicate C# namespace node entries to one canonical node per label., Extract AST nodes and edges from a list of code files.      Two-pass process:, _defs(), _node_by_id(), Path, _targets() (+49 more)
-
-### Community 33 - "gen.py"
-Cohesion: 0.05
-Nodes (54): Every line that differs from pristine v8 is a sanctioned change-class.      The, test_monoliths_change_only_sanctioned_lines(), _enum_lines(), _is_cache_unlink_fix_line(), _is_chunk_cleanup_line(), _is_content_scope_fix_line(), _is_directed_fix_line(), _is_enum_line() (+46 more)
-
-### Community 34 - "test_llm_backends.py"
+### Community 25 - "test_llm_backends.py"
 Cohesion: 0.06
 Nodes (54): _call_openai_compat(), _model_requires_default_temperature(), True if `model` is a reasoning model that rejects an explicit temperature., Resolve the temperature to send, honouring GRAPHIFY_LLM_TEMPERATURE.      Preced, Detect a successful HTTP response that yielded no usable extraction.      A loca, Call any OpenAI-compatible API (Kimi, OpenAI, etc.) and return parsed JSON., _resolve_temperature(), _response_is_hollow() (+46 more)
 
-### Community 35 - "query.py"
+### Community 26 - "test_lsp_resolve.py"
+Cohesion: 0.09
+Nodes (50): callee_name(), _caller_callee_keys(), confine(), _definition_site(), find_column(), format_summary(), LspClient, LspError (+42 more)
+
+### Community 27 - "llm.py"
+Cohesion: 0.11
+Nodes (21): _azure_client(), _backend_pkg_hint(), _call_azure(), _call_claude(), _extraction_system(), Call Anthropic Claude directly (not via OpenAI compat layer)., Construct an AzureOpenAI client with env-driven api_version and timeout., Call Azure OpenAI Service via the AzureOpenAI SDK client. (+13 more)
+
+### Community 28 - "test_chunking.py"
+Cohesion: 0.04
+Nodes (66): BaseException, extract_corpus_parallel(), _extract_with_adaptive_retry(), _looks_like_context_exceeded(), _merge_into(), _pack_chunks_by_tokens(), Greedily pack files/slices into chunks that fit a token budget.      Units are f, Heuristically classify an exception as a context-window overflow.      Different (+58 more)
+
+### Community 29 - "test_js_import_resolution.py"
+Cohesion: 0.15
+Nodes (59): _file_node_id(), File-level node ID matching the skill.md spec: ``{parent_dir}_{stem}`` —     one, _extract_for(), _has_edge(), _has_no_symbol_to_symbol_edge(), _has_symbol_edge(), _has_symbol_to_symbol_edge(), Path (+51 more)
+
+### Community 30 - "test_devin.py"
+Cohesion: 0.06
+Nodes (47): _devin_rules_install(), Write .windsurf/rules/graphify.md for always-on Devin context., _devin_install_user(), Tests for graphify devin install / uninstall commands., The rules file installed by devin must use query-first policy., Installing rules twice does not change content and prints 'no change'., Project-scope install prints a git add hint covering .devin/ and .windsurf/., User-scope uninstall removes the skill file. (+39 more)
+
+### Community 31 - "test_multigraph_diagnostics.py"
+Cohesion: 0.18
+Nodes (27): diagnose_file(), format_diagnostic_report(), Diagnose a graph/extraction JSON file without mutating it.      When `directed`, _diagnostic_fixture(), Path, test_diagnose_extraction_accepts_node_link_links_key(), test_diagnose_extraction_bounds_examples(), test_diagnose_extraction_categorizes_same_endpoint_collapse() (+19 more)
+
+### Community 32 - "test_describe.py"
+Cohesion: 0.13
+Nodes (27): apply_to_stops(), _build_prompt(), collect_items(), community_key(), describe_main(), descriptions_path(), _excerpt(), _hash() (+19 more)
+
+### Community 33 - "_edge_labels"
+Cohesion: 0.06
+Nodes (48): extract_java(), extract_kotlin(), extract_scala(), Extract classes, interfaces, methods, constructors, and imports from a .java fil, Extract classes, objects, functions, and imports from a .kt/.kts file., Extract classes, objects, functions, and imports from a .scala file., _edge_labels(), `[[Foo alloc] init]` must emit a `references` edge to the project class Foo (#14 (+40 more)
+
+### Community 34 - "gen.py"
 Cohesion: 0.05
-Nodes (55): _best_anchor_neighbor(), _bm25_idf(), _filter_graph_by_context(), _get_trigram_index(), _infer_context_filters(), _is_concept_node_for_seeding(), _is_prose_node_for_seeding(), _node_search_text() (+47 more)
+Nodes (54): Every line that differs from pristine v8 is a sanctioned change-class.      The, test_monoliths_change_only_sanctioned_lines(), _enum_lines(), _is_cache_unlink_fix_line(), _is_chunk_cleanup_line(), _is_content_scope_fix_line(), _is_directed_fix_line(), _is_enum_line() (+46 more)
 
-### Community 36 - "test_security.py"
-Cohesion: 0.06
-Nodes (54): check_graph_file_size_cap(), Any, Path, Resolve *path* and verify it stays inside *base*.      *base* defaults to the `g, Reject *path* if its size exceeds the configured graph-file cap.      Protects c, Return a control-character-free, HTML-escaped, bounded string., Sanitize a metadata value while preserving simple JSON-compatible types., Sanitize metadata keys and values before graph export.      Metadata is less con (+46 more)
+### Community 35 - "Changelog"
+Cohesion: 0.04
+Nodes (55): [0.14.0] - 2026-07-02, [0.20.0] - 2026-07-24, [0.24.3] - 2026-08-24, [0.26.1] - 2026-10-03, [0.3.12] - 2026-04-08, [0.3.13] - 2026-04-08, [0.3.14] - 2026-04-08, [0.4.11] - 2026-04-13 (+47 more)
 
-### Community 37 - "extract_python"
-Cohesion: 0.06
-Nodes (53): extract_python(), Extract classes, functions, and imports from a .py file via tree-sitter AST., All edge sources must reference a known node (targets may be external imports)., contains / method / inherits / imports edges must always be EXTRACTED., Call-graph pass must produce INFERRED calls edges., AST-resolved call edges are deterministic and should be EXTRACTED/1.0., run_analysis() calls compute_score() - must appear as a calls edge., Analyzer.process() calls run_analysis() - cross class→function calls edge. (+45 more)
+### Community 36 - "test_pascal.py"
+Cohesion: 0.08
+Nodes (50): extract_delphi_form(), extract_lazarus_form(), extract_lazarus_package(), extract_pascal(), Extract units, classes, procedures, uses-imports, and calls from Pascal/Delphi f, Extract component hierarchy from Lazarus .lfm form files.      .lfm is a text-ba, Extract component hierarchy from Delphi .dfm form files.      .dfm files come in, Extract package metadata from Lazarus .lpk package files (XML format).      .lpk (+42 more)
 
-### Community 38 - "test_affected_cli.py"
-Cohesion: 0.06
-Nodes (53): _parse_git_diff_hunks(), Parse `git diff --unified=0` output into {file: [(start_line, end_line), ...]}, resolve_seed(), _init_git_repo(), #2309: affected must recover caller/callee direction from _src/_tgt markers, graphify's `extract` writes graph.json with an "edges" key (not networkx's     d, A trailing path separator must not change the match (parity with explain's     _, Several nodes share a source_file but none is the L1 file node and none's     ba (+45 more)
+### Community 37 - "test_mcp_ingest.py"
+Cohesion: 0.08
+Nodes (50): _add_edge(), _add_node(), _detect_package_from_args(), _emit_server(), extract_mcp_config(), is_mcp_config_path(), Any, Path (+42 more)
 
-### Community 39 - "test_build.py"
+### Community 38 - "_labels"
 Cohesion: 0.05
-Nodes (53): dedupe_edges(), dedupe_nodes(), edge_datas(), Return every edge attribute dict for (u, v); always a list., Collapse nodes sharing an ``id``, last-writer-wins on attributes.      Mirrors w, Collapse exact parallel edges by ``(source, target, relation)``, keeping the, load_extraction(), #1279: a semantic/LLM edge lacking source_file must inherit it from its     sour (+45 more)
+Nodes (50): extract_cpp(), extract_csproj(), Extract packages, project refs, and target framework from a .csproj/.fsproj/.vbp, Extract functions, classes, and includes from a .cpp/.cc/.cxx/.hpp file., extract_apex(), Path, Extract classes, interfaces, enums, methods, and Salesforce constructs from, _labels() (+42 more)
 
-### Community 40 - "test_image_vision.py"
+### Community 39 - "test_fuzzy_fallback.py"
 Cohesion: 0.07
-Nodes (50): _anthropic_content(), _bedrock_content(), _bedrock_inference_config(), _build_image_refs(), _call_bedrock(), _call_claude(), _extraction_system(), _image_notes() (+42 more)
+Nodes (47): _apply_vocabulary_corrections(), _correct_term(), _damerau_levenshtein(), _fuzzy_substring_distance(), _get_vocabulary(), Two separate candidate pools, each length-bucketed, cached together on     G.gra, Edit distance with adjacent transposition as a single edit., Greedy ordered-subsequence match score, or None if `query`'s     characters don' (+39 more)
 
-### Community 41 - "test_fuzzy_fallback.py"
-Cohesion: 0.07
-Nodes (52): _apply_vocabulary_corrections(), _correct_term(), _damerau_levenshtein(), _fuzzy_substring_distance(), _fuzzy_substring_seeds(), _get_vocabulary(), Two separate candidate pools, each length-bucketed, cached together on     G.gra, Edit distance with adjacent transposition as a single edit. (+44 more)
-
-### Community 42 - "test_devin.py"
-Cohesion: 0.05
-Nodes (51): _devin_rules_install(), Write .windsurf/rules/graphify.md for always-on Devin context., _devin_install_user(), Tests for graphify devin install / uninstall commands., The rules file installed by devin must use query-first policy., Installing rules twice does not change content and prints 'no change'., Project-scope install prints a git add hint covering .devin/ and .windsurf/., User-scope uninstall removes the skill file. (+43 more)
-
-### Community 43 - "README.ja-JP.md"
+### Community 40 - "README.ja-JP.md"
 Cohesion: 0.05
 Nodes (40): Co získáte, Instalace, Jak to funguje, Použití, Soukromí, Brug, Hvad du får, Installation (+32 more)
 
-### Community 44 - "test_install_references.py"
+### Community 41 - "test_install_references.py"
 Cohesion: 0.05
 Nodes (48): _check_skill_version(), Warn if the installed skill is from an older graphify version., Parse a version string into a comparable integer tuple (``0.9.2`` -> ``(0, 9, 2), _version_tuple(), _build_wheel_names(), fake_bundle(), _first_unbuilt_progressive_host(), _install() (+40 more)
 
-### Community 45 - "test_reflect.py"
+### Community 42 - "test_reflect.py"
 Cohesion: 0.09
 Nodes (49): aggregate_lessons(), Aggregate parsed memory docs into a deterministic lessons structure.      ``now`, Render the aggregate into the deterministic LESSONS.md markdown body., render_lessons_md(), _days_before(), _doc(), Tests for `graphify reflect` and the work-memory reflection layer.  `graphify re, Corroboration (k>=2) + sign decide the bucket, not raw frequency:     A is usefu (+41 more)
 
-### Community 46 - "deduplicate_entities"
-Cohesion: 0.08
-Nodes (46): deduplicate_entities(), _entropy(), Deduplicate near-identical entities in a knowledge graph.      Args:         nod, Shannon entropy in bits/char of the normalised label., _make_nodes(), Tests for graphify/dedup.py entity deduplication pipeline., deduplicate_entities accepts dedup_llm_backend without crashing when no ambiguou, Chip SKU variants (ASR1603 vs ASR1605) must not be merged (#878). (+38 more)
-
-### Community 47 - "_edge_labels"
+### Community 43 - "test_build.py"
 Cohesion: 0.06
-Nodes (47): extract_java(), extract_kotlin(), extract_scala(), Extract classes, interfaces, methods, constructors, and imports from a .java fil, Extract classes, objects, functions, and imports from a .kt/.kts file., Extract classes, objects, functions, and imports from a .scala file., _edge_labels(), `[[Foo alloc] init]` must emit a `references` edge to the project class Foo (#14 (+39 more)
+Nodes (48): dedupe_edges(), edge_data(), edge_datas(), Return one edge attribute dict for (u, v), tolerating MultiGraph.      For Multi, Return every edge attribute dict for (u, v); always a list., Collapse exact parallel edges by ``(source, target, relation)``, keeping the, load_extraction(), #1279: a semantic/LLM edge lacking source_file must inherit it from its     sour (+40 more)
 
-### Community 48 - "extract_files_direct"
-Cohesion: 0.07
-Nodes (45): _backend_supports_vision(), detect_backend(), extract_files_direct(), _get_backend_api_key(), _ollama_host_is_link_local_or_metadata(), Extract semantic nodes/edges from a list of files using the given backend., True if *host* is, or resolves to, a link-local / cloud-metadata address.      R, Warn if OLLAMA_BASE_URL looks unsafe; hard-block link-local/metadata (F3). (+37 more)
-
-### Community 49 - "extract_yaml"
+### Community 44 - "extract_yaml"
 Cohesion: 0.08
 Nodes (44): _is_value_coupling_service_verb(), _is_value_coupling_ui_file(), P15 (opt-in): emit low-confidence `shares_value:<v>` edges between file     node, _resolve_value_coupling(), extract_yaml(), _is_identifier_leaf(), Path, _pf() (+36 more)
 
-### Community 50 - "test_cypher.py"
-Cohesion: 0.10
-Nodes (44): parse_cypher(), Run a read-only Cypher-subset query on `G`.      `limit` is the default row limi, Parse a Cypher-subset query; raises CypherError on anything unsupported., run_cypher(), _big_graph(), _col(), G(), _graph() (+36 more)
+### Community 45 - "test_image_vision.py"
+Cohesion: 0.07
+Nodes (48): _anthropic_content(), _backend_supports_vision(), _bedrock_content(), _build_image_refs(), _call_bedrock(), _image_notes(), _ImageRef, _openai_content() (+40 more)
 
-### Community 51 - "test_indirect_dispatch.py"
+### Community 46 - "test_cypher.py"
+Cohesion: 0.10
+Nodes (43): parse_cypher(), Run a read-only Cypher-subset query on `G`.      `limit` is the default row limi, Parse a Cypher-subset query; raises CypherError on anything unsupported., run_cypher(), _big_graph(), _col(), G(), _graph() (+35 more)
+
+### Community 47 - "extract_python"
+Cohesion: 0.07
+Nodes (44): extract_python(), Extract classes, functions, and imports from a .py file via tree-sitter AST., All edge sources must reference a known node (targets may be external imports)., contains / method / inherits / imports edges must always be EXTRACTED., Call-graph pass must produce INFERRED calls edges., AST-resolved call edges are deterministic and should be EXTRACTED/1.0., run_analysis() calls compute_score() - must appear as a calls edge., Analyzer.process() calls run_analysis() - cross class→function calls edge. (+36 more)
+
+### Community 48 - "_find_node"
+Cohesion: 0.04
+Nodes (69): _best_anchor_neighbor(), _bm25_idf(), _filter_graph_by_context(), _find_node(), _find_node_core(), _find_node_tiers(), _get_bm25_corpus(), _get_trigram_index() (+61 more)
+
+### Community 49 - "test_indirect_dispatch.py"
 Cohesion: 0.10
 Nodes (44): _build(), _extract(), _extract_dir(), _extract_js_dir(), Indirect dispatch edges.  A function passed BY NAME as a call argument (`executo, No recall regression: a real module fn passed by name still emits an edge., Regression: when the scan root relativizes node ids (cache_root == project     r, Soundness carries across files: an imported name shadowed by a parameter     is (+36 more)
 
-### Community 52 - "test_skillgen.py"
+### Community 50 - "test_skillgen.py"
 Cohesion: 0.06
 Nodes (44): _platform_artifacts(), Tests for the tools/skillgen generator and the claude lean-core split.  skillgen, windows: graphify name (must match the .claude/skills/graphify/ install folder),, codex: spawn/wait/close_agent dispatch needing multi_agent = true., codex (was 4-value) and windows (was 5-value) now carry the superset., The extraction variant differs: codex compact, windows verbose., #1325: the unified query reference ships BOTH the vocab-expansion step and     t, The guard's line scanner flags 4- and 5-value pipe enums, not the superset. (+36 more)
 
-### Community 53 - "parse_and_execute_pattern"
+### Community 51 - "test_confidence.py"
+Cohesion: 0.12
+Nodes (25): cohesion_score(), _partition(), Community detection on NetworkX graphs. Uses Leiden (graspologic) if available,, Context manager to suppress stdout/stderr during library calls.      graspologic, Run community detection. Returns {node_id: community_id}.      Tries Leiden (gra, Run a second Leiden pass on a community subgraph to split it further., Ratio of actual intra-community edges to maximum possible., Remap community IDs to maximize overlap with a previous assignment.      Uses gr (+17 more)
+
+### Community 52 - "parse_and_execute_pattern"
 Cohesion: 0.09
 Nodes (42): _apply_where_op(), parse_and_execute_pattern(), _parse_varlen(), _parse_where_clauses(), PatternQueryError, Any, Execute a Cypher-like pattern query against G.      Examples:         MATCH (a:f, Parse a `*`, `*N`, `*N..M`, `*..M`, or `*N..` quantifier into (min, max) hops. (+34 more)
+
+### Community 53 - "test_global_graph.py"
+Cohesion: 0.11
+Nodes (41): prefix_graph_for_global(), prune_repo_from_graph(), Return a copy of G with all node IDs prefixed with repo_tag::.      Labels are p, Remove all nodes tagged with repo_tag from G in-place. Returns count removed., _file_hash(), global_add(), global_list(), global_path() (+33 more)
 
 ### Community 54 - "reflect.py"
 Cohesion: 0.09
 Nodes (43): _build_id_label_maps(), build_learning_overlay(), _code_fingerprint(), _content_hash(), _decay(), _dedupe_by_question(), _empty_bucket(), _finalize_sources() (+35 more)
 
-### Community 55 - "_extract_generic"
-Cohesion: 0.06
-Nodes (42): _csharp_pre_scan_interfaces(), _extract_generic(), extract_html_with_scripts(), extract_lua(), _find_body(), _js_external_import_names(), _js_module_bound_names(), LanguageConfig (+34 more)
-
-### Community 56 - "extract_objc"
-Cohesion: 0.05
-Nodes (43): extract_objc(), Extract interfaces, implementations, protocols, methods, and imports from .m/.mm, `@protocol Derived <Base>` must emit an implements edge Derived->Base.     Proto, `[self speak]` inside Dog.fetch must produce a calls edge. The method-body     s, `+ (…)shared` is a class method and must be labeled +shared, not -shared (#1475), A compound message `[self a:x b:y]` resolves to the compound method def (#1475)., `NSArray<Product *> *` must reference the element type Product (and the     cont, `@import Foundation;` / `@import UIKit.UIView;` produce imports edges (#1475). (+35 more)
-
-### Community 57 - "test_global_graph.py"
-Cohesion: 0.11
-Nodes (40): prefix_graph_for_global(), prune_repo_from_graph(), Return a copy of G with all node IDs prefixed with repo_tag::.      Labels are p, Remove all nodes tagged with repo_tag from G in-place. Returns count removed., _file_hash(), global_add(), global_list(), global_remove() (+32 more)
-
-### Community 58 - "_surprise_score"
-Cohesion: 0.06
-Nodes (40): _cross_language(), _file_category(), Return the first path component - used to detect cross-repo edges., Score how surprising a cross-file edge is. Returns (score, reasons)., Return True if two source files belong to different language families., _surprise_score(), _top_level_dir(), _make_code_doc_graph() (+32 more)
-
-### Community 59 - "test_mcp_ingest.py"
-Cohesion: 0.11
-Nodes (36): extract_mcp_config(), Path, Parse an MCP config file into Graphify nodes and edges.      Behaviour matches o, _label_by_kind(), Path, Tests for graphify.mcp_ingest — MCP config file extraction., _relations(), test_dispatch_does_not_reroute_generic_json() (+28 more)
-
-### Community 60 - "validate_extraction"
-Cohesion: 0.09
-Nodes (36): introspect_postgres(), _quote_ident(), Connect to PostgreSQL, reconstruct DDL, and extract via extract_sql()., Double-quote a PostgreSQL identifier, escaping embedded double-quotes., assert_valid(), Validate an extraction JSON dict against the graphify schema.     Returns a list, Raise ValueError with all errors if extraction is invalid., validate_extraction() (+28 more)
-
-### Community 61 - "ingest_scip_json"
-Cohesion: 0.05
-Nodes (40): ingest_scip_json(), Convert a SCIP-style JSON document into Graphify nodes and edges.      Parameter, Result passes Graphify's validate_extraction and build_from_json keeps the edges, A symbol with `relationships: None` ingests without error and emits no edges., A symbol with `kind` as a non-string falls back to 'unknown'., `display_name` as a non-string falls back to the symbol suffix., `documentation` first entry that isn't a string yields empty description (not cr, A non-dict entry in `documents` is silently skipped. (+32 more)
-
-### Community 62 - "test_cli_export.py"
-Cohesion: 0.11
-Nodes (39): _make_graph(), CompletedProcess, Path, Integration tests for graphify export subcommands and CLI commands.  Each test b, #1423: `graphify extract` honours GRAPHIFY_OUT for where it WRITES, not only, cluster-only must not crash with FileNotFoundError when graphify-out/ is absent, Build a minimal graph.json + analysis/labels files in tmp_path/graphify-out/., cluster-only must invoke remap_communities_to_previous so the existing     .grap (+31 more)
-
-### Community 63 - "test_path_cli.py"
-Cohesion: 0.08
-Nodes (39): _arrow_line(), _diamond_graph(), _flipped_marker_graph(), P16: --target-path narrows a duplicate label to one dir, so the query     resolv, A shorter 2-hop route through a builtin-primitive hub ("Int") and a     longer 3, The shorter route goes through a builtin-primitive node ("Int") - path     must, A project-specific type ("CustomHubType") that is NOT in     _BUILTIN_NOISE_LABE, A structurally over-connected node with NO builtin-noise-label match     (a proj (+31 more)
-
-### Community 64 - "sample.swift"
-Cohesion: 0.06
-Nodes (29): Bool, Foundation, NSObject, NSString, SampleDelegate, Animal, -initWithName, -speak (+21 more)
-
-### Community 65 - "build.py"
-Cohesion: 0.09
-Nodes (36): deduplicate_by_label(), graph_has_legacy_ids(), _norm_label(), _old_file_stems(), Pre-migration stem forms a semantic fragment may have used for ``rel``.      Ord, Re-derive non-AST node ids from ``source_file`` using the canonical     full-pat, Whether a loaded graph still uses pre-#1504 node IDs (parent-dir / filename, Canonical dedup key — Unicode-aware, preserves CJK/word characters. (+28 more)
-
-### Community 66 - "paths.py"
-Cohesion: 0.08
-Nodes (35): _atomic_replace(), disambiguate_ambiguous_candidates(), _is_test_path(), out_path(), Path, Single source of truth for the graphify output-directory name.  The output direc, Classify a source path as a test path (case-insensitive, segment-aware).      Sh, Resolve an ambiguous bare-name call to one candidate, or ``None``.      Shared g (+27 more)
-
-### Community 67 - "_query_graph_text"
-Cohesion: 0.06
-Nodes (39): _query_graph_text(), End-to-end: a compound-span typo longer than the n-gram window must     still re, test_query_graph_text_falls_through_to_bitap_tier_when_ngram_insufficient(), _make_callers_graph(), _make_noisy_graph(), _make_path_scope_graph(), semantic_fusion="off" must never even consult the embedding index,     regardles, FooBarService error handling' should expand from FooBarService,     not from err (+31 more)
-
-### Community 68 - "_score_nodes"
-Cohesion: 0.06
-Nodes (37): _bm25_confident_pick(), Last-resort tier: the same cross-field BM25 ranking query/explain/path     alrea, _score_nodes(), Regression coverage for P3 (camelCase/snake_case/kebab-case tokenization) ground, run-tests-btn / hint-btn / next-lesson-btn all end in "-btn" — only     "run" +, progress-bar-fill vs progress-label share "progress" — "bar" and     "fill" must, A developer describing the bug in plain words ("input salary and     save") must, amazon api login" must resolve to amazonAPILogin, not a same-domain     decoy. (+29 more)
-
-### Community 69 - "_call_llm"
-Cohesion: 0.07
-Nodes (33): _crossfile_fileanchored_blocked(), _is_code(), _is_variant_pair(), _llm_tiebreak(), _make_minhash(), _pick_winner(), Entity deduplication pipeline for graphify knowledge graphs.  Pipeline: exact no, Block label-based merging of file-anchored non-code nodes across files (#1284). (+25 more)
-
-### Community 70 - "test_transcribe.py"
-Cohesion: 0.08
-Nodes (35): build_whisper_prompt(), download_audio(), _get_whisper(), _get_yt_dlp(), is_url(), _model_name(), Path, Transcribe a video/audio file or URL to a .txt transcript.      If video_path is (+27 more)
-
-### Community 71 - "load_platforms"
-Cohesion: 0.07
-Nodes (38): Regression for #1461: every skill body that describes Step 3 extraction must, The committed codex/windows artifacts match a fresh render and expected/., Every platform now carries one unified frontmatter description, byte for byte., The committed artifacts and the expected/ snapshot match a fresh render.      Th, The file_type enum is the six-value superset in every rendered artifact., check + audit-coverage pass for every rendered progressive host., Rendering twice yields byte-identical output (no timestamps/versions)., aider and devin render one inline body, no split and no references dir. (+30 more)
-
-### Community 72 - "generate"
-Cohesion: 0.11
-Nodes (34): generate(), _learning_section(), Append the ``## Work-memory lessons`` section, or nothing when empty., make_inputs(), When a work-memory overlay (preferred sources) and query-scoped dead-ends     ar, No learning input => no section; report identical to pre-feature., test_report_contains_ambiguous_section(), test_report_contains_communities() (+26 more)
-
-### Community 73 - "security.py"
-Cohesion: 0.09
-Nodes (32): _detect_url_type(), _download_binary(), _fetch_arxiv(), _fetch_html(), _fetch_tweet(), _fetch_webpage(), _html_to_markdown(), ingest() (+24 more)
-
-### Community 74 - "test_labeling.py"
-Cohesion: 0.12
-Nodes (33): _community_label_lines(), generate_community_labels(), label_communities(), _placeholder_community_labels(), One prompt line per community (largest first), sampling up to ``top_k``     repr, Return a complete ``{cid: name}`` map using ``backend`` for naming.      Communi, CLI entry point: resolve a backend, name communities, and degrade to     ``Commu, _graph() (+25 more)
-
-### Community 75 - "lsp_resolve.py"
-Cohesion: 0.12
-Nodes (25): callee_name(), _caller_callee_keys(), confine(), _definition_site(), find_column(), format_summary(), LspClient, LspError (+17 more)
-
-### Community 76 - "test_serve_http.py"
-Cohesion: 0.15
-Nodes (35): _build_http_app(), Build the Starlette ASGI app for the Streamable HTTP transport.      Split out f, TestClient, _call_tool(), _client(), _graph_file(), _init_session(), _project_with_graph() (+27 more)
-
-### Community 77 - "test_scip_ingest.py"
-Cohesion: 0.06
-Nodes (35): Comprehensive tests for graphify.scip_ingest., Symbol ending with '#' and no display_name must produce a non-empty label., Cross-document relationship resolves to the target document's node id., When a target symbol is defined in exactly ONE other document, the edge     stil, When a target symbol is defined in 2+ documents AND the source is in a     third, Control characters in SCIP description must not survive into the graph., SCIP relationship payloads embedded in edge metadata must be sanitized., When occurrences key is missing entirely, falls back to empty source_location. (+27 more)
-
-### Community 78 - "RuntimeError"
-Cohesion: 0.09
-Nodes (33): BaseException, _check_tree_sitter_version(), Raise a clear error if tree-sitter is too old for the new Language API., convert_google_workspace_file(), _extract_file_id_from_url(), _extract_resource_key(), google_workspace_enabled(), Any (+25 more)
-
-### Community 79 - "test_benchmark.py"
-Cohesion: 0.14
-Nodes (33): _estimate_tokens(), _hr(), print_benchmark(), _query_subgraph_tokens(), Token-reduction benchmark - measures how much context graphify saves vs naive fu, Print a human-readable benchmark report., Return unicode_char if stdout can encode it, else ascii_fallback.      Windows c, Horizontal rule that survives non-UTF-8 stdout (e.g. Windows cp1252 console). (+25 more)
-
-### Community 80 - "test_hooks.py"
-Cohesion: 0.06
-Nodes (34): _hooks_dir(), Return the git hooks directory, respecting core.hooksPath if set (e.g. Husky)., isolate_global_git_config(), Tests for hooks.py - git hook install/uninstall., Keep hook-install tests independent of the user's global hooksPath., Hook script must skip shebang extraction for .exe binaries (Windows)., The detection fallback must emit a message to stderr rather than bare exit 0., graphify hook-check must not emit additionalContext — Codex Desktop rejects it. (+26 more)
-
-### Community 81 - "test_querylog.py"
-Cohesion: 0.11
-Nodes (33): _log_path(), log_query(), _log_responses(), nodes_from_result(), Any, Path, Query logging for graphify — append-only JSONL, fail-silent., Append one JSONL record to the query log. Never raises. (+25 more)
-
-### Community 82 - "build_merge"
-Cohesion: 0.09
-Nodes (33): build_merge(), _infer_merge_root(), _norm_source_file(), Path, Normalize path separators and relativize absolute paths.      Converts backslash, Best-effort scan root for relativizing paths in build_merge when the caller, Load existing graph.json, merge new chunks into it, and save back.      Re-extra, _he_ids() (+25 more)
-
-### Community 83 - "extract_dm"
-Cohesion: 0.07
-Nodes (34): extract_c(), extract_dm(), Extract types, procs, includes, and calls from a .dm/.dme file., Extract functions and includes from a .c/.h file., _calls(), _edges_with_relation(), Regression test for the call-walker `simple_identifier` /     `identifier` renam, test_c_call_edges_have_call_context() (+26 more)
-
-### Community 84 - "_call_claude_cli"
-Cohesion: 0.09
-Nodes (32): _call_claude_cli(), _no_window_kwargs(), Call Claude via the locally-installed Claude Code CLI (`claude -p`).      Routes, subprocess kwargs that suppress the console window claude.cmd would     otherwis, Honour GRAPHIFY_API_TIMEOUT env var override, else use default (seconds)., _resolve_api_timeout(), Tests for the `claude-cli` backend (#855/#856).  Mocks subprocess.run + shutil.w, On Windows, npm installs `claude.ps1` alongside `claude.cmd`.     `CreateProcess (+24 more)
-
-### Community 85 - "_relations"
-Cohesion: 0.07
-Nodes (33): extract_php(), Extract classes, functions, methods, namespace uses, and calls from a .php file., Module-level arrow functions must still emit a node and capture their calls (#10, Headings should be connected via 'contains' edges (file->h, h->h)., _relations(), test_apex_contains_and_method_relations(), test_java_finds_imports(), test_js_module_level_arrow_produces_node_and_call_edges() (+25 more)
-
-### Community 86 - "/graphify"
-Cohesion: 0.06
-Nodes (32): For always-on context in Devin sessions, For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For --update (incremental re-extraction) (+24 more)
-
-### Community 87 - "/graphify"
-Cohesion: 0.06
-Nodes (32): For always-on context in Devin sessions, For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For --update (incremental re-extraction) (+24 more)
-
-### Community 88 - "/graphify"
-Cohesion: 0.06
-Nodes (32): For always-on context in Devin sessions, For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For --update (incremental re-extraction) (+24 more)
-
-### Community 89 - "HttpClient"
-Cohesion: 0.10
-Nodes (25): __global__, AuthedHttpClient, token_, Connection, resource, string, T, HttpClient (+17 more)
-
-### Community 90 - "build_from_json"
-Cohesion: 0.11
-Nodes (31): build_from_json(), Build a NetworkX graph from an extraction dict.      directed=True produces a Di, attach_hyperedges(), Store hyperedges in the graph's metadata dict., _alias_extraction(), _make_report(), Tests for hyperedge support in graphify., Write graph.json then reload it - hyperedges must survive. (+23 more)
-
-### Community 91 - "_Parser"
-Cohesion: 0.24
-Nodes (4): NodePat, _Parser, RelPat, _Tok
-
-### Community 92 - "test_manifest_ingest.py"
-Cohesion: 0.11
-Nodes (28): _coerce_deps(), extract_package_manifest(), is_package_manifest_path(), _parse_apm(), _parse_apm_fallback(), _parse_pyproject(), _pep508_name(), _pkg_id() (+20 more)
-
-### Community 93 - "README.fa-IR.md"
-Cohesion: 0.06
-Nodes (29): Adding a new language extractor, Architecture, Confidence labels, Extraction output schema, Module responsibilities, Pipeline, Reading aids, Security (+21 more)
-
-### Community 94 - "_get_extractor"
-Cohesion: 0.08
-Nodes (25): _get_extractor(), _is_cpp_header(), _is_objc_header(), Whether a `.h` file is Objective-C rather than C/C++ (#1475).      `.h` is share, Whether a `.h` file is C++ rather than plain C (#1547).      Mirrors `_is_objc_h, Return the correct extractor function for a file, or None if unsupported., extract_dockerfile(), is_dockerfile_path() (+17 more)
-
-### Community 95 - "_parse_llm_json"
-Cohesion: 0.08
-Nodes (30): _azure_client(), _call_azure(), _parse_llm_json(), Construct an AzureOpenAI client with env-driven api_version and timeout., Call Azure OpenAI Service via the AzureOpenAI SDK client., How many times the provider SDK retries a transient error (notably HTTP 429, Strip optional markdown fences and parse JSON. Returns empty fragment on failure, _resolve_max_retries() (+22 more)
-
-### Community 96 - "test_minhash.py"
-Cohesion: 0.12
-Nodes (23): _lsh_integrate(), _mh_coeffs(), MinHash, MinHashLSH, _optimal_lsh_params(), MinHash + band-LSH — datasketch-compatible drop-in (no scipy).  datasketch.lsh h, MinHash sketch — same API as datasketch.MinHash for the subset used here., Numerical integration — replaces scipy.integrate.quad for LSH param search. (+15 more)
-
-### Community 97 - "/graphify"
-Cohesion: 0.06
-Nodes (30): For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For native CLAUDE.md integration, For --update (incremental re-extraction) (+22 more)
-
-### Community 98 - "/graphify"
-Cohesion: 0.06
-Nodes (30): For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For native CLAUDE.md integration, For --update (incremental re-extraction) (+22 more)
-
-### Community 99 - "/graphify"
-Cohesion: 0.06
-Nodes (30): For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For native CLAUDE.md integration, For --update (incremental re-extraction) (+22 more)
-
-### Community 100 - "score_all"
-Cohesion: 0.11
-Nodes (28): cohesion_score(), _partition(), Community detection on NetworkX graphs. Uses Leiden (graspologic) if available,, Context manager to suppress stdout/stderr during library calls.      graspologic, Run community detection. Returns {node_id: community_id}.      Tries Leiden (gra, Run a second Leiden pass on a community subgraph to split it further., Ratio of actual intra-community edges to maximum possible., Remap community IDs to maximize overlap with a previous assignment.      Uses gr (+20 more)
-
-### Community 101 - "extract_markdown"
-Cohesion: 0.09
-Nodes (29): extract_markdown(), _json_safe_frontmatter(), _normalize_frontmatter_list(), _parse_yaml_frontmatter(), Any, Resolve a markdown link target to the absolute path of a sibling document., Parse leading YAML frontmatter delimited by ^---$ lines.      Returns (frontmatt, Convert YAML date values to JSON-safe ISO strings without changing shape. (+21 more)
-
-### Community 102 - "prs.py"
-Cohesion: 0.20
-Nodes (29): _default_model_for_backend(), Return configured model override or backend default model., attach_graph_impact(), bold(), _c(), _ci_icon(), cmd_prs(), cyan() (+21 more)
-
-### Community 103 - "test_indirect_call_function_expression_shadow.py"
-Cohesion: 0.12
-Nodes (29): _extract_js_dir(), _indirect(), Function expressions (including generator FEs and TSX) must shadow indirect_call, The bindings are scoped to the expression: a same-named module callable     refe, Two function expressions in one initializer are SEPARATE scopes: the     first o, Widening the shadow set must not blanket-suppress inside the body: an     unshad, Adding a type to `function_boundary_types` must not change WHERE calls are     a, The TS config carries its own copy of the set; both were missing the type. (+21 more)
-
-### Community 104 - "write_callflow_html"
-Cohesion: 0.09
-Nodes (28): build_section_node_map(), CallflowOptions, classify_edges(), detect_lang(), html_comment_text(), infer_project_name(), load_labels(), load_report() (+20 more)
-
-### Community 105 - "_Exec"
-Cohesion: 0.20
-Nodes (9): _eq(), _Exec, _hkey(), _is_num(), Any, A bound pattern variable: tag n (node id), e (edge index) or p (tuple of edge in, _Ref, _sortkey() (+1 more)
-
-### Community 106 - "_extract_pascal_regex"
-Cohesion: 0.09
-Nodes (28): _extract_pascal_regex(), _extract_spock_fallback(), _pascal_find_body(), _pascal_split_bases(), _pascal_split_sections(), _pascal_split_uses(), _pascal_strip_comments(), Strip Pascal comments ({}, (* *), //) while preserving newlines. (+20 more)
-
-### Community 107 - "_key"
-Cohesion: 0.08
-Nodes (27): _is_type_like_definition(), _lang_family(), _lang_is_case_insensitive(), _merge_swift_extensions(), _node_label_key(), True when the file's language resolves identifiers case-insensitively (#1581)., Interop family of the file's language, or None when unknown/not code., Map unresolved no-source stubs to a unique real definition with the same label. (+19 more)
-
-### Community 108 - "check_for_update"
-Cohesion: 0.14
-Nodes (27): check_for_update(), _is_newer(), _latest_version(), Self-update check for the graphify CLI.  PyPI-backed sibling of the npm-based ``, Best-effort, non-fatal: warn (and optionally auto-upgrade) if PyPI has a     new, Parse a dotted version string into a comparable integer tuple.      Duplicated (, _read_config(), _resolve_auto_update() (+19 more)
-
-### Community 109 - "describe.py"
-Cohesion: 0.13
-Nodes (27): apply_to_stops(), _build_prompt(), collect_items(), community_key(), describe_main(), descriptions_path(), _excerpt(), _hash() (+19 more)
-
-### Community 110 - "claude_install"
-Cohesion: 0.10
-Nodes (27): claude_install(), Write the graphify section to the local CLAUDE.md., Tests for graphify claude install / uninstall commands., claude_install also writes .claude/settings.json with PreToolUse hook., Running claude_install twice does not duplicate the PreToolUse hook., Creates CLAUDE.md when none exists., claude_uninstall removes the PreToolUse hook from settings.json., Written section includes the three rules. (+19 more)
-
-### Community 111 - "README.md"
-Cohesion: 0.07
-Nodes (27): Common commands, Credits, Cypher subset (`graphify cypher`), Development setup, Environment variables, Full command reference, Git workflow, Ignoring files (+19 more)
-
-### Community 112 - "test_lsp_resolve.py"
-Cohesion: 0.26
-Nodes (25): _edge(), _graph(), _loc(), _node(), Path, Tests for graphify.lsp_resolve using a tiny fake LSP server (no pyright needed)., _run(), _server() (+17 more)
-
-### Community 113 - "_make_symbol_doc"
-Cohesion: 0.07
-Nodes (28): _make_symbol_doc(), Helper to build a minimal SCIP document with one symbol., is_reference → relation 'scip_ref'., is_definition → relation 'scip_def'., is_implementation → relation 'scip_impl' (takes priority over is_definition)., is_type_definition → relation 'scip_typed'., Implementation > TypeDefinition > Definition > Reference., When none of is_* flags are set, relation defaults to 'scip_ref'. (+20 more)
-
-### Community 114 - "test_dataflow.py"
-Cohesion: 0.23
-Nodes (26): format_flow(), _prune(), Any, Pattern, trace_flow(), _calls(), _project(), Path (+18 more)
-
-### Community 115 - "test_ruby_resolution.py"
-Cohesion: 0.15
-Nodes (26): extract_ruby(), Extract classes, methods, singleton methods, and calls from a .rb file., `class Sub < Base` must emit an inherits edge.      Ruby exposes the base class, test_ruby_finds_class(), test_ruby_finds_function(), test_ruby_finds_methods(), test_ruby_inherits_edge(), test_ruby_no_error() (+18 more)
-
-### Community 116 - "test_vue_extraction.py"
-Cohesion: 0.16
-Nodes (24): extract_vue(), _parse_js_tree(), Blank everything outside ``<script>`` bodies, keeping ``\\r``/``\\n``.      Repl, Extract imports, symbols, and type refs from a ``.vue`` SFC.      Masks the non-, _vue_mask_non_script(), Path, Tests for ``.vue`` SFC extraction.  Feeding a whole SFC to the JS grammar produc, Vue allows a classic ``<script>`` plus ``<script setup>``; both are TS. (+16 more)
-
-### Community 117 - "_query_terms"
-Cohesion: 0.08
-Nodes (26): _expand_synonyms(), _is_searchable(), _query_terms(), Split a query into searchable terms, drop stopwords (falling back to     the unf, True if term is non-English or an English word longer than 2 chars., Tests for lightweight query expansion (P8 semantic-search alternative). Chosen o, log in' spans a filtered stopword ('in'), so this can only work via     phrase-l, End-to-end: a node labeled purely with the target concept word must     be found (+18 more)
-
-### Community 118 - "scip_ingest.py"
+### Community 55 - "scip_ingest.py"
 Cohesion: 0.11
 Nodes (26): _build_scip_metadata(), _coerce_str(), _emit_relationships(), _emit_symbol_node(), _first_occurrence_line(), _is_true(), Any, scip_ingest.py — SCIP JSON ingestion (simplified subset).  Reads a simplified SC (+18 more)
 
-### Community 119 - "What You Must Do When Invoked"
-Cohesion: 0.07
-Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
+### Community 56 - "extract_objc"
+Cohesion: 0.05
+Nodes (42): extract_objc(), Extract interfaces, implementations, protocols, methods, and imports from .m/.mm, `@protocol Derived <Base>` must emit an implements edge Derived->Base.     Proto, `[self speak]` inside Dog.fetch must produce a calls edge. The method-body     s, `+ (…)shared` is a class method and must be labeled +shared, not -shared (#1475), A compound message `[self a:x b:y]` resolves to the compound method def (#1475)., `NSArray<Product *> *` must reference the element type Product (and the     cont, `@import Foundation;` / `@import UIKit.UIView;` produce imports edges (#1475). (+34 more)
 
-### Community 120 - "test_agents_platform.py"
+### Community 57 - "extract_files_direct"
+Cohesion: 0.08
+Nodes (40): _backend_env_keys(), detect_backend(), extract_files_direct(), _get_backend_api_key(), Extract semantic nodes/edges from a list of files using the given backend., Return the name of whichever backend has an API key set, or None.      Priority:, Return accepted API-key environment variables for a backend., Return the first configured API key for backend, or an empty string. (+32 more)
+
+### Community 58 - "test_serve_http.py"
+Cohesion: 0.15
+Nodes (35): _build_http_app(), Build the Starlette ASGI app for the Streamable HTTP transport.      Split out f, TestClient, _call_tool(), _client(), _graph_file(), _init_session(), _project_with_graph() (+27 more)
+
+### Community 59 - "build.py"
+Cohesion: 0.09
+Nodes (36): deduplicate_by_label(), graph_has_legacy_ids(), _norm_label(), _old_file_stems(), Path, Pre-migration stem forms a semantic fragment may have used for ``rel``.      Ord, Re-derive non-AST node ids from ``source_file`` using the canonical     full-pat, Whether a loaded graph still uses pre-#1504 node IDs (parent-dir / filename (+28 more)
+
+### Community 60 - "test_cli_export.py"
+Cohesion: 0.11
+Nodes (39): _make_graph(), CompletedProcess, Path, Integration tests for graphify export subcommands and CLI commands.  Each test b, #1423: `graphify extract` honours GRAPHIFY_OUT for where it WRITES, not only, cluster-only must not crash with FileNotFoundError when graphify-out/ is absent, Build a minimal graph.json + analysis/labels files in tmp_path/graphify-out/., cluster-only must invoke remap_communities_to_previous so the existing     .grap (+31 more)
+
+### Community 61 - "test_path_cli.py"
+Cohesion: 0.08
+Nodes (39): _arrow_line(), _diamond_graph(), _flipped_marker_graph(), P16: --target-path narrows a duplicate label to one dir, so the query     resolv, A shorter 2-hop route through a builtin-primitive hub ("Int") and a     longer 3, The shorter route goes through a builtin-primitive node ("Int") - path     must, A project-specific type ("CustomHubType") that is NOT in     _BUILTIN_NOISE_LABE, A structurally over-connected node with NO builtin-noise-label match     (a proj (+31 more)
+
+### Community 62 - "sample.swift"
+Cohesion: 0.06
+Nodes (29): Bool, Foundation, NSObject, NSString, SampleDelegate, Animal, -initWithName, -speak (+21 more)
+
+### Community 63 - "cross_cutting_nodes"
+Cohesion: 0.18
+Nodes (19): detect_layers(), layer_of_path(), Architecture-layer heuristic: group files by well-known directory names.  No LLM, Return [{name, description, node_count, files}] for layers that have nodes, larg, build_onboarding(), _communities(), Onboarding guide: one markdown page for someone new to the codebase.  Assembled, `descriptions` is the optional output of `graphify describe` (load_descriptions) (+11 more)
+
+### Community 64 - "_query_graph_text"
+Cohesion: 0.06
+Nodes (39): _query_graph_text(), End-to-end: a compound-span typo longer than the n-gram window must     still re, test_query_graph_text_falls_through_to_bitap_tier_when_ngram_insufficient(), _make_callers_graph(), _make_noisy_graph(), _make_path_scope_graph(), semantic_fusion="off" must never even consult the embedding index,     regardles, FooBarService error handling' should expand from FooBarService,     not from err (+31 more)
+
+### Community 65 - "build_merge"
+Cohesion: 0.09
+Nodes (37): build(), build_merge(), _infer_merge_root(), Best-effort scan root for relativizing paths in build_merge when the caller, Merge multiple extraction results into one graph.      directed=True produces a, Load existing graph.json, merge new chunks into it, and save back.      Re-extra, _he_ids(), Path (+29 more)
+
+### Community 66 - "build_from_json"
 Cohesion: 0.10
-Nodes (26): Tests for the generic `agents` platform and its `skills` alias (#1432).  `graphi, `graphify uninstall --platform agents|skills` (global) clears ~/.agents/skills., `graphify uninstall --project` (no platform) removes the agents project skill, `graphify install --project --platform agents` writes ./.agents/skills and     l, `graphify agents install` is the amp-twin: skill at ~/.agents/skills PLUS a, Running `graphify agents install` twice leaves a single AGENTS.md section., `graphify skills install`/`uninstall` behaves exactly like the agents form:, `graphify install` (no platform) stays single-platform claude/windows and     ne (+18 more)
+Nodes (35): build_from_json(), Build a NetworkX graph from an extraction dict.      directed=True produces a Di, attach_hyperedges(), Store hyperedges in the graph's metadata dict., Legacy nodes with file_type=None (e.g. preserved from older graph.json     by `_, Semantic subagents emit absolute source_file paths; build_from_json must     rel, test_build_from_json_relativizes_absolute_source_file(), test_none_file_type_defaults_to_concept() (+27 more)
 
-### Community 121 - "What You Must Do When Invoked"
+### Community 67 - "_score_nodes"
+Cohesion: 0.06
+Nodes (37): _bm25_confident_pick(), Last-resort tier: the same cross-field BM25 ranking query/explain/path     alrea, _score_nodes(), Regression coverage for P3 (camelCase/snake_case/kebab-case tokenization) ground, run-tests-btn / hint-btn / next-lesson-btn all end in "-btn" — only     "run" +, progress-bar-fill vs progress-label share "progress" — "bar" and     "fill" must, A developer describing the bug in plain words ("input salary and     save") must, amazon api login" must resolve to amazonAPILogin, not a same-domain     decoy. (+29 more)
+
+### Community 68 - "test_transcribe.py"
+Cohesion: 0.08
+Nodes (35): build_whisper_prompt(), download_audio(), _get_whisper(), _get_yt_dlp(), is_url(), _model_name(), Path, Transcribe a video/audio file or URL to a .txt transcript.      If video_path is (+27 more)
+
+### Community 69 - "load_platforms"
+Cohesion: 0.07
+Nodes (38): Regression for #1461: every skill body that describes Step 3 extraction must, The committed codex/windows artifacts match a fresh render and expected/., Every platform now carries one unified frontmatter description, byte for byte., The committed artifacts and the expected/ snapshot match a fresh render.      Th, The file_type enum is the six-value superset in every rendered artifact., check + audit-coverage pass for every rendered progressive host., Rendering twice yields byte-identical output (no timestamps/versions)., aider and devin render one inline body, no split and no references dir. (+30 more)
+
+### Community 70 - "test_file_slice.py"
+Cohesion: 0.07
+Nodes (51): _best_cut(), bisect_slice(), expand_oversized_files(), FileSlice, is_splittable_text(), Path, Intra-file slicing for oversized text documents (#1369).  The extraction packer, Replace each oversized splittable-text file with a list of ``FileSlice``s. (+43 more)
+
+### Community 71 - "test_security.py"
+Cohesion: 0.07
+Nodes (46): check_graph_file_size_cap(), Any, Path, Resolve *path* and verify it stays inside *base*.      *base* defaults to the `g, Reject *path* if its size exceeds the configured graph-file cap.      Protects c, Return a control-character-free, HTML-escaped, bounded string., Sanitize a metadata value while preserving simple JSON-compatible types., Sanitize metadata keys and values before graph export.      Metadata is less con (+38 more)
+
+### Community 72 - "test_hooks.py"
+Cohesion: 0.12
+Nodes (28): install(), Install graphify post-commit and post-checkout hooks in the nearest git repo., Check if graphify hooks are installed., status(), _make_git_repo(), Path, Hook scripts must embed sys.executable so the hook works without the     graphif, End-to-end: the files written to .git/hooks must be nohup-free (#1161). (+20 more)
+
+### Community 73 - "test_labeling.py"
+Cohesion: 0.12
+Nodes (33): _community_label_lines(), generate_community_labels(), label_communities(), _placeholder_community_labels(), One prompt line per community (largest first), sampling up to ``top_k``     repr, Return a complete ``{cid: name}`` map using ``backend`` for naming.      Communi, CLI entry point: resolve a backend, name communities, and degrade to     ``Commu, _graph() (+25 more)
+
+### Community 74 - "claude_install"
+Cohesion: 0.20
+Nodes (19): _canonical_edge(), _count_extra(), diagnose_extraction(), _edge_list(), _exact_signature(), format_diagnostic_json(), _node_ids(), Any (+11 more)
+
+### Community 75 - "generate"
+Cohesion: 0.05
+Nodes (50): Score how surprising a cross-file edge is. Returns (score, reasons)., _surprise_score(), _make_code_doc_graph(), _make_cross_lang_graph(), AMBIGUOUS edge should score higher than an otherwise identical EXTRACTED edge., documents_bug_in must score higher than a plain EXTRACTED edge with the     same, Code↔paper edge should score higher than code↔code edge., Helper: Python node in backend/, TypeScript node in frontend/, different communi (+42 more)
+
+### Community 76 - "test_benchmark.py"
+Cohesion: 0.14
+Nodes (33): _estimate_tokens(), _hr(), print_benchmark(), _query_subgraph_tokens(), Token-reduction benchmark - measures how much context graphify saves vs naive fu, Print a human-readable benchmark report., Return unicode_char if stdout can encode it, else ascii_fallback.      Windows c, Horizontal rule that survives non-UTF-8 stdout (e.g. Windows cp1252 console). (+25 more)
+
+### Community 77 - "test_querylog.py"
+Cohesion: 0.11
+Nodes (33): _log_path(), log_query(), _log_responses(), nodes_from_result(), Any, Path, Query logging for graphify — append-only JSONL, fail-silent., Append one JSONL record to the query log. Never raises. (+25 more)
+
+### Community 78 - "_get_extractor"
+Cohesion: 0.06
+Nodes (34): _get_extractor(), _is_cpp_header(), _is_objc_header(), _json_safe_frontmatter(), _parse_yaml_frontmatter(), Any, Parse leading YAML frontmatter delimited by ^---$ lines.      Returns (frontmatt, Convert YAML date values to JSON-safe ISO strings without changing shape. (+26 more)
+
+### Community 79 - "/graphify"
+Cohesion: 0.06
+Nodes (32): For always-on context in Devin sessions, For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For --update (incremental re-extraction) (+24 more)
+
+### Community 80 - "test_extract_cli.py"
+Cohesion: 0.04
+Nodes (77): load_community_names(), Path, Community labels written next to graph.json (empty when absent or unreadable)., _custom_providers_path(), _format_backend_env_keys(), _load_custom_providers(), provider_base_url_ok(), Structural safety check for a custom-provider base_url.      A custom provider r (+69 more)
+
+### Community 81 - "/graphify"
+Cohesion: 0.06
+Nodes (32): For always-on context in Devin sessions, For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For --update (incremental re-extraction) (+24 more)
+
+### Community 82 - "/graphify"
+Cohesion: 0.06
+Nodes (32): For always-on context in Devin sessions, For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For --update (incremental re-extraction) (+24 more)
+
+### Community 83 - "HttpClient"
+Cohesion: 0.10
+Nodes (25): __global__, AuthedHttpClient, token_, Connection, resource, string, T, HttpClient (+17 more)
+
+### Community 84 - "_call_claude_cli"
+Cohesion: 0.06
+Nodes (46): _bedrock_inference_config(), _call_claude_cli(), _call_llm(), _claude_cli_envelope(), estimate_cost(), _no_window_kwargs(), Parse the JSON returned by `claude -p --output-format json`.      Older Claude C, Call Claude via the locally-installed Claude Code CLI (`claude -p`).      Routes (+38 more)
+
+### Community 85 - "test_manifest_ingest.py"
+Cohesion: 0.11
+Nodes (28): _coerce_deps(), extract_package_manifest(), is_package_manifest_path(), _parse_apm(), _parse_apm_fallback(), _parse_pyproject(), _pep508_name(), _pkg_id() (+20 more)
+
+### Community 86 - "query.py"
+Cohesion: 0.09
+Nodes (24): _expand_synonyms(), _is_searchable(), _query_terms(), Split a query into searchable terms, drop stopwords (falling back to     the unf, True if term is non-English or an English word longer than 2 chars., Tests for lightweight query expansion (P8 semantic-search alternative). Chosen o, log in' spans a filtered stopword ('in'), so this can only work via     phrase-l, End-to-end: a node labeled purely with the target concept word must     be found (+16 more)
+
+### Community 87 - "README.fa-IR.md"
+Cohesion: 0.06
+Nodes (29): Adding a new language extractor, Architecture, Confidence labels, Extraction output schema, Module responsibilities, Pipeline, Reading aids, Security (+21 more)
+
+### Community 89 - "_edges_with_relation"
+Cohesion: 0.17
+Nodes (12): extract_elixir(), Path, Extract modules, functions, imports, and calls from a .ex/.exs file., `alias Foo.{Bar, Baz}` must emit one imports edge per expanded module.      The, test_elixir_call_edges_have_call_context(), test_elixir_finds_calls(), test_elixir_finds_functions(), test_elixir_finds_imports() (+4 more)
+
+### Community 90 - "_extract_pascal_regex"
+Cohesion: 0.10
+Nodes (30): _extract_pascal_regex(), _pascal_find_body(), _pascal_project_root(), _pascal_resolve_class(), _pascal_resolve_unit(), _pascal_split_bases(), _pascal_split_sections(), _pascal_split_uses() (+22 more)
+
+### Community 91 - "test_minhash.py"
+Cohesion: 0.12
+Nodes (23): _lsh_integrate(), _mh_coeffs(), MinHash, MinHashLSH, _optimal_lsh_params(), MinHash + band-LSH — datasketch-compatible drop-in (no scipy).  datasketch.lsh h, MinHash sketch — same API as datasketch.MinHash for the subset used here., Numerical integration — replaces scipy.integrate.quad for LSH param search. (+15 more)
+
+### Community 92 - "/graphify"
+Cohesion: 0.06
+Nodes (30): For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For native CLAUDE.md integration, For --update (incremental re-extraction) (+22 more)
+
+### Community 93 - "/graphify"
+Cohesion: 0.06
+Nodes (30): For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For native CLAUDE.md integration, For --update (incremental re-extraction) (+22 more)
+
+### Community 94 - "/graphify"
+Cohesion: 0.06
+Nodes (30): For --cluster-only, For git commit hook, For /graphify add, For /graphify explain, For /graphify path, For /graphify query, For native CLAUDE.md integration, For --update (incremental re-extraction) (+22 more)
+
+### Community 95 - "_Exec"
+Cohesion: 0.19
+Nodes (10): _eq(), _Exec, _hkey(), _is_num(), NodePat, Any, A bound pattern variable: tag n (node id), e (edge index) or p (tuple of edge in, _Ref (+2 more)
+
+### Community 96 - "extract_bash"
+Cohesion: 0.10
+Nodes (20): backup_if_protected(), Snapshot graph artifacts to a dated subfolder before an overwrite.      Triggers, No graph.json → no backup., graph.json present but no sentinel and no curated labels → no backup., graph.json + .graphify_semantic_marker → backup taken., graph.json + non-default label in .graphify_labels.json → backup taken., All-default labels → no backup (not curated)., Same content on same day returns existing backup dir without re-copying. (+12 more)
+
+### Community 97 - "extract_markdown"
+Cohesion: 0.07
+Nodes (39): extract_markdown(), _normalize_frontmatter_list(), Normalize frontmatter scalar or list into a list of non-empty strings., Extract structural nodes and edges from a Markdown file.      Produces nodes for, Path, [TS-MD-004] Frontmatter supersedes field should link to the target document node, [TS-MD-005] Markdown without frontmatter continues to parse headings and links a, [TS-MD-006] Malformed frontmatter does not raise and parses the rest of the docu (+31 more)
+
+### Community 98 - "test_indirect_call_function_expression_shadow.py"
+Cohesion: 0.12
+Nodes (29): _extract_js_dir(), _indirect(), Function expressions (including generator FEs and TSX) must shadow indirect_call, The bindings are scoped to the expression: a same-named module callable     refe, Two function expressions in one initializer are SEPARATE scopes: the     first o, Widening the shadow set must not blanket-suppress inside the body: an     unshad, Adding a type to `function_boundary_types` must not change WHERE calls are     a, The TS config carries its own copy of the set; both were missing the type. (+21 more)
+
+### Community 99 - "test_affected_cli.py"
+Cohesion: 0.06
+Nodes (53): _parse_git_diff_hunks(), Parse `git diff --unified=0` output into {file: [(start_line, end_line), ...]}, resolve_seed(), _init_git_repo(), #2309: affected must recover caller/callee direction from _src/_tgt markers, graphify's `extract` writes graph.json with an "edges" key (not networkx's     d, A trailing path separator must not change the match (parity with explain's     _, Several nodes share a source_file but none is the L1 file node and none's     ba (+45 more)
+
+### Community 100 - "write_callflow_html"
+Cohesion: 0.09
+Nodes (28): build_section_node_map(), CallflowOptions, classify_edges(), detect_lang(), html_comment_text(), infer_project_name(), load_labels(), load_report() (+20 more)
+
+### Community 101 - "_key"
+Cohesion: 0.08
+Nodes (27): _is_type_like_definition(), _lang_family(), _lang_is_case_insensitive(), _merge_swift_extensions(), _node_label_key(), True when the file's language resolves identifiers case-insensitively (#1581)., Interop family of the file's language, or None when unknown/not code., Map unresolved no-source stubs to a unique real definition with the same label. (+19 more)
+
+### Community 102 - "paths.py"
+Cohesion: 0.13
+Nodes (21): _atomic_replace(), Path, Atomically replace ``path`` with content written by ``write_fn(f)``.      Writes, Atomically write ``text`` (UTF-8) to ``path``. See :func:`_atomic_replace`., Atomically write ``obj`` as JSON to ``path``, streaming the encode into the, write_json_atomic(), write_text_atomic(), Tests for atomic JSON writes (graph.json / manifest.json).  A crash, kill, or di (+13 more)
+
+### Community 103 - "check_for_update"
+Cohesion: 0.14
+Nodes (27): check_for_update(), _is_newer(), _latest_version(), Self-update check for the graphify CLI.  PyPI-backed sibling of the npm-based ``, Best-effort, non-fatal: warn (and optionally auto-upgrade) if PyPI has a     new, Parse a dotted version string into a comparable integer tuple.      Duplicated (, _read_config(), _resolve_auto_update() (+19 more)
+
+### Community 104 - "deduplicate_entities"
+Cohesion: 0.18
+Nodes (16): format_tour(), _cache(), _cli_out(), _describe(), env(), _project(), A tiny repo on disk plus a graph pointing at it. Returns the graph path., test_cache_hit_miss_and_refresh() (+8 more)
+
+### Community 105 - "RuntimeError"
+Cohesion: 0.12
+Nodes (26): _check_tree_sitter_version(), Raise a clear error if tree-sitter is too old for the new Language API., convert_google_workspace_file(), _extract_file_id_from_url(), _extract_resource_key(), google_workspace_enabled(), Any, Path (+18 more)
+
+### Community 106 - "README.md"
+Cohesion: 0.07
+Nodes (27): Common commands, Credits, Cypher subset (`graphify cypher`), Development setup, Environment variables, Full command reference, Git workflow, Ignoring files (+19 more)
+
+### Community 107 - "_make_symbol_doc"
+Cohesion: 0.07
+Nodes (28): _make_symbol_doc(), Helper to build a minimal SCIP document with one symbol., is_reference → relation 'scip_ref'., is_definition → relation 'scip_def'., is_implementation → relation 'scip_impl' (takes priority over is_definition)., is_type_definition → relation 'scip_typed'., Implementation > TypeDefinition > Definition > Reference., When none of is_* flags are set, relation defaults to 'scip_ref'. (+20 more)
+
+### Community 108 - "test_dataflow.py"
+Cohesion: 0.22
+Nodes (27): format_flow(), _prune(), Any, Pattern, trace_flow(), _tool_trace_flow_text(), _calls(), _project() (+19 more)
+
+### Community 109 - "_relations"
+Cohesion: 0.07
+Nodes (33): extract_php(), extract_sln(), Extract projects and inter-project dependencies from a .sln file., Extract classes, functions, methods, namespace uses, and calls from a .php file., Module-level arrow functions must still emit a node and capture their calls (#10, _relations(), test_apex_contains_and_method_relations(), test_java_finds_imports() (+25 more)
+
+### Community 110 - "LanguageResolver"
+Cohesion: 0.12
+Nodes (25): _find_body(), LanguageConfig, Get the name from a node using config.name_field, falling back to child types., Find the body node using config.body_field, falling back to child types., _resolve_name(), LanguageResolver, Path, Registry for cross-file, language-specific resolution passes.  Some call/referen (+17 more)
+
+### Community 111 - "What You Must Do When Invoked"
 Cohesion: 0.07
 Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
 
-### Community 122 - "affected.py"
-Cohesion: 0.14
-Nodes (25): affected_nodes(), AffectedHit, _bare_name(), changed_seeds(), ci_affected_tests(), format_affected(), format_ci_affected_tests(), format_git_diff_affected() (+17 more)
+### Community 112 - "test_agents_platform.py"
+Cohesion: 0.06
+Nodes (41): _platform_skill_destination(), After a successful install, update .graphify_version in all other known skill di, Return the skill destination for a platform and scope., _refresh_all_version_stamps(), Tests for the generic `agents` platform and its `skills` alias (#1432).  `graphi, `graphify uninstall --platform agents|skills` (global) clears ~/.agents/skills., `graphify uninstall --project` (no platform) removes the agents project skill, `graphify install --project --platform agents` writes ./.agents/skills and     l (+33 more)
 
-### Community 123 - "edit.py"
-Cohesion: 0.22
-Nodes (25): _check_syntax(), delete_symbol(), _diff(), EditError, _eol(), _finish(), format_edit_result(), insert_after_symbol() (+17 more)
+### Community 113 - "What You Must Do When Invoked"
+Cohesion: 0.07
+Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
 
-### Community 124 - "What You Must Do When Invoked"
+### Community 114 - "edit.py"
+Cohesion: 0.17
+Nodes (30): _check_syntax(), delete_symbol(), _diff(), EditError, _eol(), _finish(), format_edit_result(), insert_after_symbol() (+22 more)
+
+### Community 115 - "test_vue_extraction.py"
+Cohesion: 0.17
+Nodes (23): extract_vue(), Blank everything outside ``<script>`` bodies, keeping ``\\r``/``\\n``.      Repl, Extract imports, symbols, and type refs from a ``.vue`` SFC.      Masks the non-, _vue_mask_non_script(), Path, Tests for ``.vue`` SFC extraction.  Feeding a whole SFC to the JS grammar produc, Vue allows a classic ``<script>`` plus ``<script setup>``; both are TS., The SFC must not be parsed as one JS blob.      With the bug, a real SFC yields (+15 more)
+
+### Community 116 - "multigraph_compat.py"
+Cohesion: 0.16
+Nodes (20): _build_probe_graph(), CapabilityCheck, _check(), MultigraphCapabilityResult, _probe_duplicate_key_overwrite_semantics(), _probe_keyed_parallel_edges(), probe_multigraph_capabilities(), _probe_node_link_round_trip() (+12 more)
+
+### Community 117 - "What You Must Do When Invoked"
 Cohesion: 0.08
 Nodes (25): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Kilo-specific rules (+17 more)
 
-### Community 125 - "test_snippet.py"
+### Community 118 - "test_snippet.py"
 Cohesion: 0.21
 Nodes (24): format_snippet(), node_snippet(), Any, Path, Source snippets for graph nodes.  AST nodes carry ``source_location`` (start lin, Return ``{file, start, end, node_end, truncated, lines}`` for ``nid`` or None wh, Snippets for the first ``limit`` code nodes listed in a ``query`` result. File-l, _resolve() (+16 more)
 
-### Community 126 - "search_text"
+### Community 119 - "search_text"
 Cohesion: 0.21
 Nodes (24): _clean(), _enclosing(), format_text_hits(), _graph_files(), Any, Path, Exact-text / regex search over the files the graph knows about.  Graph queries m, rel path -> absolute path, for graph source files that exist inside ``root``. (+16 more)
 
-### Community 127 - "test_install_roundtrip.py"
-Cohesion: 0.09
-Nodes (25): _copy_in_tmp(), fake_progressive_bundle(), _has_real_bundle(), _install_via_entrypoint(), Full per-platform install + uninstall round-trip suite.  Every platform graphify, amp's project-scope skill lands under .agents/skills, an Amp search root., VS Code Copilot Chat round trip at ~/.copilot/skills/graphify + instructions fil, Drive the high-level install() entry point with home + cwd in tmp_path. (+17 more)
-
-### Community 128 - "test_swift_cross_file_calls.py"
+### Community 120 - "test_swift_cross_file_calls.py"
 Cohesion: 0.20
 Nodes (25): _edge_labels(), _extension_fixture(), _issue_fixture(), _label(), Path, #1356 cont'd: a bare method name declared 2+ times in the same type     (real Sw, Overload disambiguation must be additive: a type with only one method by a     g, #1604: `let x = Type.shared` cached into a local var, then `x.method()` on a (+17 more)
 
-### Community 129 - "What You Must Do When Invoked"
+### Community 121 - "What You Must Do When Invoked"
 Cohesion: 0.08
 Nodes (25): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Kilo-specific rules (+17 more)
 
-### Community 130 - "test_edit.py"
+### Community 122 - "ci_affected_tests"
+Cohesion: 0.23
+Nodes (14): _is_builtin_noise_label(), Return True if a node's label matches a language-agnostic or language-specific n, build_tour(), _community_of(), _is_real_entity(), _is_test_path(), Guided reading tour: an ordered "read this first, then that" path through a grap, Return up to max_steps tour stops, ordered from entry points toward foundations. (+6 more)
+
+### Community 123 - "callflow_html.py"
+Cohesion: 0.11
+Nodes (24): build_community_index(), _community_text(), derive_sections_from_communities(), generate_header(), generate_nav(), html_anchor_id(), _keyword_score(), label_for_community() (+16 more)
+
+### Community 124 - "test_dedup.py"
+Cohesion: 0.07
+Nodes (52): deduplicate_entities(), _entropy(), _norm(), Deduplicate near-identical entities in a knowledge graph.      Args:         nod, Lowercase + collapse non-alphanumeric runs to space (Unicode-aware)., Shannon entropy in bits/char of the normalised label., _make_nodes(), Tests for graphify/dedup.py entity deduplication pipeline. (+44 more)
+
+### Community 125 - "_is_ignored"
+Cohesion: 0.12
+Nodes (16): extract_csharp(), Extract C# type declarations, methods, namespaces, and usings from a .cs file., _references(), test_csharp_call_edges_have_call_context(), test_csharp_field_type_references_have_field_context(), test_csharp_finds_class(), test_csharp_finds_interface(), test_csharp_finds_methods() (+8 more)
+
+### Community 126 - "test_edit.py"
 Cohesion: 0.28
 Nodes (24): replace_symbol_body(), _project(), Path, Graph-guided symbol edits: replace body, insert after, rename, safe delete.  Saf, _read(), test_cli_edit_error_exits_nonzero(), test_cli_rename_dry_run_then_apply(), test_delete_is_refused_while_something_depends_on_it() (+16 more)
 
-### Community 131 - "check_git_clone_update"
+### Community 127 - "CsharpNameResolver"
+Cohesion: 0.15
+Nodes (15): _build_csharp_type_def_index(), CsharpNameResolver, _merge_csharp_partial_class_nodes(), _metadata(), Path, C# cross-file resolution.  The config-driven C# *extractor* (``extract_csharp``, Namespace-, using-, and alias-aware simple-type-name resolver for C#.      Share, Return deterministic ``(namespace, name) -> node_id`` C# type definitions. (+7 more)
+
+### Community 128 - "check_git_clone_update"
 Cohesion: 0.18
 Nodes (23): check_git_clone_update(), _fetch_remote_version(), _find_git_root(), _is_working_tree_dirty(), Path, Git-clone update check for the graphify CLI.  Separate track from ``update_check, Best-effort, non-fatal: never raises, never blocks a non-interactive run     for, _read_config() (+15 more)
 
-### Community 132 - "What You Must Do When Invoked"
+### Community 129 - "prs.py"
+Cohesion: 0.20
+Nodes (29): _default_model_for_backend(), Return configured model override or backend default model., attach_graph_impact(), bold(), _c(), _ci_icon(), cmd_prs(), cyan() (+21 more)
+
+### Community 130 - "What You Must Do When Invoked"
 Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
-### Community 133 - "What You Must Do When Invoked"
+### Community 131 - "What You Must Do When Invoked"
 Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
-### Community 134 - "What You Must Do When Invoked"
+### Community 132 - "What You Must Do When Invoked"
 Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
+
+### Community 133 - "What You Must Do When Invoked"
+Cohesion: 0.08
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
+
+### Community 134 - "What You Must Do When Invoked"
+Cohesion: 0.08
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 135 - "What You Must Do When Invoked"
 Cohesion: 0.08
@@ -621,31 +617,31 @@ Nodes (24): For /graphify add and --watch, For /graphify query, For the commit h
 
 ### Community 140 - "What You Must Do When Invoked"
 Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 141 - "What You Must Do When Invoked"
 Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
-### Community 142 - "What You Must Do When Invoked"
-Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
-
-### Community 143 - "What You Must Do When Invoked"
-Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
-
-### Community 144 - "symbol_resolution.py"
-Cohesion: 0.12
-Nodes (24): build_label_index(), build_python_symbol_index(), existing_edge_pairs(), _file_node_id_for_path(), node_is_resolvable_symbol(), _node_source_stem(), normalise_callable_label(), Any (+16 more)
-
-### Community 145 - "DataProcessor"
+### Community 142 - "DataProcessor"
 Cohesion: 0.13
 Nodes (11): Override, ExtendedService, HttpClient, List, String, BaseProcessor, DataProcessor, Processor (+3 more)
 
-### Community 146 - "test_read_hook.py"
+### Community 143 - "test_read_hook.py"
 Cohesion: 0.12
 Nodes (22): The Read|Glob PreToolUse hook nudges toward the graph instead of raw reads.  Clo, A nudge is additionalContext only - the hook must exit 0, never deny., Reading the graph's own report must not start a go-read-the-graph loop., .astro/.vue/.svelte are real source types and must nudge (regression)., Config files must stay silent: '.json' must not match the '.js' extension., A real trailing extension must win on multi-dot names (the segment split):     a, Backslash-separated paths split on the real final segment, then its ext., An extension that sits on a directory component, not the final segment,     must (+14 more)
+
+### Community 144 - "What You Must Do When Invoked"
+Cohesion: 0.08
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
+
+### Community 145 - "What You Must Do When Invoked"
+Cohesion: 0.08
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
+
+### Community 146 - "What You Must Do When Invoked"
+Cohesion: 0.08
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 147 - "What You Must Do When Invoked"
 Cohesion: 0.08
@@ -653,11 +649,11 @@ Nodes (24): For /graphify add and --watch, For /graphify query, For the commit h
 
 ### Community 148 - "What You Must Do When Invoked"
 Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 149 - "What You Must Do When Invoked"
 Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 150 - "What You Must Do When Invoked"
 Cohesion: 0.08
@@ -677,115 +673,115 @@ Nodes (24): For /graphify add and --watch, For /graphify query, For the commit h
 
 ### Community 154 - "What You Must Do When Invoked"
 Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
+Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 155 - "What You Must Do When Invoked"
 Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
-### Community 156 - "What You Must Do When Invoked"
-Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
-
-### Community 157 - "What You Must Do When Invoked"
-Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native AGENTS.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
-
-### Community 158 - "What You Must Do When Invoked"
-Cohesion: 0.08
-Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
-
-### Community 159 - "generate_section_flowchart"
+### Community 156 - "generate_section_flowchart"
 Cohesion: 0.11
 Nodes (24): generate_overview_graph(), generate_section_flowchart(), group_nodes_by_file(), mermaid_class_defs(), mermaid_init(), mermaid_section_id(), node_kind(), node_label() (+16 more)
 
-### Community 160 - "PRInfo"
+### Community 157 - "PRInfo"
 Cohesion: 0.17
 Nodes (10): _classify(), format_prs_text(), PRInfo, Plain-text PR summary for MCP output (no ANSI)., make_pr(), datetime, Tests for graphify/prs.py., Build a minimal PRInfo with sensible defaults. (+2 more)
 
-### Community 161 - "find_path_with_disambiguation"
+### Community 158 - "find_path_with_disambiguation"
 Cohesion: 0.17
 Nodes (23): find_path_with_disambiguation(), Keep only scored (score, nid) pairs whose node's source_file starts     with `pa, Resolve `source_label`/`target_label` to nodes and find a     degree-weighted, h, _scope_by_source_path(), _add(), _dup_target_graph(), Tests for `find_path_with_disambiguation` (graphify/query.py) - the shared resol, A duplicate-labeled target ("Stats") in two dirs, both reachable from     the so (+15 more)
 
-### Community 162 - "resolve_bash_source_edges"
-Cohesion: 0.10
-Nodes (24): Resolve Bash source/import edges and source-backed function calls.      Defensiv, resolve_bash_source_edges(), Path, When a callee function is defined in multiple sourced files, skip it., Non-bash raw_calls inside sourced-file per_file entries are ignored., A `bash_sources` entry missing `target_path` must not raise KeyError., A node tagged as bash_function but missing `id` must not raise KeyError., A raw_call entry missing `caller_nid` must not raise KeyError. (+16 more)
+### Community 159 - "resolve_bash_source_edges"
+Cohesion: 0.09
+Nodes (25): Resolve Bash source/import edges and source-backed function calls.      Defensiv, resolve_bash_source_edges(), Path, When a callee function is defined in multiple sourced files, skip it., Non-bash raw_calls inside sourced-file per_file entries are ignored., A `bash_sources` entry missing `target_path` must not raise KeyError., A node tagged as bash_function but missing `id` must not raise KeyError., A raw_call entry missing `caller_nid` must not raise KeyError. (+17 more)
 
-### Community 163 - "audit_coverage"
+### Community 160 - "test_install_roundtrip.py"
+Cohesion: 0.05
+Nodes (57): _canonical_platform(), _copy_skill_file(), _cursor_install(), gemini_install(), install(), _kiro_install(), _print_banner(), _print_project_git_add_hint() (+49 more)
+
+### Community 161 - "audit_coverage"
 Cohesion: 0.10
 Nodes (24): Every v8 heading single-homes for the cli-inline split hosts too., Every v8 heading lands in the lean core or exactly one reference., Every split host's render single-homes its own v8 body's headings., The audit baseline is the host's OWN v8 skill body, not claude's monolith., Re-inducing the trae regression (claude-flavored hooks) fails the audit.      Po, A core fragment that drops a real v8 heading fails the audit.      Guards that t, The per-host audit (the guard amp is the exact case for) passes for amp.      am, `agents` is a post-v8 platform, so its audit baseline is amp's v8 body. (+16 more)
 
-### Community 164 - "What You Must Do When Invoked"
+### Community 162 - "What You Must Do When Invoked"
 Cohesion: 0.08
 Nodes (23): For /graphify add and --watch, For /graphify query, For the commit hook and native @@HOOKS_TARGET@@ integration, For --update and --cluster-only, /graphify, Interpreter guard for subcommands, Part A - Structural extraction for code files, Part B - Semantic extraction (parallel subagents) (+15 more)
 
-### Community 165 - "dataflow.py"
+### Community 163 - "dataflow.py"
 Cohesion: 0.14
 Nodes (18): AST, Exception, _callee_index(), FlowError, _function(), _names(), _propagate(), Path (+10 more)
 
-### Community 166 - "RFC: file-level node summaries"
+### Community 164 - "css.py"
+Cohesion: 0.15
+Nodes (20): extract_css(), extract_scss(), _extract_stylesheet(), Path, CSS/SCSS extractor (tree-sitter). New — .css/.scss files previously had no extra, Tests for the CSS extractor. .css files previously had no extractor at all. See, The same selector appearing both at top level and inside @media must     produce, test_extract_css_class_selector_produces_node() (+12 more)
+
+### Community 165 - "RFC: file-level node summaries"
 Cohesion: 0.09
 Nodes (20): Confidence tagging, How community detection works, How graphify works, Parallel extraction, Search & query algorithms, SHA256 cache, The graph format, The three passes (+12 more)
 
-### Community 167 - "introspect_cargo"
+### Community 166 - "introspect_cargo"
 Cohesion: 0.17
 Nodes (20): introspect_cargo(), _load_toml(), _member_manifest_paths(), Any, Path, Cargo manifest introspection for workspace-internal crate dependencies., Return crate nodes and internal dependency edges from Cargo manifests., Real workspace: pin raw graph fields while excluding registry-only deps. (+12 more)
 
-### Community 168 - "_is_ignored"
-Cohesion: 0.09
-Nodes (22): _is_ignored(), Return True if the path should be ignored per .graphifyignore patterns.      Use, A ! re-include cannot un-ignore a file whose parent dir is excluded (#882)., A ! re-include must still un-ignore a file when no ancestor is excluded (#882)., If the ancestor dir itself is re-included, its children should not be blocked (#, /inbox/ must not match src/inbox/ — only inbox/ at the anchor root., /inbox/ must still match inbox/ at the anchor root (positive case)., /build must not match src/build. (+14 more)
-
-### Community 169 - "extract_powershell"
+### Community 167 - "extract_powershell"
 Cohesion: 0.09
 Nodes (22): extract_powershell(), Extract functions, classes, methods, and using statements from a .ps1 file., Import-Module Foo at top level emits an imports_from edge., Import-Module -Name Bar.psm1 resolves to module stem 'bar'., Dot-source `. ./Shared.psm1` emits an imports_from edge., Dot-source `. .\\Utils.ps1` (backslash path) emits an imports_from edge., Import-Module inside a function body still produces an imports_from edge., Import-Module must not appear in raw_calls (it is an import, not a function call (+14 more)
 
-### Community 170 - "test_semantic_cleanup.py"
+### Community 168 - "test_semantic_cleanup.py"
 Cohesion: 0.20
 Nodes (21): Return validation errors for an untrusted semantic extraction fragment.      Emp, validate_semantic_fragment(), Tests for graphify.semantic_cleanup.validate_semantic_fragment (#825)., #1561: an alias-keyed hyperedge must not be rejected for a missing     `nodes` l, LLM output with file_type='rationale' must pass validation so the cleanup     pa, LLM output with file_type='concept' must pass validation for the same reason., test_validate_accepts_node_ids_keyed_hyperedge(), test_validate_hyperedge_caps_count() (+13 more)
 
-### Community 171 - "sample.kt"
+### Community 169 - "validate_extraction"
+Cohesion: 0.09
+Nodes (36): introspect_postgres(), _quote_ident(), Connect to PostgreSQL, reconstruct DDL, and extract via extract_sql()., Double-quote a PostgreSQL identifier, escaping embedded double-quotes., assert_valid(), Validate an extraction JSON dict against the graphify schema.     Returns a list, Raise ValueError with all errors if extraction is invalid., validate_extraction() (+28 more)
+
+### Community 170 - "sample.kt"
 Cohesion: 0.12
 Nodes (17): MutableList, ChatType, GROUP, NORMAL, SYSTEM, Clock, createClient(), Duration (+9 more)
 
-### Community 172 - "TestSubprocessEncoding"
-Cohesion: 0.10
-Nodes (13): Regression tests for UnicodeEncodeError on Windows cp1252 console.  On Windows w, Writing a file with → ✅ ≥ then passing its content through         _call_claude_, _call_llm with backend='claude-cli' must also use encoding='utf-8'., Exercises the same code path as the rsl-siege-manager reproduction     without r, _read_files must return a string that encodes cleanly to UTF-8., Demonstrate the exact failure mode that is now fixed.          The prompt string, End-to-end path: write unicode file → extract_files_direct → subprocess., _call_claude_cli must pass encoding="utf-8" to subprocess.run so that     non-AS (+5 more)
-
-### Community 173 - "test_indirect_call_external_import_shadow.py"
+### Community 171 - "test_indirect_call_external_import_shadow.py"
 Cohesion: 0.18
 Nodes (21): _extract_js_dir(), An import from outside the corpus must shadow indirect_call resolution.  `_js_lo, A `paths` entry pointing a package at its own installed copy resolves to a     r, The counter-test that bounds the fix: an import of a file INSIDE the corpus, Widening the shadow set must not blanket-suppress a file that also happens to, The precise collision the fix must survive: a name that is BOTH imported     ext, A baseUrl-relative import ('utils/helper') must not be falsely classified     as, An unresolved non-relative import whose path matches a local file in the     dir (+13 more)
 
-### Community 174 - "_corpus"
+### Community 172 - "_corpus"
 Cohesion: 0.13
 Nodes (22): _assert_no_dangling(), _corpus(), _nodes_with_label(), Run the full extract() pipeline on fixture files (absolute, resolved     paths s, Foo.h (class) + Foo.cpp (Foo::bar def) + Main.cpp must yield exactly ONE     Foo, `void bar();` in Foo.h and `void Foo::bar() {}` in Foo.cpp must collapse to, Foo.cpp and Main.cpp `#include "Foo.h"` must resolve to the real Foo.h file, Widget.h (@interface) + Widget.m (@implementation) -> ONE Widget class node (+14 more)
 
-### Community 175 - "README.uk-UA.md"
+### Community 173 - "_extract_with_adaptive_retry"
+Cohesion: 0.12
+Nodes (16): extract_fortran(), Extract programs, modules, subroutines, functions, use statements, and calls fro, `y = f(x)` function invocations must emit a calls edge.      Function calls are, test_fortran_capital_F_parses_preprocessed(), test_fortran_case_insensitive_names(), test_fortran_finds_calls(), test_fortran_finds_derived_type(), test_fortran_finds_function() (+8 more)
+
+### Community 174 - "README.uk-UA.md"
 Cohesion: 0.10
 Nodes (20): Використання графу напряму, Вимоги, Вирішення проблем, Встановлення, Додаткові пакети (опціонально), Дізнатися більше, Запуск тестів, Змусьте асистента завжди використовувати граф (+12 more)
 
-### Community 176 - "cache.py"
+### Community 175 - "cache.py"
 Cohesion: 0.16
 Nodes (20): _absolutize_source_files_in(), cached_files(), check_semantic_cache(), _cleanup_stale_ast_entries(), _ensure_stat_index(), _flush_stat_index(), load_cached(), _normalize_path() (+12 more)
 
-### Community 177 - "Counter"
+### Community 176 - "Counter"
 Cohesion: 0.12
 Nodes (21): derive_flow_chain(), edge_score(), generate_overview_cards(), node_degree_scores(), node_importance(), preferred_edges(), Counter, Aggregate inter-section edge counts and relation names. (+13 more)
 
-### Community 178 - "extract_cpp"
-Cohesion: 0.10
-Nodes (21): extract_cpp(), Extract functions, classes, and includes from a .cpp/.cc/.cxx/.hpp file., Regression for #915: `class Derived : public Base {}` should emit an inherits ed, Structs use the same `: Base` syntax as classes and must also emit inherits., `class PooledClient : public Connection<HttpClient>` must emit the inherits, test_cpp_class_inherits_edge(), test_cpp_field_and_template_argument_contexts(), test_cpp_finds_class() (+13 more)
+### Community 177 - "extract_astro"
+Cohesion: 0.28
+Nodes (14): extract_astro(), Extract imports from .astro files: frontmatter (TS) + template regex fallback., _import_targets(), Path, Tests for `.astro` extraction (#850).  Astro files have a TypeScript frontmatter, Astro permits frontmatter-less files (pure-HTML pages). Must not raise., Without this, detect.py silently drops `.astro` from the AST pass (#850)., test_astro_is_in_code_extensions() (+6 more)
 
-### Community 179 - "install"
-Cohesion: 0.15
-Nodes (21): install(), Install graphify post-commit and post-checkout hooks in the nearest git repo., Check if graphify hooks are installed., status(), _make_git_repo(), Hook scripts must embed sys.executable so the hook works without the     graphif, End-to-end: the files written to .git/hooks must be nohup-free (#1161)., No core.hooksPath -> normal .git/hooks install, no rejection. (+13 more)
+### Community 178 - "ingest.py"
+Cohesion: 0.18
+Nodes (20): _detect_url_type(), _download_binary(), _fetch_arxiv(), _fetch_html(), _fetch_tweet(), _fetch_webpage(), _html_to_markdown(), ingest() (+12 more)
 
-### Community 180 - "save_query_result"
-Cohesion: 0.15
-Nodes (20): Save a Q&A result as markdown so it gets extracted into the graph on next --upda, save_query_result(), Tests for graphify.ingest.save_query_result, An outcome signal is written to both frontmatter (for `reflect`) and an     ## O, Backward compatible: a result without an outcome looks exactly as before., test_answer_in_body(), test_correction_in_frontmatter_and_body(), test_file_created() (+12 more)
+### Community 179 - "build_label_index"
+Cohesion: 0.12
+Nodes (21): build_label_index(), build_python_symbol_index(), existing_edge_pairs(), node_is_resolvable_symbol(), _node_source_stem(), normalise_callable_label(), Any, Return the stem of a node's source file. (+13 more)
 
-### Community 181 - "test_explain_cli.py"
+### Community 180 - "test_explain_cli.py"
 Cohesion: 0.19
 Nodes (20): Regression tests for `graphify explain` arrow direction (#853)., No sidecar => no Lesson line; output identical to pre-feature., Two nodes sharing the same label across different files - e.g. an     overloaded, P16: --path narrows a duplicate label to one file, so explain resolves     deter, _run(), test_callee_shows_callers_as_inbound(), test_caller_shows_callee_as_outbound(), test_explain_context_filter_narrows_connections() (+12 more)
+
+### Community 181 - "test_llm_parser.py"
+Cohesion: 0.12
+Nodes (22): _parse_llm_json(), Strip optional markdown fences and parse JSON. Returns empty fragment on failure, _make_envelope(), Tests for `_parse_llm_json` robustness and the `_call_claude_cli` subprocess arg, The hollow-response root cause was --append-system-prompt     layering graphify', GRAPHIFY_CLAUDE_CLI_MODEL must be forwarded to claude -p --model., Default behaviour: when the env var is not set, --model is not     added so clau, Claude often prefixes the JSON with a short preamble before the     ```json fenc (+14 more)
 
 ### Community 182 - "_write_raw_doc"
 Cohesion: 0.13
@@ -804,88 +800,88 @@ Cohesion: 0.13
 Nodes (20): _describe_node(), format_node_refs(), generate_call_table_rows(), generate_section_cards(), generate_section_intro(), is_zh(), pick_text(), Render node references as readable labels instead of internal IDs. (+12 more)
 
 ### Community 186 - "cypher.py"
-Cohesion: 0.15
-Nodes (15): _cell(), _check_regex_shape(), _compile_regex(), CypherError, CypherResult, format_table(), Pattern, Query (+7 more)
+Cohesion: 0.11
+Nodes (18): _cell(), _check_regex_shape(), _compile_regex(), CypherError, CypherResult, format_table(), Pattern, Query (+10 more)
 
-### Community 187 - "extract_css"
+### Community 187 - "save_query_result"
 Cohesion: 0.15
-Nodes (18): extract_css(), extract_scss(), Path, Tests for the CSS extractor. .css files previously had no extractor at all. See, The same selector appearing both at top level and inside @media must     produce, test_extract_css_class_selector_produces_node(), test_extract_css_dispatches_from_extract_module(), test_extract_css_file_contains_edge_to_rule() (+10 more)
+Nodes (20): Save a Q&A result as markdown so it gets extracted into the graph on next --upda, save_query_result(), Tests for graphify.ingest.save_query_result, An outcome signal is written to both frontmatter (for `reflect`) and an     ## O, Backward compatible: a result without an outcome looks exactly as before., test_answer_in_body(), test_correction_in_frontmatter_and_body(), test_file_created() (+12 more)
 
-### Community 188 - "LanguageResolver"
-Cohesion: 0.19
-Nodes (18): LanguageResolver, Path, Registry for cross-file, language-specific resolution passes.  Some call/referen, One cross-file, language-specific resolution pass.      ``resolve`` has the sign, Append a resolver to the global registry and return it (for inline use)., Return a copy of the registered resolvers, in registration order., Run every resolver whose suffix appears in ``paths``.      Behaviorally identica, register() (+10 more)
+### Community 188 - "introspect_postgres"
+Cohesion: 0.14
+Nodes (13): _file_to_text(), Path, Return a text-like file's content for the extraction prompt.      Most files are, Return file/slice contents formatted for the extraction prompt.      Each unit i, _read_files(), Exercises the same code path as the rsl-siege-manager reproduction     without r, _read_files must return a string that encodes cleanly to UTF-8., Demonstrate the exact failure mode that is now fixed.          The prompt string (+5 more)
 
 ### Community 189 - "sanitize_semantic_fragment"
 Cohesion: 0.10
 Nodes (20): Clean up a semantic extraction fragment in-place.      Operations:     1. Remove, sanitize_semantic_fragment(), A node with file_type='rationale' is removed wholesale., Sentence-like rationale node connected via `rationale_for` → attribute on target, F3: a node with file_type='document' (allowed) that is BOTH sentence-like     AN, A short named node with a period (e.g. abbreviation) is NOT sentence-like., F4: hyperedges referencing removed nodes are repaired or dropped., A hyperedge referencing only nodes not present in the fragment is dropped. (+12 more)
 
-### Community 190 - "test_cpp_objc_cross_file_calls.py"
+### Community 190 - "test_symbol_resolution.py"
+Cohesion: 0.14
+Nodes (19): Resolve unqualified raw calls conservatively after all files are known.      Thi, resolve_cross_file_raw_calls(), Tests for graphify.symbol_resolution., Two genuine NON-test defs of the same name: the god-node guard must still     ho, A real cross-file call must resolve to the SRC definition even when a     same-n, One src def plus many same-named test stubs: exactly one edge to src., A test file calling save() with both a src def and a test-local def present, _bash_make_id must produce identical output to _make_id for Unicode inputs. (+11 more)
+
+### Community 191 - "test_cpp_objc_cross_file_calls.py"
 Cohesion: 0.28
 Nodes (19): _call_edges(), _label(), Path, Cross-file member-call and include resolution for C++ (#1547) and ObjC (#1556)., {(source_label, relation, target_label, confidence)} for the given relations., The headline #1547 fix: a paired class no longer islands — Main.cpp's use of, test_cpp_cross_file_member_call_connects_with_relative_paths(), test_cpp_godnode_guard_ambiguous_and_unknown_receiver() (+11 more)
 
-### Community 191 - "_run"
+### Community 192 - "_run"
 Cohesion: 0.10
 Nodes (20): CompletedProcess, argparse `choices` rejects an unknown outcome before save_query_result runs., --answer-file lets callers pass a long/multiline answer via a file instead     o, Neither --answer nor --answer-file -> clean argparse error, not a crash., First run with no graphify-out/memory/ still succeeds and writes a valid doc., With a real graph.json present, reflect auto-detects it and groups lessons     u, Through reflect()/CLI with a real graph.json: a cited node that isn't in the, `reflect --if-stale` skips the rebuild when LESSONS.md is already current,     a (+12 more)
 
-### Community 192 - "ToolkitViewModel"
+### Community 193 - "ToolkitViewModel"
 Cohesion: 0.13
 Nodes (15): Email, RefreshCommand, ObservableObject, RelayCommand, Task, string, ToolkitViewModel, Email (+7 more)
 
-### Community 193 - "string"
+### Community 194 - "string"
 Cohesion: 0.14
 Nodes (10): double, Get-Data(), Invoke-Main(), Process-Items(), string, Circle, DataProcessor, Shape (+2 more)
 
-### Community 194 - "callflow_html.py"
-Cohesion: 0.15
-Nodes (18): build_community_index(), _community_text(), derive_sections_from_communities(), generate_header(), generate_nav(), _keyword_score(), label_for_community(), node_in_section() (+10 more)
+### Community 195 - "extract_dm"
+Cohesion: 0.12
+Nodes (16): _make_scip_node_id(), Derive a stable Graphify node ID from a SCIP symbol identifier.      Uses SHA-1, Symbol with # uses suffix after last #., Symbol without # uses the full symbol (sanitised) as suffix., Non-alphanumeric characters are replaced with underscores., Same inputs always produce the same id., Different source_file produces different hash., Different symbol produces different hash. (+8 more)
 
-### Community 195 - "_js_extra_walk"
+### Community 196 - "security.py"
 Cohesion: 0.11
-Nodes (19): _find_require_call(), _is_content_data_array(), _is_top_level_iife_function(), _js_emit_content_data_items(), _js_extra_walk(), _js_member_assignment_target(), _js_pair_key_text(), _js_pair_value_text() (+11 more)
+Nodes (16): _ip_is_blocked(), _max_graph_file_bytes(), Resolve *host* once and return (family, validated_ip) for the first     address, HTTPConnection that resolves + validates DNS once, then connects to the     exac, HTTPSConnection variant of _SSRFGuardedHTTPConnection.      Connects to the vali, urllib handler that routes http:// through _SSRFGuardedHTTPConnection., urllib handler that routes https:// through _SSRFGuardedHTTPSConnection., Return the graph.json size cap in bytes.      Honors the ``GRAPHIFY_MAX_GRAPH_BY (+8 more)
 
-### Community 196 - "CsharpNameResolver"
+### Community 197 - "test_ruby_resolution.py"
 Cohesion: 0.18
-Nodes (10): _build_csharp_type_def_index(), CsharpNameResolver, _metadata(), Path, Namespace-, using-, and alias-aware simple-type-name resolver for C#.      Share, Return deterministic ``(namespace, name) -> node_id`` C# type definitions., Resolve a simple type name to a definition node id, with a verdict.          Ret, Re-point resolvable C# ``using`` import edges to canonical internal nodes. (+2 more)
-
-### Community 197 - "test_symbol_resolution.py"
-Cohesion: 0.15
-Nodes (18): Resolve unqualified raw calls conservatively after all files are known.      Thi, resolve_cross_file_raw_calls(), Tests for graphify.symbol_resolution., Two genuine NON-test defs of the same name: the god-node guard must still     ho, A real cross-file call must resolve to the SRC definition even when a     same-n, One src def plus many same-named test stubs: exactly one edge to src., A test file calling save() with both a src def and a test-local def present, _bash_make_id must produce identical output to _make_id for Unicode inputs. (+10 more)
+Nodes (23): extract_ruby(), Extract classes, methods, singleton methods, and calls from a .rb file., `class Sub < Base` must emit an inherits edge.      Ruby exposes the base class, test_ruby_inherits_edge(), test_ruby_no_error(), _find_raw_call(), _has_call_edge(), _labels() (+15 more)
 
 ### Community 198 - "_claude_artifacts"
 Cohesion: 0.11
 Nodes (19): _claude_artifacts(), The default code-corpus run must be fully described inside the core., No reference fragment may duplicate the core build pipeline., Every references/<name>.md the core points at is actually rendered., The query section heading is the lean-core stub; query.md re-homes the rest., claude renders exactly the eight on-demand fragments from the design., The fence-aware heading scanner must skip '#' lines inside code fences., Decision A: the file_type enum is the full six-value superset. (+11 more)
 
-### Community 199 - "save_cached"
-Cohesion: 0.11
-Nodes (18): Save extraction result for this file.      Stores as graphify-out/cache/{kind}/{, save_cached(), The on-disk cache JSON contains forward-slash relative source_file     entries —, ``load_cached`` returns the same absolute-path shape that a fresh     extraction, End-to-end portability: a cache entry written at one root can be     consumed at, An AST entry written by version X must not be served after upgrading     to vers, The semantic cache is deliberately not versioned: entries are produced     by th, Save then load returns the same result dict. (+10 more)
-
-### Community 200 - "extract_dart"
-Cohesion: 0.14
-Nodes (10): extract_dart(), Extract classes, mixins, functions, imports, generic calls, and annotations from, Test that the universal parser successfully extracts generic relationships, anno, Test complex Dart 3+ syntax and precise Riverpod/Bloc mappings., Test that the parser successfully handles namespaces in extends/implements, and, Test typedefs, mixin on, factories, constructor DI types, and universal navigati, Test all 5 roadmap bug fixes (Bug A, B, C, D, E)., TestDart (+2 more)
-
-### Community 201 - "test_src_layout_import_resolution.py"
+### Community 199 - "test_src_layout_import_resolution.py"
 Cohesion: 0.15
 Nodes (17): _probe_python_module_candidate(), Repoint Python absolute-import edges to the real file node under a nested     (e, Resolve one module-path candidate to a .py file (dir+__init__, exact, or     wit, _repoint_python_package_imports(), _resolve_python_module_path(), _import_edges(), Path, #2072: Python import resolution must not depend on the scan root.  A src-layout (+9 more)
 
-### Community 202 - "uninstall"
-Cohesion: 0.16
-Nodes (17): _git_root(), _install_hook(), Path, Walk up to find .git directory., Raise if a hooks path looks like a Windows absolute path (#1385).      On POSIX/, # NOTE: do NOT pass --path-format=absolute — added in git 2.31; older git, Install a single git hook, appending if an existing hook is present., Remove graphify section from a git hook using start/end markers. (+9 more)
+### Community 200 - "affected.py"
+Cohesion: 0.14
+Nodes (25): affected_nodes(), AffectedHit, _bare_name(), changed_seeds(), ci_affected_tests(), format_affected(), format_ci_affected_tests(), format_git_diff_affected() (+17 more)
 
-### Community 203 - "main"
+### Community 201 - "save_cached"
+Cohesion: 0.11
+Nodes (18): Save extraction result for this file.      Stores as graphify-out/cache/{kind}/{, save_cached(), The on-disk cache JSON contains forward-slash relative source_file     entries —, ``load_cached`` returns the same absolute-path shape that a fresh     extraction, End-to-end portability: a cache entry written at one root can be     consumed at, An AST entry written by version X must not be served after upgrading     to vers, The semantic cache is deliberately not versioned: entries are produced     by th, Save then load returns the same result dict. (+10 more)
+
+### Community 202 - "extract_dart"
+Cohesion: 0.14
+Nodes (10): extract_dart(), Extract classes, mixins, functions, imports, generic calls, and annotations from, Test that the universal parser successfully extracts generic relationships, anno, Test complex Dart 3+ syntax and precise Riverpod/Bloc mappings., Test that the parser successfully handles namespaces in extends/implements, and, Test typedefs, mixin on, factories, constructor DI types, and universal navigati, Test all 5 roadmap bug fixes (Bug A, B, C, D, E)., TestDart (+2 more)
+
+### Community 203 - "symbol_resolution.py"
+Cohesion: 0.14
+Nodes (17): _file_node_id_for_path(), find_unique_python_symbol(), ImportedSymbol, _module_stem(), parse_python_import_aliases(), Path, Deterministic symbol indexing and conservative cross-file resolution helpers., Return the final module component used to match Graphify source stems. (+9 more)
+
+### Community 204 - "main"
 Cohesion: 0.12
 Nodes (17): Namespace, On a shallow checkout (no origin/v8) the validators skip with exit 0.      CI se, test_git_show_validators_skip_cleanly_without_origin_v8(), bless(), _expected_path(), main(), _parse_args(), Path (+9 more)
 
-### Community 204 - "test_install_upgrade.py"
-Cohesion: 0.18
-Nodes (17): _assert_no_report_first(), _assert_query_first(), Installer-level regression tests for upgrade-in-place behavior (issue #580).  Pr, The Claude install must also rewrite a stale .claude/settings.json hook     payl, Same upgrade behavior for AGENTS.md (Codex / OpenCode / Aider / Trae)., Same upgrade behavior for GEMINI.md., Same upgrade behavior for .github/copilot-instructions.md (VS Code)., Same upgrade behavior for .cursor/rules/graphify.mdc.     The Cursor rule file i (+9 more)
+### Community 205 - "test_install_upgrade.py"
+Cohesion: 0.15
+Nodes (19): _assert_no_report_first(), _assert_query_first(), Installer-level regression tests for upgrade-in-place behavior (issue #580).  Pr, The Claude install must also rewrite a stale .claude/settings.json hook     payl, Same upgrade behavior for AGENTS.md (Codex / OpenCode / Aider / Trae)., Same upgrade behavior for GEMINI.md., Same upgrade behavior for .github/copilot-instructions.md (VS Code)., Same upgrade behavior for .cursor/rules/graphify.mdc.     The Cursor rule file i (+11 more)
 
-### Community 205 - "sample.php"
+### Community 206 - "sample.php"
 Cohesion: 0.15
 Nodes (8): Authenticator, HasName, Loggable, ApiClient, BaseProcessor, DataProcessor, Result, Service
-
-### Community 206 - "extract_groovy"
-Cohesion: 0.12
-Nodes (17): extract_groovy(), Extract classes, methods, constructors, and imports from a .groovy/.gradle file., `class X extends Base` must emit an inherits edge.      tree-sitter-groovy expos, `class X implements Iface` must emit an implements edge., test_groovy_extends_edge(), test_groovy_finds_class(), test_groovy_finds_imports(), test_groovy_finds_methods() (+9 more)
 
 ### Community 207 - "test_incremental.py"
 Cohesion: 0.20
@@ -912,8 +908,8 @@ Cohesion: 0.14
 Nodes (15): MoneyConverter, TaxConverter, Invoice.Tax, Order.Total, User.Name, ModeText, RootPanel, SaveButton (+7 more)
 
 ### Community 213 - "test_pipeline.py"
-Cohesion: 0.20
-Nodes (15): Generate questions the graph is uniquely positioned to answer.     Based on: AMB, suggest_questions(), Path, End-to-end pipeline test: detect → extract → build → cluster → analyze → report, Second run on unchanged corpus should produce identical node/edge counts., Run the full pipeline on the fixtures directory. Returns a dict of outputs., run_pipeline(), test_pipeline_all_nodes_have_community() (+7 more)
+Cohesion: 0.08
+Nodes (45): _is_file_node(), Return True if this node is a file-level hub node (e.g. 'client', 'models'), score_all(), generate(), _learning_section(), Append the ``## Work-memory lessons`` section, or nothing when empty., _make_extraction(), Tests for confidence_score on edges. (+37 more)
 
 ### Community 214 - "test_cross_language_bridges.py"
 Cohesion: 0.20
@@ -923,345 +919,349 @@ Nodes (14): Detect and link cross-language bridges (React Native, Expo, Swift <-
 Cohesion: 0.15
 Nodes (16): cache_dir(), prune_semantic_cache(), Returns the cache directory for ``kind`` - creates it if needed.      kind is "a, Remove orphaned semantic cache entries, returning the count pruned.      The sem, Cache entries written by an older graphify (with absolute source_file     inside, Upgrading removes AST entries left behind by previous versions so the     cache, Changing a file's content leaves the old content-hash entry orphaned;     prunin, Pruning against the FULL live set must keep every live entry — guards     the tr (+8 more)
 
-### Community 216 - "extract_powershell_manifest"
+### Community 216 - "extract_groovy"
+Cohesion: 0.12
+Nodes (17): extract_groovy(), Extract classes, methods, constructors, and imports from a .groovy/.gradle file., `class X extends Base` must emit an inherits edge.      tree-sitter-groovy expos, `class X implements Iface` must emit an implements edge., test_groovy_extends_edge(), test_groovy_finds_class(), test_groovy_finds_imports(), test_groovy_finds_methods() (+9 more)
+
+### Community 217 - "extract_html"
+Cohesion: 0.19
+Nodes (15): extract_html_with_scripts(), extract_html's DOM-id nodes, plus a JS extraction pass over inline     <script>, extract_html(), Path, Tests for the HTML extractor. .html files previously had no extractor at all. Sc, A class-only element (no id) is deliberately not extracted — every     HTML docu, A function defined inside an inline <script> block was previously     invisible, No <script> body at all -> extract_html_with_scripts must not add or     change (+7 more)
+
+### Community 218 - "extract_powershell_manifest"
 Cohesion: 0.12
 Nodes (16): extract_powershell_manifest(), Extract module dependency edges from a PowerShell .psd1 manifest file.      .psd, RootModule = 'MyModule.psm1' produces an imports_from edge to 'mymodule'., NestedModules = @('Helpers.psm1', 'Logger.psm1') produces edges for both., RequiredModules string form 'PSReadLine' produces an imports_from edge., RequiredModules hashtable form @{{ ModuleName='Pester' }} produces an imports_fr, ModuleVersion values ('5.0', '1.0.0') must NOT appear as import targets., All imports_from edge sources must exist in the node set. (+8 more)
 
-### Community 217 - "test_terraform.py"
+### Community 219 - "test_terraform.py"
 Cohesion: 0.30
 Nodes (15): extract_terraform(), Extract Terraform/HCL blocks and the references between them via tree-sitter., _labels(), Path, Tests for the Terraform/HCL extractor (graphify/extract.py, issue #187)., _rel_pairs(), test_cross_file_references_resolve_after_merge(), test_depends_on_edge() (+7 more)
 
-### Community 218 - "_make_scip_node_id"
-Cohesion: 0.12
-Nodes (16): _make_scip_node_id(), Derive a stable Graphify node ID from a SCIP symbol identifier.      Uses SHA-1, Symbol with # uses suffix after last #., Symbol without # uses the full symbol (sanitised) as suffix., Non-alphanumeric characters are replaced with underscores., Same inputs always produce the same id., Different source_file produces different hash., Different symbol produces different hash. (+8 more)
+### Community 220 - "test_robot_extraction.py"
+Cohesion: 0.19
+Nodes (15): extract_robot(), Path, Tests for the Robot Framework extractor (P6). .robot files previously had no ext, `Resource    common.resource` is the RF mechanism for pulling in     keywords de, A call to a keyword not defined in this file (imported from a     .resource) mus, Open Browser/Should Contain/etc. are library keywords, not locally     defined —, *** Settings *** / *** Variables *** sections have no test-case/     keyword def, test_extract_robot_call_to_builtin_keyword_produces_no_calls_edge() (+7 more)
 
-### Community 219 - "test_describe.py"
-Cohesion: 0.22
-Nodes (12): _cache(), _describe(), env(), _project(), A tiny repo on disk plus a graph pointing at it. Returns the graph path., test_cache_hit_miss_and_refresh(), test_dry_run_makes_no_call_and_reports_estimate(), test_lang_in_prompt_and_invalidates_cache() (+4 more)
+### Community 221 - "uninstall"
+Cohesion: 0.16
+Nodes (17): _git_root(), _install_hook(), Path, Walk up to find .git directory., Raise if a hooks path looks like a Windows absolute path (#1385).      On POSIX/, # NOTE: do NOT pass --path-format=absolute — added in git 2.31; older git, Install a single git hook, appending if an existing hook is present., Remove graphify section from a git hook using start/end markers. (+9 more)
 
-### Community 220 - "test_incomplete_build_guard.py"
+### Community 222 - "test_incomplete_build_guard.py"
 Cohesion: 0.24
 Nodes (15): _arm_extract(), _arm_no_cluster(), _make_docs_corpus(), Tests for the incomplete-build shrink-guard on `graphify extract`.  A full build, A present-but-unparseable existing graph.json (corrupt or mid-write) could     b, Patch export.to_json to record the ``force`` it was called with and return     a, _seed_existing_graph(), _seed_to_json_recorder() (+7 more)
 
-### Community 221 - "test_indirect_call_for_of_binding_shadow.py"
+### Community 223 - "test_indirect_call_for_of_binding_shadow.py"
 Cohesion: 0.23
 Nodes (15): _extract_js_dir(), _indirect(), A `for...of` / `for...in` loop binding must shadow indirect_call references.  `_, A loop binding in `for (const entry of rows)` is block-scoped to the loop     bo, A loop binding in `for (const entry of rows)` is block-scoped to the loop     bo, `for (var entry of rows)` is function-scoped in JS, so it shadows throughout, The reported shape: a `for...of` binding `entry` used in an     object-shorthand, A destructured loop binding (`for (const { entry } of xs)`) must shadow     the (+7 more)
 
-### Community 222 - "test_indirect_call_nested_closure_shadow.py"
+### Community 224 - "test_indirect_call_nested_closure_shadow.py"
 Cohesion: 0.22
 Nodes (15): _extract_js_dir(), JS/TS closure-body descent with parameter and local shadowing (#2241).  Descend, A const-assigned arrow IS separately tracked (its own caller_nid, own     local_, Blast-radius traversal must not include a caller that only reached the     targe, The fix must hold on a warm-cache re-extraction, not just a cold run —     the s, Reported shape (#2241): a one-letter test helper `r` must not become a     fabri, The same nested-arrow shape must still capture a REAL by-name reference     that, Shadowing must compound through two levels of untracked inline     closures: an (+7 more)
 
-### Community 223 - "test_office_limits.py"
-Cohesion: 0.15
-Nodes (15): Resource-cap guards for parsing untrusted office/PDF files (F2).  .docx/.xlsx ar, A tiny file that expands far past the ratio threshold is rejected., The live converters bail out (return "") on a bomb before parsing., A normal multi-member office zip passes the streaming-ceiling pass., With a low decompressed cap, content whose actual bytes exceed it is rejected., A PDF larger than the raw cap is skipped before pypdf opens it., test_converters_return_empty_for_bomb(), test_file_within_size_cap() (+7 more)
-
-### Community 224 - "AccountService"
+### Community 225 - "AccountService"
 Cohesion: 0.15
 Nodes (7): delete, insert, update, AccountService, AccountStatus, Account, Notifiable
 
-### Community 225 - "load_graph"
+### Community 226 - "load_graph"
 Cohesion: 0.17
 Nodes (14): first_list(), load_graph(), _node_link_payload(), Return the first list from a set of possible schema locations., Read current graphify graph.json via NetworkX's node-link parser., Load graph.json. Returns normalized (nodes, edges, hyperedges, metadata)., _make_graphify_out(), Path (+6 more)
 
-### Community 226 - "label_communities_by_hub"
+### Community 227 - "label_communities_by_hub"
 Cohesion: 0.26
 Nodes (14): community_member_sigs(), label_communities_by_hub(), Per-community membership fingerprints: ``{cid: sha256(sorted member ids)}``., Deterministic, LLM-free community labels: name each community after its     high, _g(), Deterministic, LLM-free community labels — `label_communities_by_hub`.  Names ea, test_absent_members_fall_back_to_placeholder(), test_community_member_sigs_are_deterministic_and_order_independent() (+6 more)
 
-### Community 227 - "extract_astro"
-Cohesion: 0.28
-Nodes (14): extract_astro(), Extract imports from .astro files: frontmatter (TS) + template regex fallback., _import_targets(), Path, Tests for `.astro` extraction (#850).  Astro files have a TypeScript frontmatter, Astro permits frontmatter-less files (pure-HTML pages). Must not raise., Without this, detect.py silently drops `.astro` from the AST pass (#850)., test_astro_is_in_code_extensions() (+6 more)
-
-### Community 228 - "test_stale_hint.py"
-Cohesion: 0.45
-Nodes (14): One-line stderr note when files the graph covers changed since graph.json was bu, _warn_if_graph_stale(), _commit_file(), _git(), _graph(), Path, The CLI's "graph may be stale" hint must follow CONTENT, not commit identity.  A, _repo() (+6 more)
-
-### Community 229 - "test_install_strings.py"
-Cohesion: 0.14
-Nodes (11): _skill_registration(), Regression tests for install-time instruction strings.  These strings live in gr, The fix demotes GRAPH_REPORT.md, it doesn't delete the reference.     Most insta, Assert the structure of _POST_EDIT_HOOK and that its embedded Python code is val, All ten install surfaces must point the assistant at `graphify query`     as the, The pre-fix instructions told assistants to read GRAPH_REPORT.md as     their fi, test_every_install_surface_recommends_graphify_query(), test_no_install_surface_demands_reading_the_full_report_first() (+3 more)
-
-### Community 230 - "routes.py"
-Cohesion: 0.19
-Nodes (14): _path_proximity_winner(), Pick the candidate whose source file is closest to the call site.      ``candida, extract_js_routes(), extract_python_routes(), _make_route_id(), Any, Path, path is the source file's own path (see _file_stem's docstring for why     this (+6 more)
-
-### Community 231 - "resolve_python_import_guided_calls"
-Cohesion: 0.13
-Nodes (15): Resolve raw Python calls using explicit import evidence.      Only ``from module, resolve_python_import_guided_calls(), Strong regression for #cycle-2.7-Codex-v2: monkeypatch the alias parser     so t, Python import-guided resolver also tolerates malformed raw_calls., A non-dict per_file slot (e.g. a string) must not raise AttributeError., per_file shorter than paths must not raise IndexError., A None per_file slot is treated as empty fragment (no crash, no edges)., Edge metadata produced by the import-guided resolver must pass through     sanit (+7 more)
-
-### Community 232 - "Window"
-Cohesion: 0.18
-Nodes (11): RoutedEventArgs, RootPanel, SaveButton, UserNameBox, Window, UserName, MainWindow, Button (+3 more)
-
-### Community 233 - "TDataProcessor"
-Cohesion: 0.16
-Nodes (7): IProcessor, TObject, SampleUnit, TBaseProcessor, TDataProcessor, Process(), Reset()
-
-### Community 234 - "typescript_advanced.ts"
-Cohesion: 0.14
-Nodes (8): DEFAULT_ROLES, IUserRepository, USER_CONFIG, USER_REPOSITORY, UserId, UserModule, UserService, UserStatus
-
-### Community 235 - "test_file_node_id_spec.py"
-Cohesion: 0.13
-Nodes (13): Regression tests for issue #1033: AST file-level node IDs must match the skill.m, Changing the file-id format must not orphan import edges: the import     target, match/script/pipeline_step.py -> file node id 'match_script_pipeline_step'     (, A file directly at the project root collapses to just its stem., A SYMBOL in a root-level file must use the bare-stem prefix (`setup_configure`),, Regression guard: nested files (immediate parent identical in abs/rel form), Symbol ids already use {parent}_{stem}_{name}; the file node must share     that, test_cross_file_import_edges_stay_connected() (+5 more)
-
-### Community 236 - "parse_python_import_aliases"
-Cohesion: 0.15
-Nodes (14): find_unique_python_symbol(), ImportedSymbol, _module_stem(), parse_python_import_aliases(), Return the final module component used to match Graphify source stems., Parse deterministic Python import aliases from one source file.      Supported f, A Python imported name that can be used as deterministic resolution evidence., Resolve one imported symbol to exactly one Graphify node id. (+6 more)
-
-### Community 237 - "sample.sv"
-Cohesion: 0.18
-Nodes (12): leaf, math_pkg, leaf, Payload, BaseProcessor, Config, DataProcessor, build (+4 more)
-
-### Community 238 - "test_indirect_call_catch_binding_shadow.py"
-Cohesion: 0.25
-Nodes (13): _extract_js_dir(), `catch (e)` bindings must shadow indirect_call args — inside the clause only.  `, ES2019 `catch { }` is a real catch_clause with no `parameter` field — the     `p, Reported shape: a minified bundle's private `k` must not become a fabricated, `catch ({ cause })` binds through the same field via a pattern — the     destruc, The binding is scoped to the clause: a same-named module callable referenced, Widening the shadow set must not blanket-suppress indirect_call inside a catch, _rels() (+5 more)
-
-### Community 239 - "test_pascal_resolution.py"
-Cohesion: 0.21
-Nodes (13): _call_edge(), _find_raw_call(), _labels(), Tests for cross-file Pascal/Delphi inherited-method-call resolution.  The per-fi, When a base class file exists on disk (under the project root) but is     exclud, Sanity check for the gap this resolver closes: the per-file extractor     alone, TDerivedGadget inherits only from TBaseGadget. TOtherGadget declares an     unre, Two unrelated Pascal classes in separate files, with a same-named lowercase (+5 more)
-
-### Community 240 - "Geometry"
-Cohesion: 0.21
-Nodes (11): Base, Base.Threads, Float64, LinearAlgebra, ParentModule, area(), describe(), Circle (+3 more)
-
-### Community 241 - "sample.razor"
-Cohesion: 0.15
-Nodes (12): ComponentBase, CounterRecord, DataGrid, ICounterService, Microsoft.AspNetCore.Components, MyApp.Services, NavigationManager, route:/counter (+4 more)
-
-### Community 242 - "geometry"
-Cohesion: 0.22
-Nodes (11): constants, geometry, double_val(), circle_area(), geometry, main, point, origin() (+3 more)
-
-### Community 243 - "DataProcessor"
-Cohesion: 0.26
-Nodes (7): GraphifyDemo, HttpClient, List, DataProcessor, IProcessor, Processor, Result
-
-### Community 244 - "sample.go"
-Cohesion: 0.26
-Nodes (9): BaseProcessor, DataProcessor, Logger, Reader, ReaderLogger, Result, Server, main() (+1 more)
-
-### Community 245 - "_build_server"
-Cohesion: 0.24
-Nodes (8): _detect_default_branch(), fetch_prs(), _gh(), Auto-detect the repo's default branch via gh, then git, then fall back to 'main', _build_server(), Build the configured low-level MCP Server (shared by every transport).      All, gh returns data but with no defaultBranchRef — should still fall back., TestDetectDefaultBranch
-
-### Community 246 - "sample.dmf"
-Cohesion: 0.15
-Nodes (12): elem "info" [CHILD], elem "infowindow" [MAIN], elem "map" [MAP], elem "mapwindow" [MAIN], elem "output" [OUTPUT], elem "outputwindow" [MAIN], elem "stat" [INFO], elem "statwindow" [MAIN] (+4 more)
-
-### Community 247 - "ScopedCallsUnit"
-Cohesion: 0.23
-Nodes (12): TObject, ScopedCallsUnit, TBaseWidget, Prepare(), TDerivedWidget, Run(), TFirstWidget, Configure() (+4 more)
-
-### Community 248 - "test_csharp_partial_classes.py"
-Cohesion: 0.31
-Nodes (12): _extract(), _find(), _nodes_labeled(), C# partial classes split across files (#2332).  `partial class Foo` declared in, Nested partial types are excluded: their ids omit the enclosing type     name, s, Beta() in half B calls Alpha() declared in half A — an in-class     unqualified, test_cross_file_caller_resolves_into_both_halves(), test_cross_half_unqualified_in_class_call_resolves() (+4 more)
-
-### Community 249 - "test_ts_inheritance.py"
-Cohesion: 0.35
-Nodes (12): _has_inherits(), Path, Regression tests for issue #1095: TypeScript inheritance capture.  Two gaps on v, Regression guard: the originally-working imported-class case must stay., test_class_extends_same_file(), test_class_implements_same_file_interface(), test_imported_class_extends_still_works(), test_interface_extends_generic_base_same_file() (+4 more)
-
-### Community 250 - "graphify"
-Cohesion: 0.17
-Nodes (12): `graph.json`을 LLM과 함께 사용하기, graphify, 개인정보 보호, 결과물, 기술 스택, 동작 원리, 사용법, 설치 (+4 more)
-
-### Community 251 - "bench_extract.py"
-Cohesion: 0.27
-Nodes (11): clear_cache(), Delete all cache entries (ast/, semantic/, and legacy flat entries)., _count_by_ext(), _format_languages(), main(), Path, Run extraction, return (elapsed_seconds, node_count, edge_count)., Count files by extension. (+3 more)
-
-### Community 252 - "extract_elixir"
-Cohesion: 0.17
-Nodes (12): extract_elixir(), Path, Extract modules, functions, imports, and calls from a .ex/.exs file., `alias Foo.{Bar, Baz}` must emit one imports edge per expanded module.      The, test_elixir_call_edges_have_call_context(), test_elixir_finds_calls(), test_elixir_finds_functions(), test_elixir_finds_imports() (+4 more)
-
-### Community 253 - "default_graph_json"
+### Community 228 - "collect_files"
 Cohesion: 0.20
 Nodes (12): default_graph_json(), Default ``graph.json`` path under the configured output dir.      The package-wi, _filter_blank_stdin(), _main(), Filter blank lines from stdin before MCP reads it.      Some MCP clients (Claude, Start the MCP server over stdio (the default, per-developer transport)., Start the MCP server over Streamable HTTP (MCP spec 2025-03-26).      Serves the, serve() (+4 more)
 
-### Community 254 - "_ip_is_blocked"
-Cohesion: 0.17
-Nodes (10): _ip_is_blocked(), Resolve *host* once and return (family, validated_ip) for the first     address, HTTPConnection that resolves + validates DNS once, then connects to the     exac, HTTPSConnection variant of _SSRFGuardedHTTPConnection.      Connects to the vali, Return True if *ip* falls in a private/reserved/internal range.      Shared by v, _resolve_and_validate(), _SSRFGuardedHTTPConnection, _SSRFGuardedHTTPSConnection (+2 more)
+### Community 229 - "test_stale_hint.py"
+Cohesion: 0.45
+Nodes (14): One-line stderr note when files the graph covers changed since graph.json was bu, _warn_if_graph_stale(), _commit_file(), _git(), _graph(), Path, The CLI's "graph may be stale" hint must follow CONTENT, not commit identity.  A, _repo() (+6 more)
 
-### Community 255 - "sample.json"
+### Community 230 - "test_install_strings.py"
+Cohesion: 0.14
+Nodes (11): _skill_registration(), Regression tests for install-time instruction strings.  These strings live in gr, The fix demotes GRAPH_REPORT.md, it doesn't delete the reference.     Most insta, Assert the structure of _POST_EDIT_HOOK and that its embedded Python code is val, All ten install surfaces must point the assistant at `graphify query`     as the, The pre-fix instructions told assistants to read GRAPH_REPORT.md as     their fi, test_every_install_surface_recommends_graphify_query(), test_no_install_surface_demands_reading_the_full_report_first() (+3 more)
+
+### Community 231 - "routes.py"
+Cohesion: 0.19
+Nodes (14): _path_proximity_winner(), Pick the candidate whose source file is closest to the call site.      ``candida, extract_js_routes(), extract_python_routes(), _make_route_id(), Any, Path, path is the source file's own path (see _file_stem's docstring for why     this (+6 more)
+
+### Community 232 - "load_learning_overlay"
+Cohesion: 0.25
+Nodes (8): load_memory_docs(), Parse every memory doc under ``memory_dir``, sorted by date then filename., Determinism hinges on this sort: docs come back oldest-first, filename as tiebre, dead_ends/corrections are appended in doc order, so their determinism rides on, test_dead_ends_and_corrections_follow_doc_order(), test_load_memory_docs_missing_dir_is_empty(), test_load_memory_docs_orders_by_date_then_filename(), test_load_memory_docs_skips_foreign_and_sorts()
+
+### Community 233 - "resolve_python_import_guided_calls"
+Cohesion: 0.14
+Nodes (14): Resolve raw Python calls using explicit import evidence.      Only ``from module, resolve_python_import_guided_calls(), Strong regression for #cycle-2.7-Codex-v2: monkeypatch the alias parser     so t, Python import-guided resolver also tolerates malformed raw_calls., A non-dict per_file slot (e.g. a string) must not raise AttributeError., per_file shorter than paths must not raise IndexError., A None per_file slot is treated as empty fragment (no crash, no edges)., Edge metadata produced by the import-guided resolver must pass through     sanit (+6 more)
+
+### Community 234 - "Window"
+Cohesion: 0.18
+Nodes (11): RoutedEventArgs, RootPanel, SaveButton, UserNameBox, Window, UserName, MainWindow, Button (+3 more)
+
+### Community 235 - "TDataProcessor"
+Cohesion: 0.16
+Nodes (7): IProcessor, TObject, SampleUnit, TBaseProcessor, TDataProcessor, Process(), Reset()
+
+### Community 236 - "typescript_advanced.ts"
+Cohesion: 0.14
+Nodes (8): DEFAULT_ROLES, IUserRepository, USER_CONFIG, USER_REPOSITORY, UserId, UserModule, UserService, UserStatus
+
+### Community 237 - "test_file_node_id_spec.py"
+Cohesion: 0.13
+Nodes (13): Regression tests for issue #1033: AST file-level node IDs must match the skill.m, Changing the file-id format must not orphan import edges: the import     target, match/script/pipeline_step.py -> file node id 'match_script_pipeline_step'     (, A file directly at the project root collapses to just its stem., A SYMBOL in a root-level file must use the bare-stem prefix (`setup_configure`),, Regression guard: nested files (immediate parent identical in abs/rel form), Symbol ids already use {parent}_{stem}_{name}; the file node must share     that, test_cross_file_import_edges_stay_connected() (+5 more)
+
+### Community 238 - "safe_fetch"
+Cohesion: 0.18
+Nodes (14): _build_opener(), Fetch *url* and return raw bytes.      Protections applied:     - URL scheme val, Fetch *url* and return decoded text (UTF-8, replacing bad bytes).      Wraps saf, safe_fetch(), safe_fetch_text(), OpenerDirector, _make_mock_response(), test_safe_fetch_raises_on_non_2xx() (+6 more)
+
+### Community 239 - "sample.sv"
+Cohesion: 0.18
+Nodes (12): leaf, math_pkg, leaf, Payload, BaseProcessor, Config, DataProcessor, build (+4 more)
+
+### Community 240 - "test_indirect_call_catch_binding_shadow.py"
+Cohesion: 0.25
+Nodes (13): _extract_js_dir(), `catch (e)` bindings must shadow indirect_call args — inside the clause only.  `, ES2019 `catch { }` is a real catch_clause with no `parameter` field — the     `p, Reported shape: a minified bundle's private `k` must not become a fabricated, `catch ({ cause })` binds through the same field via a pattern — the     destruc, The binding is scoped to the clause: a same-named module callable referenced, Widening the shadow set must not blanket-suppress indirect_call inside a catch, _rels() (+5 more)
+
+### Community 241 - "test_pascal_resolution.py"
+Cohesion: 0.21
+Nodes (13): _call_edge(), _find_raw_call(), _labels(), Tests for cross-file Pascal/Delphi inherited-method-call resolution.  The per-fi, When a base class file exists on disk (under the project root) but is     exclud, Sanity check for the gap this resolver closes: the per-file extractor     alone, TDerivedGadget inherits only from TBaseGadget. TOtherGadget declares an     unre, Two unrelated Pascal classes in separate files, with a same-named lowercase (+5 more)
+
+### Community 242 - "Geometry"
+Cohesion: 0.21
+Nodes (11): Base, Base.Threads, Float64, LinearAlgebra, ParentModule, area(), describe(), Circle (+3 more)
+
+### Community 243 - "sample.razor"
+Cohesion: 0.15
+Nodes (12): ComponentBase, CounterRecord, DataGrid, ICounterService, Microsoft.AspNetCore.Components, MyApp.Services, NavigationManager, route:/counter (+4 more)
+
+### Community 244 - "geometry"
+Cohesion: 0.22
+Nodes (11): constants, geometry, double_val(), circle_area(), geometry, main, point, origin() (+3 more)
+
+### Community 245 - "DataProcessor"
+Cohesion: 0.26
+Nodes (7): GraphifyDemo, HttpClient, List, DataProcessor, IProcessor, Processor, Result
+
+### Community 246 - "sample.go"
+Cohesion: 0.26
+Nodes (9): BaseProcessor, DataProcessor, Logger, Reader, ReaderLogger, Result, Server, main() (+1 more)
+
+### Community 247 - "dedup.py"
+Cohesion: 0.09
+Nodes (27): _crossfile_fileanchored_blocked(), _is_code(), _is_variant_pair(), _llm_tiebreak(), _make_minhash(), _numeric_tokens_differ(), _pick_winner(), Entity deduplication pipeline for graphify knowledge graphs.  Pipeline: exact no (+19 more)
+
+### Community 248 - "_build_server"
+Cohesion: 0.15
+Nodes (10): _detect_default_branch(), fetch_prs(), _gh(), _parse_ci(), Auto-detect the repo's default branch via gh, then git, then fall back to 'main', _build_server(), Build the configured low-level MCP Server (shared by every transport).      All, gh returns data but with no defaultBranchRef — should still fall back. (+2 more)
+
+### Community 249 - "sample.dmf"
+Cohesion: 0.15
+Nodes (12): elem "info" [CHILD], elem "infowindow" [MAIN], elem "map" [MAP], elem "mapwindow" [MAIN], elem "output" [OUTPUT], elem "outputwindow" [MAIN], elem "stat" [INFO], elem "statwindow" [MAIN] (+4 more)
+
+### Community 250 - "ScopedCallsUnit"
+Cohesion: 0.23
+Nodes (12): TObject, ScopedCallsUnit, TBaseWidget, Prepare(), TDerivedWidget, Run(), TFirstWidget, Configure() (+4 more)
+
+### Community 251 - "test_csharp_partial_classes.py"
+Cohesion: 0.31
+Nodes (12): _extract(), _find(), _nodes_labeled(), C# partial classes split across files (#2332).  `partial class Foo` declared in, Nested partial types are excluded: their ids omit the enclosing type     name, s, Beta() in half B calls Alpha() declared in half A — an in-class     unqualified, test_cross_file_caller_resolves_into_both_halves(), test_cross_half_unqualified_in_class_call_resolves() (+4 more)
+
+### Community 252 - "test_ts_inheritance.py"
+Cohesion: 0.35
+Nodes (12): _has_inherits(), Path, Regression tests for issue #1095: TypeScript inheritance capture.  Two gaps on v, Regression guard: the originally-working imported-class case must stay., test_class_extends_same_file(), test_class_implements_same_file_interface(), test_imported_class_extends_still_works(), test_interface_extends_generic_base_same_file() (+4 more)
+
+### Community 253 - "graphify"
+Cohesion: 0.17
+Nodes (12): `graph.json`을 LLM과 함께 사용하기, graphify, 개인정보 보호, 결과물, 기술 스택, 동작 원리, 사용법, 설치 (+4 more)
+
+### Community 254 - "bench_extract.py"
+Cohesion: 0.27
+Nodes (11): clear_cache(), Delete all cache entries (ast/, semantic/, and legacy flat entries)., _count_by_ext(), _format_languages(), main(), Path, Run extraction, return (elapsed_seconds, node_count, edge_count)., Count files by extension. (+3 more)
+
+### Community 255 - "extract_fish"
+Cohesion: 0.24
+Nodes (10): extract_fish(), Path, Fish shell extractor. New — .fish files previously had no extractor at all. No t, Tests for the fish shell extractor. .fish files previously had no extractor at a, Real fish scripts commonly guard function definitions behind an     `if`/`end` b, test_extract_fish_comment_mentioning_function_is_not_a_node(), test_extract_fish_dispatches_from_extract_module(), test_extract_fish_file_contains_edge_to_function() (+2 more)
+
+### Community 256 - "extract_gherkin"
+Cohesion: 0.26
+Nodes (10): extract_gherkin(), Path, Gherkin (.feature) extractor. New — .feature files previously had no extractor a, Tests for the Gherkin (.feature) extractor. .feature files previously had no ext, test_extract_gherkin_dispatches_from_extract_module(), test_extract_gherkin_feature_produces_node(), test_extract_gherkin_scenario_nests_under_its_feature(), test_extract_gherkin_scenario_outline_produces_child_node() (+2 more)
+
+### Community 257 - "disambiguate_ambiguous_candidates"
+Cohesion: 0.27
+Nodes (11): disambiguate_ambiguous_candidates(), _is_test_path(), Classify a source path as a test path (case-insensitive, segment-aware).      Sh, Resolve an ambiguous bare-name call to one candidate, or ``None``.      Shared g, Tests for graphify.paths — the shared test-path classifier (#1553)., test_disambiguate_bails_on_two_nontest_candidates(), test_disambiguate_drops_test_candidate_for_nontest_call_site(), test_disambiguate_path_proximity_same_dir() (+3 more)
+
+### Community 258 - "attach_graph_impact"
+Cohesion: 0.43
+Nodes (3): build_community_labels(), Return {community_id: [top_labels]} extracted from graph node data., TestBuildCommunityLabels
+
+### Community 259 - "sample.json"
 Cohesion: 0.17
 Nodes (11): dependencies, axios, react, devDependencies, typescript, name, scripts, build (+3 more)
 
-### Community 256 - "test_extraction_spec_ids.py"
+### Community 260 - "TestSubprocessEncoding"
+Cohesion: 0.10
+Nodes (13): Regression tests for UnicodeEncodeError on Windows cp1252 console.  On Windows w, Writing a file with → ✅ ≥ then passing its content through         _call_claude_, _call_llm with backend='claude-cli' must also use encoding='utf-8'., extract_corpus_parallel must surface chunk failures loudly — either via     non-, When chunks fail, extract_corpus_parallel must record failed_chunks > 0, A summary line must appear on stderr when ≥1 chunk fails., When all chunks succeed, failed_chunks must be 0 and no failure         summary, _call_claude_cli must pass encoding="utf-8" to subprocess.run so that     non-AS (+5 more)
+
+### Community 261 - "test_extraction_spec_ids.py"
 Cohesion: 0.27
 Nodes (11): _ast_symbol_id(), _examples(), Path, Drift guard for the node-ID spec shown to LLM semantic subagents.  `tools/skillg, Reproduce the symbol ID the AST extractor emits for a file + symbol, using     t, Guard the guard: if the spec moves or the example format changes so nothing, The canonical spec warns against the filename-only and full-path ID forms.     L, _spec_files() (+3 more)
 
-### Community 257 - "test_indirect_dispatch_getattr.py"
+### Community 262 - "test_indirect_dispatch_getattr.py"
 Cohesion: 0.38
 Nodes (11): _extract(), _ind(), Reflective dispatch via getattr string literals — #1566 slice 3.  ``getattr(obj,, test_dynamic_getattr_names_emit_nothing(), test_getattr_feeds_affected(), test_getattr_non_callable_name_emits_nothing(), test_getattr_string_literal_emits_indirect_call(), test_getattr_string_not_shadowed_by_param() (+3 more)
 
-### Community 258 - "test_java_type_resolution.py"
+### Community 263 - "test_java_type_resolution.py"
 Cohesion: 0.44
 Nodes (11): _label_edges(), _node_by_id(), Path, test_java_ambiguous_implements_disambiguated_by_import(), test_java_cross_file_constructor_call_resolves(), test_java_cross_file_implements_resolves_to_real_def(), test_java_implements_edge_survives_build(), test_java_record_becomes_type_node() (+3 more)
 
-### Community 259 - "test_mcp_stdio.py"
+### Community 264 - "test_mcp_stdio.py"
 Cohesion: 0.38
 Nodes (7): _Client, _project(), Path, End-to-end over real stdio: the MCP server must start, list every tool (building, _started(), test_calls_over_stdio_search_and_dry_run_edit(), test_tools_list_builds_every_tool_schema()
 
-### Community 260 - "test_python_import_resolution.py"
+### Community 265 - "test_python_import_resolution.py"
 Cohesion: 0.47
 Nodes (11): _has_edge(), _node_id(), Path, Refactoring a module into a package directory (graphs.py -> graphs/__init__.py), test_ordinary_relative_import_still_resolves(), test_overdeep_relative_import_is_unresolved_not_fatal(), test_python_package_reexport_resolves_import_and_call_to_origin_symbol(), test_python_parameter_return_and_generic_contexts() (+3 more)
 
-### Community 261 - "Demo.ViewModels"
+### Community 266 - "Demo.ViewModels"
 Cohesion: 0.18
 Nodes (6): Demo.ViewModels, DesignViewModel, PrismOrderViewModel, DesignView, UserControl, UserControl
 
-### Community 262 - "graphify"
+### Community 267 - "graphify"
 Cohesion: 0.18
 Nodes (11): graphify, アシスタントに常にグラフを使わせる（推奨）, インストール, スター履歴, プライバシー, プラットフォームサポート, 仕組み, 使い方 (+3 more)
 
-### Community 263 - "graphify.toml"
+### Community 268 - "graphify.toml"
 Cohesion: 0.18
 Nodes (3): no_viz, Tests for ANTHROPIC_BASE_URL / ANTHROPIC_MODEL overrides on the claude backend., Tests for OPENAI_BASE_URL / OPENAI_MODEL overrides on the openai backend.  These
 
-### Community 264 - "load_project_config"
+### Community 269 - "load_project_config"
 Cohesion: 0.29
 Nodes (9): load_project_config(), Any, Path, Load configuration from graphify.toml or [tool.graphify] in pyproject.toml., test_load_project_config_graphify_toml_nested(), test_load_project_config_graphify_toml_toplevel(), test_load_project_config_no_config(), test_load_project_config_override_precedence() (+1 more)
 
-### Community 265 - "compute_pr_impact"
+### Community 270 - "compute_pr_impact"
 Cohesion: 0.35
 Nodes (4): compute_pr_impact(), Return (communities_touched, nodes_affected) for a set of changed files.      Bu, 3 nodes across 2 communities, 2 distinct source files., TestComputePrImpact
 
-### Community 266 - "_hop_distances"
+### Community 271 - "_hop_distances"
 Cohesion: 0.18
 Nodes (11): _hop_distances(), BFS distance in hops from the nearest seed, over the edges actually     discover, _make_graph_with_god_node(), A hub with many low-value edges that would win a pure degree-sort, plus     a lo, Omitting hop_distances/relevance_scores preserves the exact old     degree-sort, With hop_distances/relevance_scores supplied, a node one hop closer to     the s, Edge direction in the (u, v) tuple must not affect hop distance - a     caller a, test_hop_distances_from_seed() (+3 more)
 
-### Community 267 - "parse_memory_doc"
+### Community 272 - "parse_memory_doc"
 Cohesion: 0.18
 Nodes (11): parse_memory_doc(), Parse the frontmatter of a memory doc into a dict, or None if it has none., Reverse the double-quoted escaping that ingest._yaml_str applies., _yaml_unescape(), parse_memory_doc reads back exactly what save_query_result wrote, including, A plain markdown file with no frontmatter is skipped, not crashed on., save -> parse preserves tricky characters in the question, the correction,     a, test_parse_handles_crlf() (+3 more)
 
-### Community 268 - "validate_url"
-Cohesion: 0.18
-Nodes (10): _NoFileRedirectHandler, Raise ValueError if *url* is not http or https, or targets a private/internal IP, Redirect handler that re-validates every redirect target.      Prevents open-red, validate_url(), test_validate_url_accepts_http(), test_validate_url_accepts_https(), test_validate_url_rejects_data(), test_validate_url_rejects_empty_scheme() (+2 more)
+### Community 273 - "validate_graph_path"
+Cohesion: 0.31
+Nodes (10): load_graph(), Read a JSON graph after applying Graphify's graph-load size cap., _read_json_file(), _corrupt(), Corrupt graph.json produces an actionable error, not a raw traceback (#1536/#153, Happy path unchanged: a well-formed graph.json loads without raising., test_affected_load_graph_corrupt_raises_runtimeerror(), test_build_merge_corrupt_graph_raises_runtimeerror() (+2 more)
 
-### Community 269 - "barrel_reexport.ts"
+### Community 274 - "barrel_reexport.ts"
 Cohesion: 0.25
 Nodes (4): readCookie(), writeCookie(), basePathRewrite(), getFullUrl()
 
-### Community 270 - "TMainForm"
+### Community 275 - "TMainForm"
 Cohesion: 0.18
 Nodes (5): TButton, TPanel, TMainForm, TMemo, TStatusBar
 
-### Community 271 - "test_indirect_dispatch_assign_return.py"
+### Community 276 - "test_indirect_dispatch_assign_return.py"
 Cohesion: 0.42
 Nodes (10): _extract(), _ind(), Indirect dispatch via assignment + return references — #1566 slice 2.  A functio, test_assignment_and_return_emit_indirect_call(), test_assignment_feeds_affected(), test_local_shadow_emits_nothing(), test_module_level_assignment_emits_indirect_call(), test_multiple_assignment_emits_for_each() (+2 more)
 
-### Community 272 - "test_swift_builtin_noise.py"
+### Community 277 - "test_swift_builtin_noise.py"
 Cohesion: 0.24
 Nodes (10): _labels_by_id(), Swift/Foundation/SwiftUI builtins must not become god nodes or bind to user symb, Non-Swift files defining symbols named like Swift builtins (Color, View, Calenda, Non-Swift nodes labeled 'Color' or 'View' must not be filtered by Swift noise la, Swift framework symbols must be filtered from god_nodes output.      Constructs, test_god_nodes_excludes_swift_builtin_labels(), test_god_nodes_preserves_non_swift_symbols_matching_swift_builtins(), test_non_swift_symbols_matching_swift_builtins_resolve_call_edges() (+2 more)
 
-### Community 273 - "Docker MCP Toolkit + SQLite MCP server"
+### Community 278 - "Docker MCP Toolkit + SQLite MCP server"
 Cohesion: 0.20
 Nodes (9): Docker MCP Toolkit + SQLite MCP server, Install, Prerequisites, Smoke test, Storage layout, Troubleshooting, Uninstall / reset, Why SQLite (and not `sqlite-mcp-server`) (+1 more)
 
-### Community 274 - "README.de-DE.md"
+### Community 279 - "README.de-DE.md"
 Cohesion: 0.20
 Nodes (9): Assistenten immer den Graphen nutzen lassen (empfohlen), Datenschutz, Installation, Plattformunterstützung, So funktioniert es, Star-Verlauf, Tech-Stack, Verwendung (+1 more)
 
-### Community 275 - "README.es-ES.md"
+### Community 280 - "README.es-ES.md"
 Cohesion: 0.20
 Nodes (9): Cómo funciona, Hacer que el asistente siempre use el grafo (recomendado), Historial de estrellas, Instalación, Privacidad, Qué obtienes, Soporte de plataformas, Stack técnico (+1 more)
 
-### Community 276 - "README.fr-FR.md"
+### Community 281 - "README.fr-FR.md"
 Cohesion: 0.20
 Nodes (9): Ce que vous obtenez, Comment ça fonctionne, Confidentialité, Historique des étoiles, Installation, Stack technique, Support des plateformes, Toujours utiliser le graphe (recommandé) (+1 more)
 
-### Community 277 - "README.pt-BR.md"
+### Community 282 - "README.pt-BR.md"
 Cohesion: 0.20
 Nodes (9): Como funciona, Fazer o assistente sempre usar o grafo (recomendado), Histórico de estrelas, Instalação, O que você obtém, Privacidade, Stack técnico, Suporte a plataformas (+1 more)
 
-### Community 278 - "README.ru-RU.md"
+### Community 283 - "README.ru-RU.md"
 Cohesion: 0.20
 Nodes (9): Заставить ассистента всегда использовать граф (рекомендуется), Использование, История звёзд, Как это работает, Конфиденциальность, Поддержка платформ, Технологический стек, Установка (+1 more)
 
-### Community 279 - "README.uz-UZ.md"
+### Community 284 - "README.uz-UZ.md"
 Cohesion: 0.20
 Nodes (9): Foydalanish, Maxfiylik, Nima olasiz, O'rnatish, Platforma qo'llab-quvvatlash, Qanday ishlaydi, Texnologiyalar to'plami, Yordamchini har doim grafdan foydalanishga majbur qilish (tavsiya etiladi) (+1 more)
 
-### Community 280 - "graphify"
+### Community 285 - "graphify"
 Cohesion: 0.20
 Nodes (10): graphify, Worked examples, 你会得到什么, 安装, 工作原理, 平台支持, 技术栈, 用法 (+2 more)
 
-### Community 281 - "push_to_falkordb"
+### Community 286 - "changed_seeds"
+Cohesion: 0.18
+Nodes (11): extract_verilog(), Extract modules, functions, tasks, package imports, instantiations, and     Syst, Class properties with leading qualifiers (rand/local/protected/etc.) must     st, test_systemverilog_does_not_emit_type_parameter_refs(), test_systemverilog_field_parameter_return_and_generic_contexts(), test_systemverilog_missing_file_returns_empty(), test_systemverilog_no_dangling_edges(), test_systemverilog_no_error() (+3 more)
+
+### Community 287 - "push_to_falkordb"
 Cohesion: 0.27
 Nodes (9): push_to_falkordb(), Push graph directly to a running FalkorDB instance via the Python SDK.      Requ, _connect(), db(), Integration test for push_to_falkordb against a real FalkorDB instance.  Runs fo, Return a connected FalkorDB client, or skip if none is reachable., MERGE-based push is safe to re-run - counts must not grow., test_push_to_falkordb_creates_expected_graph() (+1 more)
 
-### Community 282 - "extract_gherkin"
+### Community 288 - "extract_toml"
 Cohesion: 0.31
-Nodes (9): extract_gherkin(), Path, Tests for the Gherkin (.feature) extractor. .feature files previously had no ext, test_extract_gherkin_dispatches_from_extract_module(), test_extract_gherkin_feature_produces_node(), test_extract_gherkin_scenario_nests_under_its_feature(), test_extract_gherkin_scenario_outline_produces_child_node(), test_extract_gherkin_scenario_produces_child_node() (+1 more)
+Nodes (9): extract_toml(), Path, Tests for the TOML extractor. .toml files previously had no extractor at all — a, test_extract_toml_dispatches_from_extract_module(), test_extract_toml_dotted_table_key_produces_node(), test_extract_toml_file_contains_edge_to_table(), test_extract_toml_repeated_array_of_tables_produces_distinct_nodes(), test_extract_toml_root_level_pair_produces_node() (+1 more)
 
-### Community 283 - "tree_html.py"
+### Community 289 - "check_graph_file_size_cap"
+Cohesion: 0.33
+Nodes (6): _prune_old_backups(), Delete dated backup dirs (YYYY-MM-DD, optionally _N suffixed) older than keep_da, Dated dirs older than keep_days are deleted; recent ones survive., GRAPHIFY_BACKUP_KEEP_DAYS overrides the default retention window., test_prune_old_backups_env_override(), test_prune_old_backups_removes_stale_dirs()
+
+### Community 290 - "tree_html.py"
 Cohesion: 0.38
 Nodes (9): build_tree(), _common_root(), emit_html(), _make_truncation_leaf(), Any, Path, tree_html — emit a D3 v7 collapsible-tree HTML view of a graph.  A self-containe, Build a ``{name, total_count, children}`` hierarchy.      Each leaf is either a (+1 more)
 
-### Community 284 - "sample.rs"
-Cohesion: 0.31
-Nodes (8): HashMap, GraphEvent, GraphPair, Logger, T, DataProcessor, Processor, Result
+### Community 291 - "sample.rs"
+Cohesion: 0.09
+Nodes (28): _compute_idf(), _fuzzy_substring_seeds(), Last-resort fallback when neither the primary lexical pass nor     _correct_term, IDF weights for query terms, cached in G.graph['_idf_cache']., HashMap, Self, build_graph(), Graph (+20 more)
 
-### Community 285 - "test_ingest_scip_cli.py"
+### Community 292 - "test_ingest_scip_cli.py"
 Cohesion: 0.33
 Nodes (9): `graphify ingest-scip` — CLI wiring for graphify/scip_ingest.py's ingest_scip_js, The documented workflow: ingest, then feed the result into the     existing merg, _run(), test_ingest_scip_invalid_json_exits_nonzero(), test_ingest_scip_missing_file_exits_nonzero(), test_ingest_scip_no_args_shows_usage(), test_ingest_scip_respects_out_flag(), test_ingest_scip_then_merge_semantic_combines_with_existing_extraction() (+1 more)
 
-### Community 286 - "render_always_on"
+### Community 293 - "render_always_on"
 Cohesion: 0.24
 Nodes (10): render_always_on yields exactly the six always-on instruction files., Each always_on/*.md reproduces its former __main__.py constant byte for byte., test_always_on_renders_six_blocks(), test_always_on_roundtrip_is_byte_faithful(), _always_on_constants(), always_on_roundtrip(), Parse the always-on string constants out of a __main__.py blob.      Reads the m, Assert each always_on/*.md reproduces its former constant byte for byte.      Th (+2 more)
 
-### Community 287 - "test_swift_computed_properties.py"
+### Community 294 - "test_swift_computed_properties.py"
 Cohesion: 0.47
 Nodes (4): _labels(), Regression tests for #2181.  Swift computed properties (`var body: some View { …, _rel(), TestSwiftComputedProperties
 
-### Community 288 - "test_wheel_packaging.py"
+### Community 295 - "test_wheel_packaging.py"
 Cohesion: 0.29
 Nodes (9): _expected_artifacts(), _has_build(), Path, Packaging guard (#1121 follow-up): the 5 skillgen guards check the *repo tree*,, Every distinct skill body a platform installs (the SKILL.md is copied from     o, Every committed skill body + references/*.md (per host) + always_on/*.md block., _skill_bodies(), test_skill_artifact_ships_in_wheel() (+1 more)
 
-### Community 289 - "README.ar-SA.md"
+### Community 296 - "README.ar-SA.md"
 Cohesion: 0.22
 Nodes (8): الاستخدام, التثبيت, الخصوصية, المكدس التقني, دعم المنصات, سجل النجوم, كيف يعمل, ما ستحصل عليه
 
-### Community 290 - "sample.csproj"
+### Community 297 - "sample.csproj"
 Cohesion: 0.22
 Nodes (6): net8.0, FluentValidation (11.9.0), MediatR (12.2.0), Microsoft.AspNetCore.Authentication.JwtBearer (8.0.0), Swashbuckle.AspNetCore (6.5.0), Microsoft.NET.Sdk.Web
 
-### Community 291 - "check.yml"
+### Community 298 - "check.yml"
 Cohesion: 0.22
 Nodes (8): jobs, release-check, name, on, pull_request, push, permissions, contents
 
-### Community 292 - "fetch_worktrees"
+### Community 299 - "extract_dmm"
+Cohesion: 0.22
+Nodes (9): _dmm_type_path(), extract_dmm(), Extract type-path references from a .dmm map file's tile dictionary., _split_dmm_tile(), test_dmm_extracts_type_paths_as_uses_edges(), test_dmm_handles_multiline_tile_definition(), test_dmm_no_error(), test_dmm_skips_grid_section() (+1 more)
+
+### Community 300 - "fetch_worktrees"
 Cohesion: 0.33
 Nodes (4): fetch_worktrees(), Returns {branch: worktree_path}., A detached HEAD (no branch line) must not associate its path with the         ne, TestFetchWorktrees
 
-### Community 294 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
-
-### Community 295 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
-
-### Community 296 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
-
-### Community 297 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
-
-### Community 298 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
-
-### Community 299 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
-
-### Community 300 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
-
-### Community 301 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+### Community 301 - "_parse_ci"
+Cohesion: 0.40
+Nodes (3): out_path(), Single source of truth for the graphify output-directory name.  The output direc, A path inside the configured output dir, e.g. ``out_path("cache")``.      ``Path
 
 ### Community 302 - "graphify reference: extra exports and benchmark"
 Cohesion: 0.22
@@ -1287,21 +1287,25 @@ Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only
 Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
-### Community 308 - "Widget"
-Cohesion: 0.28
-Nodes (4): Widget, -refresh, -render, String
+### Community 308 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
-### Community 309 - "TBaseGadget"
-Cohesion: 0.28
-Nodes (7): BaseGadget, TObject, TBaseGadget, Prepare(), DerivedGadget, TDerivedGadget, Run()
+### Community 309 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
-### Community 311 - "Config"
-Cohesion: 0.36
-Nodes (7): BaseClient, HttpClientFactory, Int, Loggable, String, Config, HttpClient
+### Community 310 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
-### Community 312 - "sample_calls.py"
-Cohesion: 0.39
-Nodes (5): Analyzer, compute_score(), normalize(), Fixture: functions and methods that call each other - for call-graph extraction, run_analysis()
+### Community 311 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 312 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
 ### Community 313 - "graphify reference: extra exports and benchmark"
 Cohesion: 0.22
@@ -1315,29 +1319,25 @@ Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only
 Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
-### Community 316 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+### Community 316 - "Widget"
+Cohesion: 0.28
+Nodes (4): Widget, -refresh, -render, String
 
-### Community 317 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+### Community 317 - "TBaseGadget"
+Cohesion: 0.28
+Nodes (7): BaseGadget, TObject, TBaseGadget, Prepare(), DerivedGadget, TDerivedGadget, Run()
 
-### Community 318 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+### Community 319 - "Config"
+Cohesion: 0.36
+Nodes (7): BaseClient, HttpClientFactory, Int, Loggable, String, Config, HttpClient
 
-### Community 319 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+### Community 320 - "sample_calls.py"
+Cohesion: 0.39
+Nodes (5): Analyzer, compute_score(), normalize(), Fixture: functions and methods that call each other - for call-graph extraction, run_analysis()
 
-### Community 320 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
-
-### Community 321 - "graphify reference: extra exports and benchmark"
-Cohesion: 0.22
-Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+### Community 321 - "/datum/weapon/sword"
+Cohesion: 0.36
+Nodes (8): /datum/weapon, /datum/weapon/attack(), /datum/weapon/New(), /datum/weapon/sword, /datum/weapon/sword/attack(), /datum/weapon/sword/sharpen(), log_event(), RunTest()
 
 ### Community 322 - "graphify reference: extra exports and benchmark"
 Cohesion: 0.22
@@ -1363,193 +1363,173 @@ Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only
 Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
-### Community 328 - "saxpy"
+### Community 328 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 329 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 330 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 331 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 332 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 333 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 334 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 335 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 336 - "graphify reference: extra exports and benchmark"
+Cohesion: 0.22
+Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 337 - "saxpy"
 Cohesion: 0.29
 Nodes (7): constant, kernel, dot3(), device, saxpy(), Vec3, uint
 
-### Community 329 - "README.hi-IN.md"
+### Community 338 - "README.hi-IN.md"
 Cohesion: 0.25
 Nodes (7): Star इतिहास, आपको क्या मिलता है, इंस्टॉलेशन, उपयोग, गोपनीयता, प्लेटफॉर्म समर्थन, यह कैसे काम करता है
 
-### Community 330 - "semantic_cleanup.py"
+### Community 339 - "semantic_cleanup.py"
 Cohesion: 0.25
 Nodes (7): _normalize_hyperedge_members(), Canonicalize a hyperedge's member list onto the `nodes` key, in place.      If `, _append_rationale_attr(), _is_sentence_like_rationale_label(), Return True if *label* looks like prose / rationale text rather than an     enti, Append one or more rationale strings to *node*'s ``rationale`` attribute.      I, _validate_semantic_id()
 
-### Community 331 - "first_present"
+### Community 340 - "first_present"
 Cohesion: 0.29
 Nodes (8): endpoint_id(), first_present(), normalize_edge(), normalize_node(), Return the first non-empty value for any candidate key., Normalize edge endpoints that may be strings or node-like objects., Normalize a graphify node across common graph.json schema variants., Normalize graphify edges while preserving original fields.
 
-### Community 332 - "Migrating a language extractor out of extract.py"
+### Community 341 - "_is_variant_pair"
+Cohesion: 0.50
+Nodes (4): _extract_python_rationale(), _is_autogenerated_python(), Return True if this Python file is auto-generated and its module docstring is no, Post-pass: extract docstrings and rationale comments from Python source.     Mut
+
+### Community 342 - "Migrating a language extractor out of extract.py"
 Cohesion: 0.25
 Nodes (7): Helper classification, Invariants (non-negotiable), Migrating a language extractor out of extract.py, Pre-flight, Status, Steps, What NOT to do
 
-### Community 333 - "_backend_pkg_hint"
-Cohesion: 0.36
-Nodes (7): _backend_pkg_hint(), Package-missing message that works for the recommended `uv tool` install.      `, _extras(), The claude backend must be installable via an extra, and the missing-package mes, test_anthropic_extra_exists(), test_anthropic_in_all_extra(), test_backend_pkg_hint_points_at_uv_tool_and_extra()
-
-### Community 334 - "_auto_open_browser"
+### Community 343 - "_auto_open_browser"
 Cohesion: 0.54
 Nodes (7): _auto_open_browser(), Path, `graphify update` / `cluster-only` must not pop a browser tab from agents, hooks, _spy(), test_browser_opens_in_a_real_terminal(), test_env_var_disables_it_even_in_a_terminal(), test_no_browser_when_stdout_is_not_a_terminal()
 
-### Community 335 - "load_memory_docs"
-Cohesion: 0.25
-Nodes (8): load_memory_docs(), Parse every memory doc under ``memory_dir``, sorted by date then filename., Determinism hinges on this sort: docs come back oldest-first, filename as tiebre, dead_ends/corrections are appended in doc order, so their determinism rides on, test_dead_ends_and_corrections_follow_doc_order(), test_load_memory_docs_missing_dir_is_empty(), test_load_memory_docs_orders_by_date_then_filename(), test_load_memory_docs_skips_foreign_and_sorts()
-
-### Community 336 - "load_validated_semantic_fragment"
+### Community 344 - "load_validated_semantic_fragment"
 Cohesion: 0.25
 Nodes (8): load_validated_semantic_fragment(), Path, Load and validate a semantic chunk, rejecting oversize files before parsing., Invalid JSON returns an error instead of raising., Oversize files are rejected by stat() — payload is never parsed., test_load_validated_semantic_fragment_accepts_valid(), test_load_validated_semantic_fragment_rejects_invalid_json(), test_load_validated_semantic_fragment_rejects_oversize_before_parse()
 
-### Community 337 - "iter_raw_calls"
+### Community 345 - "iter_raw_calls"
 Cohesion: 0.25
 Nodes (8): iter_raw_calls(), Return raw calls from all per-file extraction fragments.      Parameter is ``Seq, A non-dict per_file entry (e.g. junk fragment) must be silently skipped., `raw_calls` that isn't a list must yield empty., Items inside `raw_calls` list that aren't dicts must be dropped., test_iter_raw_calls_drops_non_dict_items_in_list(), test_iter_raw_calls_skips_non_dict_per_file_entries(), test_iter_raw_calls_skips_non_list_raw_calls()
 
-### Community 338 - "Security Model"
+### Community 346 - "Security Model"
 Cohesion: 0.25
 Nodes (7): Optional network calls, Reporting a Vulnerability, Security Model, Security Policy, Supported Versions, Threat Surface, What graphify does NOT do
 
-### Community 339 - "sample.zig"
+### Community 347 - "sample.zig"
 Cohesion: 0.32
 Nodes (6): add(), Color, multiply(), main(), Point, Shape
 
-### Community 340 - "compilerOptions"
+### Community 348 - "compilerOptions"
 Cohesion: 0.25
 Nodes (7): compilerOptions, module, outDir, strict, target, extends, include
 
-### Community 341 - "test_case_sensitive_resolution.py"
+### Community 349 - "test_case_sensitive_resolution.py"
 Cohesion: 0.54
 Nodes (7): _extract(), _labels(), Cross-file name resolution respects case in case-sensitive languages (#1581).  C, test_case_sensitive_cross_file_ref_respects_case(), test_exact_case_cross_file_still_resolves(), test_php_case_insensitive_resolution_preserved(), test_python_Path_does_not_resolve_to_shell_PATH()
 
-### Community 342 - "_write"
+### Community 350 - "_write"
 Cohesion: 0.32
 Nodes (8): _cli(), Path, tools/list must still build (a Python-source JSON `false` once crashed it) and c, test_cli_errors(), test_cli_json_and_limit(), test_cli_table(), test_mcp_tool_is_declared_with_valid_schema_over_stdio(), _write()
 
-### Community 343 - "_md_link_fixture"
-Cohesion: 0.25
-Nodes (8): _md_link_fixture(), A hub doc linking to sibling docs, plus those docs (#1376)., Inline/wikilink markdown links to sibling docs become references edges (#1376)., External URLs, in-page anchors and images must not produce edges (#1376)., End-to-end: after extract()'s ID remap, link targets are real doc nodes,     so, test_markdown_link_edges_emitted(), test_markdown_link_edges_resolve_to_real_nodes(), test_markdown_link_skips_external_and_images()
-
-### Community 344 - "test_swift_import_resolution.py"
+### Community 352 - "test_swift_import_resolution.py"
 Cohesion: 0.61
 Nodes (7): _import_edges(), _module_nodes(), Path, test_swift_import_edges_survive_build(), test_swift_import_resolves_to_module_node(), test_swift_same_module_imported_twice_collapses_to_one_node(), _write()
 
-### Community 345 - "release-graph.yml"
+### Community 353 - "release-graph.yml"
 Cohesion: 0.29
 Nodes (6): jobs, build-graph, name, on, release, workflow_dispatch
 
-### Community 346 - "build_community_labels"
-Cohesion: 0.43
-Nodes (3): build_community_labels(), Return {community_id: [top_labels]} extracted from graph node data., TestBuildCommunityLabels
-
-### Community 347 - "_path_match"
+### Community 355 - "_path_match"
 Cohesion: 0.43
 Nodes (3): _path_match(), True if graph_src and pr_file refer to the same file (path-boundary safe)., TestPathMatch
 
-### Community 348 - "lessons_fresh"
+### Community 356 - "lessons_fresh"
 Cohesion: 0.29
 Nodes (7): lessons_fresh(), True if ``out_path`` exists and is at least as new as every input that     feeds, test_lessons_fresh_false_when_graph_newer(), test_lessons_fresh_false_when_graph_sidecar_newer(), test_lessons_fresh_false_when_memory_newer(), test_lessons_fresh_missing_output_is_not_fresh(), test_lessons_fresh_true_when_output_newer_than_inputs()
 
-### Community 349 - "Foo"
+### Community 357 - "Foo"
 Cohesion: 0.33
 Nodes (3): Foo, bar, value
 
-### Community 350 - "sample_php_listen.php"
+### Community 358 - "sample_php_listen.php"
 Cohesion: 0.43
 Nodes (6): EventServiceProvider, NotifyAdmins, OrderPlaced, SendWelcomeEmail, ShipOrder, UserRegistered
 
-### Community 351 - "test_kustomization_extraction.py"
+### Community 359 - "test_kustomization_extraction.py"
 Cohesion: 0.29
 Nodes (6): Tests for the Kustomize overlay extractor (Feature 1, IaC indexing) - see agent-, A `resources:` entry pointing at a file not in the corpus (excluded,     renamed, test_extract_kustomization_dispatches_from_extract_module(), test_extract_kustomization_imports_edge_resolves_to_target_file(), test_extract_kustomization_missing_target_produces_no_dangling_edge(), test_extract_kustomization_produces_module_node()
 
-### Community 352 - "test_serve_search_text.py"
+### Community 361 - "test_serve_search_text.py"
 Cohesion: 0.52
 Nodes (6): _graph(), Path, MCP search_text tool: registered, dispatched, and returns hits with their enclos, test_search_text_is_registered_as_an_mcp_tool(), test_search_text_text_reports_invalid_regex_instead_of_raising(), test_search_text_text_returns_hit_with_enclosing_symbol()
 
-### Community 353 - "README.fi-FI.md"
+### Community 362 - "README.fi-FI.md"
 Cohesion: 0.33
 Nodes (5): Asennus, Käyttö, Miten se toimii, Mitä saat, Yksityisyys
 
-### Community 354 - "README.fil-PH.md"
+### Community 363 - "README.fil-PH.md"
 Cohesion: 0.33
 Nodes (5): Ano ang Makukuha Mo, Paano Gumagana, Pag-install, Paggamit, Privacy
 
-### Community 355 - "README.hu-HU.md"
+### Community 364 - "README.hu-HU.md"
 Cohesion: 0.33
 Nodes (5): Adatvédelem, Használat, Hogyan működik, Mit kap, Telepítés
 
-### Community 356 - "README.it-IT.md"
+### Community 365 - "README.it-IT.md"
 Cohesion: 0.33
 Nodes (5): Come funziona, Cosa ottieni, Installazione, Privacy, Utilizzo
 
-### Community 357 - "README.nl-NL.md"
+### Community 366 - "README.nl-NL.md"
 Cohesion: 0.33
 Nodes (5): Gebruik, Hoe het werkt, Installatie, Privacy, Wat je krijgt
 
-### Community 358 - "README.pl-PL.md"
+### Community 367 - "README.pl-PL.md"
 Cohesion: 0.33
 Nodes (5): Co otrzymujesz, Instalacja, Jak to działa, Prywatność, Użycie
 
-### Community 359 - "README.sv-SE.md"
+### Community 368 - "README.sv-SE.md"
 Cohesion: 0.33
 Nodes (5): Användning, Hur det fungerar, Installation, Integritet, Vad du får
 
-### Community 360 - "README.tr-TR.md"
+### Community 369 - "README.tr-TR.md"
 Cohesion: 0.33
 Nodes (5): Gizlilik, Kullanım, Kurulum, Nasıl çalışır, Ne elde edersiniz
 
-### Community 361 - "README.vi-VN.md"
+### Community 370 - "README.vi-VN.md"
 Cohesion: 0.33
 Nodes (5): Cài đặt, Cách hoạt động, Những gì bạn nhận được, Quyền riêng tư, Sử dụng
 
-### Community 362 - "build"
-Cohesion: 0.33
-Nodes (6): build(), Merge multiple extraction results into one graph.      directed=True produces a, build() passes root through to build_from_json (#932)., test_build_relativizes_absolute_source_file(), build() should deduplicate near-identical nodes across extractions., test_build_calls_dedup()
-
-### Community 363 - "normalize_sections"
-Cohesion: 0.33
-Nodes (6): html_anchor_id(), normalize_communities(), normalize_sections(), Generate a stable, unique HTML anchor ID., Normalize section community lists from JSON or simple strings., Ensure sections have safe unique IDs and an overview section first.
-
-### Community 364 - "humanize_label"
+### Community 371 - "humanize_label"
 Cohesion: 0.33
 Nodes (6): humanize_label(), node_display_name(), Readable node label for tables and summaries., Truncate without splitting Mermaid syntax., Convert graph labels into short labels people can scan in a diagram., truncate_text()
 
-### Community 365 - "_norm"
+### Community 373 - "_csharp_type_parameters_in_scope"
 Cohesion: 0.33
-Nodes (6): _norm(), Lowercase + collapse non-alphanumeric runs to space (Unicode-aware)., The prefix-extension guard must not fire for same-length pairs — only strict, The prefix-extension guard must fire for pairs where one is a strict prefix, test_prefix_guard_does_not_block_same_length_typos(), test_prefix_guard_fires_for_extension_pairs()
-
-### Community 366 - "_compute_idf"
-Cohesion: 0.33
-Nodes (6): _compute_idf(), IDF weights for query terms, cached in G.graph['_idf_cache']., A term matching only 1 of N nodes should get IDF > 1., A term matching most nodes should get IDF < 1., test_idf_common_term_gets_low_weight(), test_idf_rare_term_gets_high_weight()
-
-### Community 367 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 368 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 369 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 370 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 371 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 372 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 373 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 374 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+Nodes (6): _csharp_attribute_names(), _csharp_collect_type_refs(), _csharp_type_parameters_in_scope(), Return C# type-parameter names visible from ``node``., Walk a C# type expression; append (name, role, qualified, qualifier) tuples., Collect attribute names from a C# method/declaration's attribute_list children.
 
 ### Community 375 - "graphify reference: query, path, explain"
 Cohesion: 0.33
@@ -1575,73 +1555,73 @@ Nodes (5): For /graphify explain, For /graphify path, graphify reference: query,
 Cohesion: 0.33
 Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
 
-### Community 381 - "sample.c"
+### Community 381 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 382 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 383 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 384 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 385 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 386 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 387 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 388 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 389 - "sample.c"
 Cohesion: 0.47
 Nodes (5): Rectangle, main(), make_rect(), process(), validate()
 
-### Community 382 - "Deploy Guide"
+### Community 390 - "Deploy Guide"
 Cohesion: 0.33
 Nodes (5): Database Migration, Deploy Guide, Full Deploy, Prerequisites, Rollback
 
-### Community 384 - "sample.sh"
+### Community 392 - "sample.sh"
 Cohesion: 0.53
 Nodes (5): APP_ENV, build(), deploy(), sample.sh script, test_suite()
 
-### Community 385 - "TSampleForm"
+### Community 393 - "TSampleForm"
 Cohesion: 0.33
 Nodes (4): TPanel, TLabel, TSampleForm, TTimer
 
-### Community 386 - "sample_php_container.php"
+### Community 394 - "sample_php_container.php"
 Cohesion: 0.67
 Nodes (4): AppServiceProvider, CashierGateway, PaymentGateway, StripeGateway
 
-### Community 387 - "SampleSpec"
+### Community 395 - "SampleSpec"
 Cohesion: 0.33
 Nodes (4): SampleSpec, "should handle #input and return #expected", "should not change value when it's already correct", "should process valid input"
 
-### Community 388 - "_launcher_payload"
-Cohesion: 0.33
-Nodes (6): _launcher_payload(), Extract the `python -c "<payload>"` the hook hands to GRAPHIFY_PYTHON.      The, The launcher is carried inside a shell double-quoted `-c "..."` argument,     so, Both the launcher and the rebuild body it re-executes must parse, so a     quoti, test_launcher_and_rebuild_body_are_valid_python(), test_launcher_payload_is_shell_quote_safe()
+### Community 396 - "_launcher_payload"
+Cohesion: 0.05
+Nodes (40): _hooks_dir(), Return the git hooks directory, respecting core.hooksPath if set (e.g. Husky)., isolate_global_git_config(), _launcher_payload(), Tests for hooks.py - git hook install/uninstall., Keep hook-install tests independent of the user's global hooksPath., Hook script must skip shebang extraction for .exe binaries (Windows)., The detection fallback must emit a message to stderr rather than bare exit 0. (+32 more)
 
-### Community 389 - "test_posix_custom_hookspath_still_works"
-Cohesion: 0.33
-Nodes (6): Path, A Windows-style core.hooksPath must raise (loud failure), not silently     creat, A legitimate POSIX core.hooksPath (Husky-style) must still install., _set_hookspath(), test_posix_custom_hookspath_still_works(), test_windows_hookspath_rejected_no_junk_dir_on_posix()
-
-### Community 390 - "test_http_calls_linking.py"
+### Community 397 - "test_http_calls_linking.py"
 Cohesion: 0.33
 Nodes (5): Tests for the cross-file http_calls resolver (Feature 2 Task 8, iac-http-linking, A repo with no doGet/doPost anywhere must never even attempt     resolution - ch, test_http_calls_interpolated_call_site_gets_no_edge(), test_http_calls_links_fetch_call_site_to_action_handler_target(), test_http_calls_no_gas_handlers_in_corpus_is_a_no_op()
 
-### Community 391 - "test_merge_graphs_cli.py"
+### Community 398 - "test_merge_graphs_cli.py"
 Cohesion: 0.47
 Nodes (5): Path, `graphify merge-graphs` tolerates inputs that disagree on graph type (#1606).  P, _run(), test_merge_graphs_mixed_directed_and_multigraph(), _write()
-
-### Community 392 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 393 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 394 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 395 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 396 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 397 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
-
-### Community 398 - "graphify reference: query, path, explain"
-Cohesion: 0.33
-Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
 
 ### Community 399 - "graphify reference: query, path, explain"
 Cohesion: 0.33
@@ -1675,545 +1655,517 @@ Nodes (5): For /graphify explain, For /graphify path, graphify reference: query,
 Cohesion: 0.33
 Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
 
-### Community 407 - "[0.15.0] - 2026-07-03"
+### Community 407 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 408 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 409 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 410 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 411 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 412 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 413 - "graphify reference: query, path, explain"
+Cohesion: 0.33
+Nodes (5): For /graphify explain, For /graphify path, graphify reference: query, path, explain, Step 0 — Constrained query expansion (REQUIRED before traversal), Step 1 — Traversal
+
+### Community 414 - "[0.15.0] - 2026-07-03"
 Cohesion: 0.40
 Nodes (5): [0.15.0] - 2026-07-03, Added, Changed, Documentation, Fixed
 
-### Community 408 - "[0.24.2] - 2026-08-24"
+### Community 415 - "[0.24.2] - 2026-08-24"
 Cohesion: 0.40
 Nodes (5): [0.24.2] - 2026-08-24, Added, Changed, Documentation, Fixed
 
-### Community 409 - "[0.3.1] - 2026-04-06"
+### Community 416 - "[0.3.1] - 2026-04-06"
 Cohesion: 0.40
 Nodes (5): [0.3.1] - 2026-04-06, Added, Changed, Documentation, Fixed
 
-### Community 410 - "[0.8.39] - 2026-06-12"
+### Community 417 - "[0.8.39] - 2026-06-12"
 Cohesion: 0.40
 Nodes (5): [0.8.39] - 2026-06-12, Added, Changed, Documentation, Fixed
 
-### Community 411 - "[0.8.40] - 2026-06-16"
+### Community 418 - "[0.8.40] - 2026-06-16"
 Cohesion: 0.40
 Nodes (5): [0.8.40] - 2026-06-16, Added, Changed, Documentation, Fixed
 
-### Community 412 - "[0.9.5] - 2026-07-02"
+### Community 419 - "[0.9.5] - 2026-07-02"
 Cohesion: 0.40
 Nodes (5): [0.9.5] - 2026-07-02, Added, Changed, Documentation, Fixed
 
-### Community 413 - "[1.0.0] - 2026-04-05"
+### Community 420 - "[1.0.0] - 2026-04-05"
 Cohesion: 0.40
 Nodes (5): [1.0.0] - 2026-04-05, Added, Changed, Documentation, Fixed
 
-### Community 414 - "SamplePackage"
+### Community 421 - "SamplePackage"
 Cohesion: 0.40
 Nodes (5): FCL, LCL, sampleutils, sample, SamplePackage
 
-### Community 415 - "_cpp_preprocess"
-Cohesion: 0.40
-Nodes (4): _cpp_preprocess(), Run cpp -w -P on a capital-F Fortran file and return preprocessed bytes.      Fa, The Fortran C-preprocessor path is hardened against argument injection (F5).  A, test_cpp_preprocess_passes_absolute_path()
-
-### Community 416 - "resolve_pascal_inherited_calls"
-Cohesion: 0.50
-Nodes (4): _pascal_raw_calls(), Cross-file resolution for Pascal/Delphi calls to inherited methods.  The per-fil, Resolve Pascal/Delphi calls to a method inherited across file boundaries.      P, resolve_pascal_inherited_calls()
-
-### Community 417 - "update_release_version"
+### Community 423 - "update_release_version"
 Cohesion: 0.60
 Nodes (3): Path, update_release_version(), test_release_version_updates_semver_and_build_surfaces()
 
-### Community 418 - "TOtherGadget"
+### Community 424 - "TOtherGadget"
 Cohesion: 0.40
 Nodes (3): OtherGadget, TObject, TOtherGadget
 
-### Community 419 - "MyApp.Accounts.User"
+### Community 425 - "sample.sql"
+Cohesion: 0.60
+Nodes (3): active_users, organizations, users
+
+### Community 426 - "MyApp.Accounts.User"
 Cohesion: 0.50
 Nodes (3): MyApp.Accounts.User, create(), validate()
 
-### Community 423 - "sample.sln"
+### Community 430 - "sample.sln"
 Cohesion: 0.70
 Nodes (3): Domain, WebApi, Tests
 
-### Community 424 - "MainViewModel"
+### Community 431 - "MainViewModel"
 Cohesion: 0.40
 Nodes (3): MainViewModel, MainWindow, Window
 
-### Community 425 - "UserControl"
+### Community 432 - "UserControl"
 Cohesion: 0.40
 Nodes (3): SettingsViewModel, SettingsView, UserControl
 
-### Community 426 - "AGENTS.md"
+### Community 433 - "AGENTS.md"
 Cohesion: 0.50
 Nodes (3): Agent Memory, graphify, Skills & Rules
 
-### Community 427 - "[0.10.0] - 2026-07-01"
+### Community 434 - "[0.10.0] - 2026-07-01"
 Cohesion: 0.50
 Nodes (4): [0.10.0] - 2026-07-01, Added, Documentation, Fixed
 
-### Community 428 - "[0.16.0] - 2026-07-04"
+### Community 435 - "[0.16.0] - 2026-07-04"
 Cohesion: 0.50
 Nodes (4): [0.16.0] - 2026-07-04, Added, Documentation, Fixed
 
-### Community 429 - "[0.17.0] - 2026-07-18"
+### Community 436 - "[0.17.0] - 2026-07-18"
 Cohesion: 0.50
 Nodes (4): [0.17.0] - 2026-07-18, Added, Documentation, Fixed
 
-### Community 430 - "[0.18.0] - 2026-07-19"
+### Community 437 - "[0.18.0] - 2026-07-19"
 Cohesion: 0.50
 Nodes (4): [0.18.0] - 2026-07-19, Added, Documentation, Fixed
 
-### Community 431 - "[0.21.0] - 2026-07-25"
+### Community 438 - "[0.21.0] - 2026-07-25"
 Cohesion: 0.50
 Nodes (4): [0.21.0] - 2026-07-25, Added, Documentation, Fixed
 
-### Community 432 - "[0.22.0] - 2026-07-26"
+### Community 439 - "[0.22.0] - 2026-07-26"
 Cohesion: 0.50
 Nodes (4): [0.22.0] - 2026-07-26, Added, Documentation, Fixed
 
-### Community 433 - "[0.23.0] - 2026-07-30"
+### Community 440 - "[0.23.0] - 2026-07-30"
 Cohesion: 0.50
 Nodes (4): [0.23.0] - 2026-07-30, Changed, Documentation, Fixed
 
-### Community 434 - "[0.25.0] - 2026-09-16"
+### Community 441 - "[0.25.0] - 2026-09-16"
 Cohesion: 0.50
 Nodes (4): [0.25.0] - 2026-09-16, Added, Documentation, Fixed
 
-### Community 435 - "[0.26.0] - 2026-10-03"
+### Community 442 - "[0.26.0] - 2026-10-03"
 Cohesion: 0.50
 Nodes (4): [0.26.0] - 2026-10-03, Added, Documentation, Fixed
 
-### Community 436 - "[0.27.0] - 2026-10-22"
+### Community 443 - "[0.27.0] - 2026-10-22"
 Cohesion: 0.50
 Nodes (4): [0.27.0] - 2026-10-22, Added, Documentation, Fixed
 
-### Community 437 - "[0.4.0] - 2026-04-10"
+### Community 444 - "[0.4.0] - 2026-04-10"
 Cohesion: 0.50
 Nodes (4): [0.4.0] - 2026-04-10, Added, Documentation, Fixed
 
-### Community 438 - "[0.6.7] - 2026-05-02"
+### Community 445 - "[0.6.7] - 2026-05-02"
 Cohesion: 0.50
 Nodes (4): [0.6.7] - 2026-05-02, Added, Documentation, Fixed
 
-### Community 439 - "[0.7.19] - 2026-05-14"
+### Community 446 - "[0.7.19] - 2026-05-14"
 Cohesion: 0.50
 Nodes (4): [0.7.19] - 2026-05-14, Added, Documentation, Fixed
 
-### Community 440 - "[0.7.8] - 2026-05-06"
+### Community 447 - "[0.7.8] - 2026-05-06"
 Cohesion: 0.50
 Nodes (4): [0.7.8] - 2026-05-06, Added, Documentation, Fixed
 
-### Community 441 - "[0.8.16] - 2026-05-22"
+### Community 448 - "[0.8.16] - 2026-05-22"
 Cohesion: 0.50
 Nodes (4): [0.8.16] - 2026-05-22, Added, Documentation, Fixed
 
-### Community 442 - "[0.8.18] - 2026-05-24"
+### Community 449 - "[0.8.18] - 2026-05-24"
 Cohesion: 0.50
 Nodes (4): [0.8.18] - 2026-05-24, Added, Documentation, Fixed
 
-### Community 443 - "[0.8.22] - 2026-05-27"
+### Community 450 - "[0.8.22] - 2026-05-27"
 Cohesion: 0.50
 Nodes (4): [0.8.22] - 2026-05-27, Added, Documentation, Fixed
 
-### Community 444 - "[0.8.25] - 2026-05-29"
+### Community 451 - "[0.8.25] - 2026-05-29"
 Cohesion: 0.50
 Nodes (4): [0.8.25] - 2026-05-29, Added, Documentation, Fixed
 
-### Community 445 - "[0.8.32] - 2026-06-05"
+### Community 452 - "[0.8.32] - 2026-06-05"
 Cohesion: 0.50
 Nodes (4): [0.8.32] - 2026-06-05, Added, Documentation, Fixed
 
-### Community 446 - "[0.8.34] - 2026-06-07"
+### Community 453 - "[0.8.34] - 2026-06-07"
 Cohesion: 0.50
 Nodes (4): [0.8.34] - 2026-06-07, Added, Documentation, Fixed
 
-### Community 447 - "[0.8.38] - 2026-06-11"
+### Community 454 - "[0.8.38] - 2026-06-11"
 Cohesion: 0.50
 Nodes (4): [0.8.38] - 2026-06-11, Added, Documentation, Fixed
 
-### Community 448 - "[0.8.47] - 2026-06-24"
+### Community 455 - "[0.8.47] - 2026-06-24"
 Cohesion: 0.50
 Nodes (4): [0.8.47] - 2026-06-24, Added, Documentation, Fixed
 
-### Community 449 - "[0.8.49] - 2026-06-25"
+### Community 456 - "[0.8.49] - 2026-06-25"
 Cohesion: 0.50
 Nodes (4): [0.8.49] - 2026-06-25, Added, Changed, Fixed
 
-### Community 450 - "[0.8.50] - 2026-06-27"
+### Community 457 - "[0.8.50] - 2026-06-27"
 Cohesion: 0.50
 Nodes (4): [0.8.50] - 2026-06-27, Added, Documentation, Fixed
 
-### Community 451 - "[0.8.51] - 2026-06-28"
+### Community 458 - "[0.8.51] - 2026-06-28"
 Cohesion: 0.50
 Nodes (4): [0.8.51] - 2026-06-28, Added, Documentation, Fixed
 
-### Community 452 - "[0.9.0] - 2026-06-28"
+### Community 459 - "[0.9.0] - 2026-06-28"
 Cohesion: 0.50
 Nodes (4): [0.9.0] - 2026-06-28, Added, Documentation, Fixed
 
-### Community 453 - "[0.9.2] - 2026-06-29"
+### Community 460 - "[0.9.2] - 2026-06-29"
 Cohesion: 0.50
 Nodes (4): [0.9.2] - 2026-06-29, Added, Documentation, Fixed
 
-### Community 454 - "[0.9.3] - 2026-06-30"
+### Community 461 - "[0.9.3] - 2026-06-30"
 Cohesion: 0.50
 Nodes (4): [0.9.3] - 2026-06-30, Added, Documentation, Fixed
 
-### Community 455 - "[0.9.4] - 2026-07-01"
+### Community 462 - "[0.9.4] - 2026-07-01"
 Cohesion: 0.50
 Nodes (4): [0.9.4] - 2026-07-01, Added, Documentation, Fixed
 
-### Community 456 - "_numeric_tokens_differ"
+### Community 467 - "_kotlin_extract_object_literals"
 Cohesion: 0.50
-Nodes (4): _numeric_tokens_differ(), True when two labels carry different embedded numbers (#1284).      Long labels, _numeric_tokens_differ compares digit runs as zero-padding-insensitive     multi, test_numeric_tokens_differ_helper()
+Nodes (4): _kotlin_extract_object_literals(), _kotlin_user_type_name(), Return the head identifier text from a Kotlin user_type node (without generics)., Scan scope_node for object_literal descendants and emit owner nodes/edges/member
 
-### Community 457 - "_detached_launch"
+### Community 469 - "_detached_launch"
 Cohesion: 0.50
 Nodes (4): _detached_launch(), Return a POSIX-sh line that runs ``rebuild_body`` as a detached background     P, The launcher must run via the resolved $GRAPHIFY_PYTHON, not a bare     `python`, test_detached_launch_targets_graphify_python()
 
-### Community 458 - "graphify reference: add a URL and watch a folder"
+### Community 471 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 459 - "graphify reference: commit hook and native AGENTS.md integration"
+### Community 472 - "graphify reference: commit hook and native AGENTS.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native AGENTS.md integration, graphify reference: commit hook and native AGENTS.md integration
 
-### Community 460 - "graphify reference: incremental update and cluster-only"
+### Community 473 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 461 - "graphify reference: add a URL and watch a folder"
+### Community 474 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 462 - "graphify reference: commit hook and native AGENTS.md integration"
+### Community 475 - "graphify reference: commit hook and native AGENTS.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native AGENTS.md integration, graphify reference: commit hook and native AGENTS.md integration
 
-### Community 463 - "graphify reference: incremental update and cluster-only"
+### Community 476 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 464 - "graphify reference: add a URL and watch a folder"
+### Community 477 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 465 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 478 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 466 - "graphify reference: incremental update and cluster-only"
+### Community 479 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 467 - "graphify reference: add a URL and watch a folder"
+### Community 480 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 468 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 481 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 469 - "graphify reference: incremental update and cluster-only"
+### Community 482 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 470 - "graphify reference: add a URL and watch a folder"
+### Community 483 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 471 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 484 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 472 - "graphify reference: incremental update and cluster-only"
+### Community 485 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 473 - "graphify reference: add a URL and watch a folder"
+### Community 486 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 474 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 487 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 475 - "graphify reference: incremental update and cluster-only"
+### Community 488 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 476 - "graphify reference: add a URL and watch a folder"
+### Community 489 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 477 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 490 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 478 - "graphify reference: incremental update and cluster-only"
+### Community 491 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 479 - "graphify reference: add a URL and watch a folder"
+### Community 492 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 480 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 493 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 481 - "graphify reference: incremental update and cluster-only"
+### Community 494 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 482 - "graphify reference: add a URL and watch a folder"
+### Community 495 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 483 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 496 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 484 - "graphify reference: incremental update and cluster-only"
+### Community 497 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 485 - "graphify reference: add a URL and watch a folder"
+### Community 498 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 486 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 499 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 487 - "graphify reference: incremental update and cluster-only"
+### Community 500 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 488 - "graphify reference: add a URL and watch a folder"
+### Community 501 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 489 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 502 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 490 - "graphify reference: incremental update and cluster-only"
+### Community 503 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 491 - "graphify reference: add a URL and watch a folder"
+### Community 504 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 492 - "graphify reference: commit hook and native AGENTS.md integration"
+### Community 505 - "graphify reference: commit hook and native AGENTS.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native AGENTS.md integration (Trae), graphify reference: commit hook and native AGENTS.md integration
 
-### Community 493 - "graphify reference: incremental update and cluster-only"
+### Community 506 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 494 - "graphify reference: add a URL and watch a folder"
+### Community 507 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 495 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 508 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 496 - "graphify reference: incremental update and cluster-only"
+### Community 509 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 497 - "graphify reference: add a URL and watch a folder"
+### Community 510 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 498 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 511 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 499 - "graphify reference: incremental update and cluster-only"
+### Community 512 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 501 - "repos"
+### Community 514 - "repos"
 Cohesion: 0.50
 Nodes (3): repos, repos[0], repos[1]
 
-### Community 506 - "App"
+### Community 519 - "App"
 Cohesion: 0.83
 Nodes (3): App(), fmtCount(), fmtDate()
 
-### Community 509 - "graphify reference: add a URL and watch a folder"
+### Community 522 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 510 - "graphify reference: commit hook and native AGENTS.md integration"
+### Community 523 - "graphify reference: commit hook and native AGENTS.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native AGENTS.md integration, graphify reference: commit hook and native AGENTS.md integration
 
-### Community 511 - "graphify reference: incremental update and cluster-only"
+### Community 524 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 512 - "graphify reference: add a URL and watch a folder"
+### Community 525 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 513 - "graphify reference: commit hook and native AGENTS.md integration"
+### Community 526 - "graphify reference: commit hook and native AGENTS.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native AGENTS.md integration, graphify reference: commit hook and native AGENTS.md integration
 
-### Community 514 - "graphify reference: incremental update and cluster-only"
+### Community 527 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 515 - "graphify reference: add a URL and watch a folder"
+### Community 528 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 516 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 529 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 517 - "graphify reference: incremental update and cluster-only"
+### Community 530 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 518 - "graphify reference: add a URL and watch a folder"
+### Community 531 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 519 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 532 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 520 - "graphify reference: incremental update and cluster-only"
+### Community 533 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 521 - "graphify reference: add a URL and watch a folder"
+### Community 534 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 522 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 535 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 523 - "graphify reference: incremental update and cluster-only"
+### Community 536 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 524 - "graphify reference: add a URL and watch a folder"
+### Community 537 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 525 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 538 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 526 - "graphify reference: incremental update and cluster-only"
+### Community 539 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 527 - "graphify reference: add a URL and watch a folder"
+### Community 540 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 528 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 541 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 529 - "graphify reference: incremental update and cluster-only"
+### Community 542 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 530 - "graphify reference: add a URL and watch a folder"
+### Community 543 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 531 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 544 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 532 - "graphify reference: incremental update and cluster-only"
+### Community 545 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 533 - "graphify reference: add a URL and watch a folder"
+### Community 546 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 534 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 547 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 535 - "graphify reference: incremental update and cluster-only"
+### Community 548 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 536 - "graphify reference: add a URL and watch a folder"
+### Community 549 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
-### Community 537 - "graphify reference: commit hook and native CLAUDE.md integration"
+### Community 550 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
 
-### Community 538 - "graphify reference: incremental update and cluster-only"
+### Community 551 - "graphify reference: incremental update and cluster-only"
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
-
-### Community 539 - "graphify reference: add a URL and watch a folder"
-Cohesion: 0.50
-Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
-
-### Community 540 - "graphify reference: commit hook and native CLAUDE.md integration"
-Cohesion: 0.50
-Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
-
-### Community 541 - "graphify reference: incremental update and cluster-only"
-Cohesion: 0.50
-Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
-
-### Community 542 - "graphify reference: add a URL and watch a folder"
-Cohesion: 0.50
-Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
-
-### Community 543 - "graphify reference: commit hook and native AGENTS.md integration"
-Cohesion: 0.50
-Nodes (3): For git commit hook, For native AGENTS.md integration (Trae), graphify reference: commit hook and native AGENTS.md integration
-
-### Community 544 - "graphify reference: incremental update and cluster-only"
-Cohesion: 0.50
-Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
-
-### Community 545 - "graphify reference: add a URL and watch a folder"
-Cohesion: 0.50
-Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
-
-### Community 546 - "graphify reference: commit hook and native CLAUDE.md integration"
-Cohesion: 0.50
-Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
-
-### Community 547 - "graphify reference: incremental update and cluster-only"
-Cohesion: 0.50
-Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
-
-### Community 548 - "graphify reference: add a URL and watch a folder"
-Cohesion: 0.50
-Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
-
-### Community 549 - "graphify reference: commit hook and native CLAUDE.md integration"
-Cohesion: 0.50
-Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
-
-### Community 550 - "graphify reference: incremental update and cluster-only"
-Cohesion: 0.50
-Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
-
-### Community 551 - "graphify reference: commit hook and native AGENTS.md integration"
-Cohesion: 0.50
-Nodes (3): For git commit hook, For native AGENTS.md integration@@AGENTS_HEADING_SUFFIX@@, graphify reference: commit hook and native AGENTS.md integration
 
 ### Community 552 - "graphify reference: add a URL and watch a folder"
 Cohesion: 0.50
@@ -2227,87 +2179,155 @@ Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify refer
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
-### Community 555 - "[0.19.0] - 2026-07-19"
+### Community 555 - "graphify reference: add a URL and watch a folder"
+Cohesion: 0.50
+Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
+
+### Community 556 - "graphify reference: commit hook and native AGENTS.md integration"
+Cohesion: 0.50
+Nodes (3): For git commit hook, For native AGENTS.md integration (Trae), graphify reference: commit hook and native AGENTS.md integration
+
+### Community 557 - "graphify reference: incremental update and cluster-only"
+Cohesion: 0.50
+Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
+
+### Community 558 - "graphify reference: add a URL and watch a folder"
+Cohesion: 0.50
+Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
+
+### Community 559 - "graphify reference: commit hook and native CLAUDE.md integration"
+Cohesion: 0.50
+Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
+
+### Community 560 - "graphify reference: incremental update and cluster-only"
+Cohesion: 0.50
+Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
+
+### Community 561 - "graphify reference: add a URL and watch a folder"
+Cohesion: 0.50
+Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
+
+### Community 562 - "graphify reference: commit hook and native CLAUDE.md integration"
+Cohesion: 0.50
+Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
+
+### Community 563 - "graphify reference: incremental update and cluster-only"
+Cohesion: 0.50
+Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
+
+### Community 564 - "graphify reference: commit hook and native AGENTS.md integration"
+Cohesion: 0.50
+Nodes (3): For git commit hook, For native AGENTS.md integration@@AGENTS_HEADING_SUFFIX@@, graphify reference: commit hook and native AGENTS.md integration
+
+### Community 565 - "graphify reference: add a URL and watch a folder"
+Cohesion: 0.50
+Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
+
+### Community 566 - "graphify reference: commit hook and native CLAUDE.md integration"
+Cohesion: 0.50
+Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
+
+### Community 567 - "graphify reference: incremental update and cluster-only"
+Cohesion: 0.50
+Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
+
+### Community 568 - "[0.11.1] - 2026-07-02"
+Cohesion: 0.67
+Nodes (3): [0.11.1] - 2026-07-02, Added, Fixed
+
+### Community 569 - "[0.19.0] - 2026-07-19"
 Cohesion: 0.67
 Nodes (3): [0.19.0] - 2026-07-19, Added, Fixed
 
-### Community 556 - "[0.24.0] - 2026-08-24"
+### Community 570 - "[0.24.0] - 2026-08-24"
 Cohesion: 0.67
 Nodes (3): [0.24.0] - 2026-08-24, Documentation, Fixed
 
-### Community 557 - "[0.25.1] - 2026-09-18"
+### Community 571 - "[0.25.1] - 2026-09-18"
 Cohesion: 0.67
 Nodes (3): [0.25.1] - 2026-09-18, Added, Documentation
 
-### Community 558 - "[0.7.10] - 2026-05-07"
+### Community 572 - "[0.7.10] - 2026-05-07"
 Cohesion: 0.67
 Nodes (3): [0.7.10] - 2026-05-07, Changed, Fixed
 
-### Community 559 - "[0.7.18] - 2026-05-13"
+### Community 573 - "[0.7.18] - 2026-05-13"
 Cohesion: 0.67
 Nodes (3): [0.7.18] - 2026-05-13, Documentation, Fixed
 
-### Community 560 - "[0.7.9] - 2026-05-07"
+### Community 574 - "[0.7.9] - 2026-05-07"
 Cohesion: 0.67
 Nodes (3): [0.7.9] - 2026-05-07, Added, Fixed
 
-### Community 561 - "[0.8.11] - 2026-05-18"
+### Community 575 - "[0.8.11] - 2026-05-18"
 Cohesion: 0.67
 Nodes (3): [0.8.11] - 2026-05-18, Changed, Fixed
 
-### Community 562 - "[0.8.20] - 2026-05-26"
+### Community 576 - "[0.8.20] - 2026-05-26"
 Cohesion: 0.67
 Nodes (3): [0.8.20] - 2026-05-26, Added, Fixed
 
-### Community 563 - "[0.8.26] - 2026-05-30"
+### Community 577 - "[0.8.26] - 2026-05-30"
 Cohesion: 0.67
 Nodes (3): [0.8.26] - 2026-05-30, Added, Documentation
 
-### Community 564 - "[0.8.33] - 2026-06-06"
+### Community 578 - "[0.8.33] - 2026-06-06"
 Cohesion: 0.67
 Nodes (3): [0.8.33] - 2026-06-06, Added, Fixed
 
-### Community 565 - "[0.8.36] - 2026-06-08"
+### Community 579 - "[0.8.35] - 2026-06-07"
+Cohesion: 0.67
+Nodes (3): [0.8.35] - 2026-06-07, Added, Fixed
+
+### Community 580 - "[0.8.36] - 2026-06-08"
 Cohesion: 0.67
 Nodes (3): [0.8.36] - 2026-06-08, Added, Fixed
 
-### Community 566 - "[0.8.37] - 2026-06-10"
+### Community 581 - "[0.8.37] - 2026-06-10"
 Cohesion: 0.67
 Nodes (3): [0.8.37] - 2026-06-10, Changed, Fixed
 
-### Community 567 - "[0.8.41] - 2026-06-17"
+### Community 582 - "[0.8.41] - 2026-06-17"
 Cohesion: 0.67
 Nodes (3): [0.8.41] - 2026-06-17, Added, Fixed
 
-### Community 568 - "[0.8.46] - 2026-06-23"
+### Community 583 - "[0.8.46] - 2026-06-23"
 Cohesion: 0.67
 Nodes (3): [0.8.46] - 2026-06-23, Changed, Fixed
 
-### Community 569 - "[0.9.1] - 2026-06-28"
+### Community 584 - "[0.9.1] - 2026-06-28"
 Cohesion: 0.67
 Nodes (3): [0.9.1] - 2026-06-28, Documentation, Fixed
 
+### Community 590 - "_NoFileRedirectHandler"
+Cohesion: 0.18
+Nodes (10): _NoFileRedirectHandler, Raise ValueError if *url* is not http or https, or targets a private/internal IP, Redirect handler that re-validates every redirect target.      Prevents open-red, validate_url(), test_validate_url_accepts_http(), test_validate_url_accepts_https(), test_validate_url_rejects_data(), test_validate_url_rejects_empty_scheme() (+2 more)
+
+### Community 716 - "test_unique_cross_document_symbol_still_resolves"
+Cohesion: 0.06
+Nodes (35): Comprehensive tests for graphify.scip_ingest., Symbol ending with '#' and no display_name must produce a non-empty label., Cross-document relationship resolves to the target document's node id., When a target symbol is defined in exactly ONE other document, the edge     stil, When a target symbol is defined in 2+ documents AND the source is in a     third, Control characters in SCIP description must not survive into the graph., SCIP relationship payloads embedded in edge metadata must be sanitized., When occurrences key is missing entirely, falls back to empty source_location. (+27 more)
+
 ## Knowledge Gaps
-- **2020 isolated node(s):** `github`, `name`, `pull_request`, `push`, `contents` (+2015 more)
+- **2022 isolated node(s):** `github`, `name`, `pull_request`, `push`, `contents` (+2017 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **172 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **170 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 - **15 possibly unreachable function(s):** `Config`, `CounterRecord`, `DataGrid`, `WeatherDisplay`, `_ApiKeyMiddleware` (+10 more)
   Not reached from any recognized entry point - could be dead code, or dynamically dispatched/decorator-registered.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `extract()` connect `extract` to `extract.py`, `test_watch.py`, `test_edit.py`, `__main__.py`, `test_extract.py`, `test_java_type_resolution.py`, `test_http_calls_linking.py`, `_make_id`, `test_mcp_stdio.py`, `test_python_import_resolution.py`, `test_swift_cross_file_calls.py`, `test_languages.py`, `main`, `test_multilang.py`, `test_dotnet.py`, `test_swift_builtin_noise.py`, `Path`, `test_csharp_member_calls.py`, `extract_gherkin`, `test_extract_dockerfile_dispatches_from_extract_module`, `test_swift_extension_across_files_merges_into_canonical_type`, `test_ts_constructor_injection_calls_edge`, `test_extract_robot_dispatches_from_extract_module`, `test_js_import_resolution.py`, `test_extract_robot_cross_file_call_resolves_case_insensitively`, `test_indirect_call_external_import_shadow.py`, `_corpus`, `_edge_labels`, `cache.py`, `extract_yaml`, `test_indirect_dispatch.py`, `_extract_generic`, `test_stdlib_name_collision_is_not_repointed_across_trees`, `extract_css`, `LanguageResolver`, `test_cpp_objc_cross_file_calls.py`, `paths.py`, `CsharpNameResolver`, `test_src_layout_import_resolution.py`, `RuntimeError`, `test_kotlin_object_literal.py`, `test_python_module_qualified_calls.py`, `test_case_sensitive_resolution.py`, `test_pipeline.py`, `_md_link_fixture`, `test_swift_import_resolution.py`, `test_manifest_ingest.py`, `test_indirect_call_for_of_binding_shadow.py`, `_get_extractor`, `test_indirect_call_nested_closure_shadow.py`, `test_kustomization_extraction.py`, `test_serve_search_text.py`, `extract_markdown`, `test_indirect_call_function_expression_shadow.py`, `_key`, `test_file_node_id_spec.py`, `test_indirect_call_catch_binding_shadow.py`, `test_pascal_resolution.py`, `test_dataflow.py`, `test_ruby_resolution.py`, `test_vue_extraction.py`, `test_csharp_partial_classes.py`, `test_ts_inheritance.py`, `bench_extract.py`, `test_snippet.py`, `search_text`?**
-  _High betweenness centrality (0.090) - this node is a cross-community bridge._
-- **Why does `main()` connect `main` to `test_watch.py`, `__main__.py`, `detect.py`, `test_serve.py`, `cluster`, `test_install.py`, `test_multigraph_diagnostics.py`, `detect`, `test_chunking.py`, `test_analyze.py`, `test_codebuddy.py`, `Graph`, `to_wiki`, `analyze.py`, `extract`, `query.py`, `test_security.py`, `test_affected_cli.py`, `test_build.py`, `test_devin.py`, `test_install_references.py`, `extract_files_direct`, `test_cypher.py`, `test_indirect_dispatch.py`, `parse_and_execute_pattern`, `reflect.py`, `test_global_graph.py`, `validate_extraction`, `ingest_scip_json`, `test_path_cli.py`, `build.py`, `paths.py`, `_query_graph_text`, `_call_llm`, `generate`, `security.py`, `test_labeling.py`, `lsp_resolve.py`, `test_benchmark.py`, `build_merge`, `build_from_json`, `score_all`, `prs.py`, `write_callflow_html`, `check_for_update`, `describe.py`, `claude_install`, `test_dataflow.py`, `test_agents_platform.py`, `affected.py`, `edit.py`, `test_snippet.py`, `search_text`, `test_edit.py`, `check_git_clone_update`, `find_path_with_disambiguation`, `introspect_cargo`, `cache.py`, `install`, `save_query_result`, `test_explain_cli.py`, `file_hash`, `cypher.py`, `uninstall`, `test_pipeline.py`, `cache_dir`, `test_describe.py`, `test_incomplete_build_guard.py`, `label_communities_by_hub`, `test_stale_hint.py`, `_build_server`, `load_project_config`, `push_to_falkordb`, `tree_html.py`, `_auto_open_browser`, `_write`, `lessons_fresh`, `build`?**
-  _High betweenness centrality (0.083) - this node is a cross-community bridge._
-- **Why does `build_from_json()` connect `build_from_json` to `test_swift_cross_file_calls.py`, `test_watch.py`, `test_edit.py`, `__main__.py`, `test_java_type_resolution.py`, `test_mcp_stdio.py`, `_make_id`, `cluster`, `test_languages.py`, `test_multigraph_diagnostics.py`, `main`, `test_analyze.py`, `Graph`, `push_to_falkordb`, `_labels`, `extract_python`, `test_build.py`, `test_reflect.py`, `validate_extraction`, `ingest_scip_json`, `test_cpp_objc_cross_file_calls.py`, `test_cli_export.py`, `build.py`, `generate`, `test_src_layout_import_resolution.py`, `semantic_cleanup.py`, `test_scip_ingest.py`, `build_merge`, `test_pipeline.py`, `test_cross_language_bridges.py`, `test_swift_import_resolution.py`, `test_terraform.py`, `test_manifest_ingest.py`, `test_serve_search_text.py`, `score_all`, `routes.py`, `build`, `test_pascal_resolution.py`, `test_dataflow.py`, `test_snippet.py`, `search_text`?**
-  _High betweenness centrality (0.058) - this node is a cross-community bridge._
+- **Why does `main()` connect `test_extract_cli.py` to `test_watch.py`, `main`, `__main__.py`, `detect.py`, `test_analyze.py`, `test_scip_ingest.py`, `test_detect.py`, `cluster`, `Graph`, `detect`, `test_codebuddy.py`, `to_wiki`, `extract`, `test_lsp_resolve.py`, `test_chunking.py`, `test_devin.py`, `test_multigraph_diagnostics.py`, `test_describe.py`, `test_install_references.py`, `test_build.py`, `test_cypher.py`, `_find_node`, `test_indirect_dispatch.py`, `test_confidence.py`, `parse_and_execute_pattern`, `test_global_graph.py`, `reflect.py`, `extract_files_direct`, `build.py`, `test_path_cli.py`, `cross_cutting_nodes`, `_query_graph_text`, `build_merge`, `build_from_json`, `test_security.py`, `test_hooks.py`, `test_labeling.py`, `claude_install`, `test_benchmark.py`, `_call_claude_cli`, `extract_bash`, `test_affected_cli.py`, `write_callflow_html`, `paths.py`, `check_for_update`, `deduplicate_entities`, `test_dataflow.py`, `test_agents_platform.py`, `edit.py`, `multigraph_compat.py`, `test_snippet.py`, `search_text`, `ci_affected_tests`, `test_edit.py`, `check_git_clone_update`, `prs.py`, `find_path_with_disambiguation`, `test_install_roundtrip.py`, `introspect_cargo`, `validate_extraction`, `cache.py`, `ingest.py`, `test_explain_cli.py`, `file_hash`, `cypher.py`, `save_query_result`, `affected.py`, `test_pipeline.py`, `cache_dir`, `uninstall`, `test_incomplete_build_guard.py`, `label_communities_by_hub`, `test_stale_hint.py`, `_build_server`, `load_project_config`, `validate_graph_path`, `push_to_falkordb`, `tree_html.py`, `_auto_open_browser`, `_write`, `lessons_fresh`?**
+  _High betweenness centrality (0.106) - this node is a cross-community bridge._
+- **Why does `extract()` connect `extract` to `test_watch.py`, `extract.py`, `disambiguate_ambiguous_candidates`, `__main__.py`, `extract_fish`, `extract_gherkin`, `_read_text`, `test_java_type_resolution.py`, `test_mcp_stdio.py`, `test_python_import_resolution.py`, `test_languages.py`, `test_extract.py`, `test_dotnet.py`, `test_http_calls_linking.py`, `test_multilang.py`, `test_csharp_member_calls.py`, `Path`, `test_swift_builtin_noise.py`, `test_js_import_resolution.py`, `extract_toml`, `_edge_labels`, `css.py`, `test_indirect_call_external_import_shadow.py`, `extract_yaml`, `_corpus`, `cache.py`, `test_indirect_dispatch.py`, `test_cpp_objc_cross_file_calls.py`, `test_ruby_resolution.py`, `test_src_layout_import_resolution.py`, `_get_extractor`, `test_extract_cli.py`, `test_kotlin_object_literal.py`, `test_python_module_qualified_calls.py`, `test_manifest_ingest.py`, `test_pipeline.py`, `extract_html`, `test_robot_extraction.py`, `test_case_sensitive_resolution.py`, `test_indirect_call_for_of_binding_shadow.py`, `test_indirect_call_nested_closure_shadow.py`, `extract_markdown`, `test_indirect_call_function_expression_shadow.py`, `test_swift_import_resolution.py`, `_key`, `test_kustomization_extraction.py`, `RuntimeError`, `test_serve_search_text.py`, `test_dataflow.py`, `test_file_node_id_spec.py`, `LanguageResolver`, `test_indirect_call_catch_binding_shadow.py`, `test_pascal_resolution.py`, `test_vue_extraction.py`, `test_snippet.py`, `search_text`, `test_swift_cross_file_calls.py`, `test_edit.py`, `test_csharp_partial_classes.py`, `test_ts_inheritance.py`, `bench_extract.py`, `CsharpNameResolver`?**
+  _High betweenness centrality (0.104) - this node is a cross-community bridge._
+- **Why does `build_from_json()` connect `build_from_json` to `test_watch.py`, `__main__.py`, `test_analyze.py`, `test_scip_ingest.py`, `_read_text`, `test_java_type_resolution.py`, `test_mcp_stdio.py`, `cluster`, `test_languages.py`, `detect`, `extract_js`, `push_to_falkordb`, `sample.rs`, `validate_extraction`, `test_reflect.py`, `test_build.py`, `extract_python`, `test_confidence.py`, `build.py`, `test_cli_export.py`, `test_cpp_objc_cross_file_calls.py`, `build_merge`, `test_src_layout_import_resolution.py`, `claude_install`, `generate`, `test_unique_cross_document_symbol_still_resolves`, `test_extract_cli.py`, `semantic_cleanup.py`, `test_pipeline.py`, `test_cross_language_bridges.py`, `test_manifest_ingest.py`, `test_terraform.py`, `test_swift_import_resolution.py`, `routes.py`, `test_serve_search_text.py`, `test_dataflow.py`, `test_pascal_resolution.py`, `test_snippet.py`, `search_text`, `test_swift_cross_file_calls.py`, `test_edit.py`?**
+  _High betweenness centrality (0.061) - this node is a cross-community bridge._
 - **Are the 7 inferred relationships involving `main()` (e.g. with `_file_hash()` and `_save_manifest()`) actually correct?**
   _`main()` has 7 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `github`, `name`, `pull_request` to the rest of the system?**
-  _4498 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `extract.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.017615619546247817 - nodes in this community are weakly interconnected._
+  _4500 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `test_watch.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.017029484706530724 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.01913199794555727 - nodes in this community are weakly interconnected._
+- **Should `extract.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.0182648401826484 - nodes in this community are weakly interconnected._
