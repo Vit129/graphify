@@ -334,6 +334,9 @@ GIT_DIR=${GIT_DIR:-$(git rev-parse --git-dir 2>/dev/null)}
 [ -f "$GIT_DIR/MERGE_HEAD" ] && exit 0
 [ -f "$GIT_DIR/CHERRY_PICK_HEAD" ] && exit 0
 
+# A delivery flow that refreshes the graph itself sets this to avoid a background rebuild.
+[ "${GRAPHIFY_SKIP_HOOK:-0}" = "1" ] && exit 0
+
 """ + _PYTHON_DETECT + """
 _GRAPHIFY_LOG="${HOME}/.cache/graphify-rebuild.log"
 mkdir -p "$(dirname "$_GRAPHIFY_LOG")"

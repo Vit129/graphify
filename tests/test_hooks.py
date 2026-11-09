@@ -101,6 +101,22 @@ def test_install_creates_post_checkout_hook(tmp_path):
     assert _CHECKOUT_MARKER in hook.read_text()
 
 
+def test_post_checkout_honors_skip_env(tmp_path):
+    repo = _make_git_repo(tmp_path)
+    install(repo)
+    (repo / "graphify-out").mkdir()
+    hook = repo / ".git" / "hooks" / "post-checkout"
+    env = {**os.environ, "GRAPHIFY_SKIP_HOOK": "1", "HOME": str(tmp_path)}
+    result = subprocess.run(["sh", str(hook), "a", "b", "1"], cwd=repo, env=env,
+                            capture_output=True, text=True)
+    assert result.returncode == 0
+    assert "launching background rebuild" not in result.stdout
+    env["GRAPHIFY_SKIP_HOOK"] = "0"
+    result = subprocess.run(["sh", str(hook), "a", "b", "1"], cwd=repo, env=env,
+                            capture_output=True, text=True)
+    assert "launching background rebuild" in result.stdout
+
+
 def test_install_post_checkout_is_executable(tmp_path):
     repo = _make_git_repo(tmp_path)
     install(repo)
